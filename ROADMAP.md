@@ -13,6 +13,7 @@ Phases are an order to work in, not a promise. Tick things off as they ship.
 - [x] Idempotency keys, ordered per-user writes
 - [x] Postgres and in-memory stores, HTTP server, TypeScript SDK
 - [x] CI on Node 20 and 22 against real Postgres 16; `npm run test:pg` locally
+- [x] **Phase 1 complete** (all items below)
 
 ---
 
@@ -20,19 +21,19 @@ Phases are an order to work in, not a promise. Tick things off as they ship.
 
 Things that would hurt early users if they were missing.
 
-- [ ] **Versioned schema migrations** (M). Today tables are only created if missing, so any schema change breaks existing installs. Needs numbered migrations and a migrations table.
-- [ ] **Docker verified in CI** (S). Build the image, start the compose stack, send a real event.
-- [ ] **Health check that checks the database** (S). `/health` returns OK even when Postgres is down.
-- [ ] **Graceful shutdown** (S). Finish in-flight requests and close the pool on SIGTERM.
-- [ ] **Structured logs with request IDs** (S).
-- [ ] **`onstreak check` command** (S). Validate a config file without starting the server.
-- [ ] **Configurable table prefix or schema** (S). Lets onstreak share a database cleanly.
-- [ ] **Fix backdated events changing past league rounds** (S). Late points can shift standings for people whose round is not settled yet.
-- [ ] **User profiles: display name, avatar, metadata** (S). Leaderboards return only user IDs today, so every app has to join names itself.
-- [ ] **Store each user's time zone** (S). So clients do not have to send it on every event.
-- [ ] **Event history endpoint** (S). A user's recent events and what each one awarded.
-- [ ] **Batch events endpoint** (S). Send many events in one request.
-- [ ] **Release basics** (S). Version tags, a CHANGELOG, npm publish from CI with provenance.
+- [x] **Versioned schema migrations** (M). Today tables are only created if missing, so any schema change breaks existing installs. Needs numbered migrations and a migrations table.
+- [x] **Docker verified in CI** (S). Build the image, start the compose stack, send a real event.
+- [x] **Health check that checks the database** (S). `/health` returns OK even when Postgres is down.
+- [x] **Graceful shutdown** (S). Finish in-flight requests and close the pool on SIGTERM.
+- [x] **Structured logs with request IDs** (S).
+- [x] **`onstreak check` command** (S). Validate a config file without starting the server.
+- [x] **Configurable table prefix or schema** (S). Lets onstreak share a database cleanly.
+- [x] **Fix backdated events changing past league rounds** (S). Late points can shift standings for people whose round is not settled yet.
+- [x] **User profiles: display name, avatar, metadata** (S). Leaderboards return only user IDs today, so every app has to join names itself.
+- [x] **Store each user's time zone** (S). So clients do not have to send it on every event.
+- [x] **Event history endpoint** (S). A user's recent events and what each one awarded.
+- [x] **Batch events endpoint** (S). Send many events in one request.
+- [x] **Release basics** (S). Version tags, a CHANGELOG, npm publish from CI with provenance.
 
 ## Phase 2: Launch kit (what gets stars)
 
