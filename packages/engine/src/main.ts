@@ -1,51 +1,43 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import pg from "pg";
+import { CliError, loadConfig, openStore, runCommand } from "./cli.js";
 import { Engine } from "./engine.js";
 import { createLogger, LOG_LEVELS, type LogLevel } from "./logger.js";
 import { createOnstreakServer } from "./server.js";
-import { MemoryStore } from "./store/memory.js";
-import { fromPgPool, PostgresStore } from "./store/postgres.js";
-import type { Store } from "./store/types.js";
 
-async function main(): Promise<void> {
-  const level = (process.env.ONSTREAK_LOG_LEVEL ?? "info") as LogLevel;
-  if (!LOG_LEVELS.includes(level)) {
-    console.error(`ONSTREAK_LOG_LEVEL must be one of ${LOG_LEVELS.join(", ")}`);
-    process.exit(1);
-  }
-  const logger = createLogger({ level, format: process.env.ONSTREAK_LOG_FORMAT === "pretty" ? "pretty" : "json" });
+const io = { out: (l: string) => process.stdout.write(`${l}\n`), err: (l: string) => process.stderr.write(`${l}\n`) };
 
-  const apiKey = process.env.ONSTREAK_API_KEY;
-  if (!apiKey) {
-    logger.error("Set ONSTREAK_API_KEY (at least 16 characters) before starting onstreak.");
-    process.exit(1);
-  }
+async function serve(env: NodeJS.ProcessEnv): Promise<void> {
+  const level = (env.ONSTREAK_LOG_LEVEL ?? "info") as LogLevel;
+  if (!LOG_LEVELS.includes(level)) throw new CliError(`ONSTREAK_LOG_LEVEL must be one of ${LOG_LEVELS.join(", ")}`);
+  const logger = createLogger({ level, format: env.ONSTREAK_LOG_FORMAT === "pretty" ? "pretty" : "json" });
 
-  const configPath = path.resolve(process.env.ONSTREAK_CONFIG ?? "onstreak.config.json");
-  let config: unknown;
-  try {
-    config = JSON.parse(readFileSync(configPath, "utf8"));
-  } catch (err) {
-    logger.error("could not read config", { path: configPath, err });
-    process.exit(1);
-  }
+  const apiKey = env.ONSTREAK_API_KEY;
+  if (!apiKey || apiKey.length < 16) throw new CliError("Set ONSTREAK_API_KEY (at least 16 characters) before starting onstreak.");
+  const { config } = loadConfig(env);
 
-  let store: Store;
-  if (process.env.DATABASE_URL) {
-    store = new PostgresStore(fromPgPool(new pg.Pool({ connectionString: process.env.DATABASE_URL })));
+  const opened = openStore(env);
+  if (opened.kind === "memory") logger.warn("DATABASE_URL is not set: using the in-memory store. Data is lost when the server stops.");
+
+  if (env.ONSTREAK_AUTO_MIGRATE === "false") {
+    const status = opened.postgres ? await opened.postgres.migrationStatus() : null;
+    if (status && status.pending.length > 0) {
+      await opened.store.close();
+      throw new CliError(`${status.pending.length} migration(s) pending and ONSTREAK_AUTO_MIGRATE=false: run "onstreak migrate" first`);
+    }
   } else {
-    logger.warn("DATABASE_URL is not set: using the in-memory store. Data is lost when the server stops.");
-    store = new MemoryStore();
+    await opened.ensureSchema();
+    const report = await opened.store.migrate();
+    for (const m of report.applied) logger.info("migration applied", { version: m.version, name: m.name });
   }
-  const report = await store.migrate();
-  for (const m of report.applied) logger.info("migration applied", { version: m.version, name: m.name });
 
-  const engine = new Engine(config as ConstructorParameters<typeof Engine>[0], store);
-  const port = Number(process.env.PORT ?? 8787);
+  const engine = new Engine(config, opened.store);
+  const port = Number(env.PORT ?? 8787);
   const server = createOnstreakServer(engine, { apiKey, logger });
-  server.listen(port, () => logger.info(`onstreak listening on http://localhost:${port}`, { port }));
+  server.listen(port, () => {
+    const address = server.address();
+    const actual = typeof address === "object" && address ? address.port : port;
+    logger.info(`onstreak listening on http://localhost:${actual}`, { port: actual });
+  });
 
   let stopping = false;
   const stop = async (signal: string) => {
@@ -54,7 +46,7 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     stopping = true;
-    const timeoutMs = Number(process.env.ONSTREAK_SHUTDOWN_TIMEOUT_MS ?? 10_000);
+    const timeoutMs = Number(env.ONSTREAK_SHUTDOWN_TIMEOUT_MS ?? 10_000);
     logger.info("shutting down", { signal, timeoutMs });
     const { forced } = await server.shutdown({ timeoutMs });
     logger.info("stopped", { forced });
@@ -64,7 +56,13 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => void stop("SIGINT"));
 }
 
+async function main(): Promise<void> {
+  const result = await runCommand(process.argv.slice(2), process.env, io);
+  if (result === "serve") return serve(process.env);
+  process.exitCode = result;
+}
+
 main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
+  io.err(err instanceof CliError ? err.message : err instanceof Error ? err.message : String(err));
   process.exit(1);
 });

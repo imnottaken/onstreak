@@ -41,6 +41,29 @@ DATABASE_URL=postgres://user:pass@host:5432/db ONSTREAK_API_KEY=... ONSTREAK_CON
 
 Tables (prefixed `onstreak_`) are created on start. With Docker: `docker compose up`.
 
+## Command line
+
+```bash
+onstreak            # start the server (same as: onstreak serve)
+onstreak check      # validate the config, and the database if DATABASE_URL is set
+onstreak migrate    # bring the database schema up to date, then exit
+```
+
+The server migrates the schema on start. Set `ONSTREAK_AUTO_MIGRATE=false` to make it refuse to start with pending migrations instead, and run `onstreak migrate` as a separate deploy step.
+
+| Setting | Default | |
+| --- | --- | --- |
+| `ONSTREAK_CONFIG` | `./onstreak.config.json` | Config file |
+| `ONSTREAK_API_KEY` | (required) | Secret for `Authorization: Bearer`, at least 16 characters |
+| `DATABASE_URL` | in-memory store | Postgres connection string |
+| `ONSTREAK_DB_SCHEMA` | connection default | Postgres schema for onstreak's tables, created if missing |
+| `ONSTREAK_TABLE_PREFIX` | `onstreak_` | Prefix for table names, to share a database |
+| `ONSTREAK_AUTO_MIGRATE` | `true` | `false` to require `onstreak migrate` first |
+| `PORT` | `8787` | HTTP port |
+| `ONSTREAK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+| `ONSTREAK_LOG_FORMAT` | `json` | `pretty` for readable local logs |
+| `ONSTREAK_SHUTDOWN_TIMEOUT_MS` | `10000` | How long requests may finish on SIGTERM |
+
 ## Configure
 
 Everything is declared in one JSON file. See [examples/onstreak.config.json](examples/onstreak.config.json).
