@@ -77,6 +77,10 @@ export interface OnstreakConfig {
   achievements?: AchievementRule[];
   leaderboards?: LeaderboardRule[];
   leagues?: LeagueRule[];
+  friends?: {
+    /** Most friends one user can have. Default 1000. */
+    max?: number;
+  };
 }
 
 /** A league with every default filled in. */
@@ -101,6 +105,7 @@ export interface ResolvedConfig {
   achievements: AchievementRule[];
   leaderboards: LeaderboardRule[];
   leagues: ResolvedLeague[];
+  friends: { max: number };
 }
 
 export class ConfigError extends Error {
@@ -224,7 +229,22 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     leagues.push(resolved);
   }
 
-  return { defaultTimezone, currencies: [...currencies], points, levels, streaks, achievements, leaderboards, leagues };
+  const maxFriends = input.friends?.max ?? 1000;
+  if (!Number.isInteger(maxFriends) || maxFriends < 1 || maxFriends > 100_000) {
+    throw new ConfigError("friends.max must be a whole number from 1 to 100000");
+  }
+
+  return {
+    defaultTimezone,
+    currencies: [...currencies],
+    points,
+    levels,
+    streaks,
+    achievements,
+    leaderboards,
+    leagues,
+    friends: { max: maxFriends },
+  };
 }
 
 /** Level for a points total: 1 plus every threshold reached. */

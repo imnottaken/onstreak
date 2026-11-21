@@ -22,6 +22,7 @@ export interface Tables {
   streaks: string;
   achievements: string;
   leagueMembers: string;
+  friends: string;
 }
 
 export function tableNames(prefix: string): Tables {
@@ -36,6 +37,7 @@ export function tableNames(prefix: string): Tables {
     streaks: `${prefix}streaks`,
     achievements: `${prefix}achievements`,
     leagueMembers: `${prefix}league_members`,
+    friends: `${prefix}friends`,
   };
 }
 
@@ -145,6 +147,20 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 4,
     name: "index for event history",
     statements: (t) => [`create index if not exists ${t.prefix}events_user_ts on ${t.events} (user_id, ts desc, id desc)`],
+  },
+  {
+    version: 5,
+    name: "friends",
+    statements: (t) => [
+      // Friendship is mutual: each one is stored in both directions.
+      `create table if not exists ${t.friends} (
+         user_id text not null references ${t.users}(id),
+         friend_id text not null references ${t.users}(id),
+         created_at timestamptz not null default now(),
+         primary key (user_id, friend_id),
+         check (user_id <> friend_id)
+       )`,
+    ],
   },
 ];
 

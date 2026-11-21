@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type OnstreakConfig } from "./config.js";
 import { currentRound, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
-import type { EventRecord, LeaderboardEntry, Membership, ProfileData, ProfilePatch, PublicProfile, Store, UserTx } from "./store/types.js";
+import { FriendLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type Store, type UserTx } from "./store/types.js";
 import { isValidTimeZone, leaderboardWindow, periodKey, type LeaderboardPeriod } from "./time.js";
 
 export class EngineError extends Error {
@@ -102,6 +102,11 @@ export interface EventHistory {
   }>;
   /** Pass as `cursor` to get the next (older) page, or null at the end. */
   nextCursor: string | null;
+}
+
+export interface FriendList {
+  userId: string;
+  friends: Array<{ userId: string; displayName: string | null; avatarUrl: string | null; since: string }>;
 }
 
 export type BatchItemResult = { ok: true; result: TrackResult } | { ok: false; status: number; error: string };
@@ -353,6 +358,42 @@ export class Engine {
       entries: entries.map((e) => withProfile(e, names)),
       user: user ? withProfile(user, names) : null,
     };
+  }
+
+  /** Make two users friends. Friendship is mutual. Users that do not exist yet are created. */
+  async addFriend(userId: string, friendId: string): Promise<{ userId: string; friendId: string; created: boolean }> {
+    this.checkPair(userId, friendId);
+    try {
+      const created = await this.store.addFriendship(userId, friendId, this.now(), this.config.friends.max);
+      return { userId, friendId, created };
+    } catch (err) {
+      if (err instanceof FriendLimitError) {
+        throw new EngineError(`${err.userId} already has the maximum of ${this.config.friends.max} friends`, 409);
+      }
+      throw err;
+    }
+  }
+
+  /** End a friendship, for both users. */
+  async removeFriend(userId: string, friendId: string): Promise<{ userId: string; friendId: string; removed: boolean }> {
+    this.checkPair(userId, friendId);
+    return { userId, friendId, removed: await this.store.removeFriendship(userId, friendId) };
+  }
+
+  /** A user's friends, newest first, with their names and avatars. */
+  async friends(userId: string): Promise<FriendList> {
+    if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces");
+    const friends = await this.store.friends(userId);
+    return {
+      userId,
+      friends: friends.map((f) => ({ userId: f.userId, displayName: f.displayName, avatarUrl: f.avatarUrl, since: new Date(f.since).toISOString() })),
+    };
+  }
+
+  private checkPair(userId: string, friendId: string): void {
+    if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces");
+    if (typeof friendId !== "string" || !USER_ID.test(friendId)) throw new EngineError("friendId must be a non-empty string without spaces");
+    if (userId === friendId) throw new EngineError("a user cannot be their own friend");
   }
 
   /** Throws if the store (database) cannot be reached. */

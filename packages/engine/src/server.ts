@@ -145,6 +145,12 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         return send(200, await engine.events(id, { ...(limit !== undefined ? { limit } : {}), ...(cursor ? { cursor } : {}) }));
       }
 
+      if (resource === "users" && id && sub === "friends") {
+        if (req.method === "GET" && parts.length === 4) return send(200, await engine.friends(id));
+        if (req.method === "PUT" && subId && parts.length === 5) return send(200, await engine.addFriend(id, subId));
+        if (req.method === "DELETE" && subId && parts.length === 5) return send(200, await engine.removeFriend(id, subId));
+      }
+
       if (req.method === "GET" && resource === "leaderboards" && id && parts.length === 3) {
         const limit = intParam(url, "limit");
         const userId = url.searchParams.get("userId") ?? undefined;

@@ -19,6 +19,7 @@ All notable changes to onstreak. The format follows [Keep a Changelog](https://k
 - `level.startsAt` on user profiles, so progress bars know where the current level began.
 - `@onstreak/react`: StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable and AchievementToast, accessible and themeable.
 - `npm run demo`: a study app with simulated rivals and time travel, running in memory.
+- Friends: mutual friendships with a configurable limit (`friends.max`, default 1000), safe under concurrent requests.
 - Docker image (non-root, with health check) and docker compose setup.
 
 ### Fixed

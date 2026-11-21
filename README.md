@@ -99,6 +99,9 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 | `GET /v1/users/:id?timezone=` | Profile, points, level, metrics, streak status (`done`, `pending`, `broken`) and achievements |
 | `PATCH /v1/users/:id` | Set `displayName`, `avatarUrl`, `metadata` (JSON, max 8 KB) or `timezone`. `null` clears a field |
 | `GET /v1/users/:id/events?limit=&cursor=` | The user's events, newest first, with what each one awarded |
+| `PUT /v1/users/:id/friends/:friendId` | Make two users friends (mutual, safe to repeat). 409 past the friend limit |
+| `DELETE /v1/users/:id/friends/:friendId` | End a friendship for both users |
+| `GET /v1/users/:id/friends` | A user's friends, newest first, with names and avatars |
 | `GET /v1/leaderboards/:id?limit=&userId=` | Top entries for the current window with names and avatars, plus that user's own rank |
 | `GET /v1/leagues/:id/users/:userId` | The user's tier, their group's live standings with promotion and demotion zones, and how last round ended |
 | `GET /health` | Ready: the process and the database are up (503 otherwise). No key needed |
@@ -109,7 +112,7 @@ A time zone sent with an event is remembered for that user, so later events and 
 
 The full machine-readable description is served at `GET /openapi.json` (OpenAPI 3.1, no key needed), so you can generate a client for any language. Tests check every response against it, so it stays accurate.
 
-The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `leaderboard`, `league` and `health`. Errors are `OnstreakError` with `status` and `requestId`.
+The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `leaderboard`, `league` and `health`. Errors are `OnstreakError` with `status` and `requestId`.
 
 ## React components
 

@@ -47,6 +47,12 @@ export interface StoredEvent {
   idempotencyKey: string | null;
 }
 
+/** A friend, with what others may see about them. */
+export interface FriendRecord extends PublicProfile {
+  userId: string;
+  since: number;
+}
+
 /** A user's own profile fields. */
 export interface ProfileData {
   displayName: string | null;
@@ -149,8 +155,26 @@ export interface Store {
   profiles(userIds: string[]): Promise<Record<string, PublicProfile>>;
   /** A user's events, newest first. */
   events(userId: string, query: EventPageQuery): Promise<EventRecord[]>;
+  /**
+   * Make two users friends (both directions). Creates users that do not exist.
+   * Returns false if they already were. Fails with FriendLimitError when either
+   * side already has `maxFriends`.
+   */
+  addFriendship(a: string, b: string, ts: number, maxFriends: number): Promise<boolean>;
+  /** Returns false if they were not friends. */
+  removeFriendship(a: string, b: string): Promise<boolean>;
+  /** A user's friends, newest first. */
+  friends(userId: string): Promise<FriendRecord[]>;
   /** Throws if the database cannot be reached. */
   ping(): Promise<void>;
   /** Release connections. */
   close(): Promise<void>;
+}
+
+/** Thrown by stores when a friendship would exceed the friend limit. */
+export class FriendLimitError extends Error {
+  constructor(readonly userId: string) {
+    super(`${userId} already has the maximum number of friends`);
+    this.name = "FriendLimitError";
+  }
 }

@@ -1,6 +1,18 @@
 export { Engine, EngineError } from "./engine.js";
 export { MAX_BATCH } from "./engine.js";
-export type { TrackInput, TrackResult, UserProfile, LeaderboardResult, LeagueStatus, LeaguePrevious, RankedUser, EventHistory, BatchItemResult } from "./engine.js";
+export type {
+  TrackInput,
+  TrackResult,
+  UserProfile,
+  LeaderboardResult,
+  LeagueStatus,
+  LeaguePrevious,
+  RankedUser,
+  EventHistory,
+  BatchItemResult,
+  FriendList,
+} from "./engine.js";
+export { FriendLimitError } from "./store/types.js";
 export { zoneFor, outcomeFor, nextTier, currentRound } from "./leagues.js";
 export type { LeagueOutcome, LeagueZone, LeagueRound } from "./leagues.js";
 export { resolveConfig, levelFor, ConfigError } from "./config.js";
@@ -38,6 +50,7 @@ export type {
   EventRecord,
   EventPageQuery,
   MigrationReport,
+  FriendRecord,
 } from "./store/types.js";
 export { createHandler, createOnstreakServer } from "./server.js";
 export type { ServerOptions, OnstreakServer } from "./server.js";

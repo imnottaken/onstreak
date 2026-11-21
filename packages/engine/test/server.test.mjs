@@ -92,6 +92,11 @@ test("SDK covers profiles, batches, history, health and request ids", async () =
 
     assert.deepEqual(await xp.health(), { ok: true, database: "ok" });
 
+    assert.equal((await xp.addFriend("zara", "omar")).created, true);
+    assert.deepEqual((await xp.friends("omar")).friends.map((f) => [f.userId, f.displayName]), [["zara", "Zara"]]);
+    assert.equal((await xp.removeFriend("omar", "zara")).removed, true);
+    assert.deepEqual((await xp.friends("zara")).friends, []);
+
     const err = await xp.updateUser("zara", { nickname: "z" }).catch((e) => e);
     assert.ok(err instanceof OnstreakError);
     assert.equal(err.status, 400);

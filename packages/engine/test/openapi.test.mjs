@@ -10,8 +10,8 @@ const addFormats = require("ajv-formats").default;
 
 const API_KEY = "openapi-test-key-0123456789";
 
-async function serve(t, store = new MemoryStore()) {
-  const engine = new Engine(config, store);
+async function serve(t, store = new MemoryStore(), cfg = config) {
+  const engine = new Engine(cfg, store);
   const server = createOnstreakServer(engine, { apiKey: API_KEY });
   await new Promise((resolve) => server.listen(0, resolve));
   t.after(() => server.shutdown({ timeoutMs: 100 }));
@@ -91,6 +91,21 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   await call("get", "/v1/leagues/study_league/users/asha", "/v1/leagues/{leagueId}/users/{userId}");
   await call("get", "/v1/leagues/study_league/users/never-seen", "/v1/leagues/{leagueId}/users/{userId}"); // no group yet
   await call("get", "/v1/leagues/nope/users/asha", "/v1/leagues/{leagueId}/users/{userId}"); // 404
+
+  await call("put", "/v1/users/asha/friends/ravi", "/v1/users/{userId}/friends/{friendId}");
+  await call("put", "/v1/users/ravi/friends/asha", "/v1/users/{userId}/friends/{friendId}"); // already friends
+  await call("put", "/v1/users/asha/friends/asha", "/v1/users/{userId}/friends/{friendId}"); // 400
+  await call("get", "/v1/users/asha/friends", "/v1/users/{userId}/friends");
+  await call("delete", "/v1/users/asha/friends/ravi", "/v1/users/{userId}/friends/{friendId}");
+  await call("delete", "/v1/users/asha/friends/ravi", "/v1/users/{userId}/friends/{friendId}"); // not friends
+
+  // A second server with a tiny friend limit, to see the 409 shape.
+  const small = await serve(t, new MemoryStore(), { ...config, friends: { max: 1 } });
+  const add = (a, b) => fetch(`${small.base}/v1/users/${a}/friends/${b}`, { method: "PUT", headers: { authorization: `Bearer ${API_KEY}` } });
+  await add("x", "y");
+  const full = await add("x", "z");
+  c.check("put", "/v1/users/{userId}/friends/{friendId}", full.status, await full.json());
+  assert.equal(full.status, 409);
 
   await call("get", "/health", "/health", undefined, { key: null });
   store.ping = async () => {

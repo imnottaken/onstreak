@@ -288,6 +288,39 @@ const schemas = {
       },
     },
   },
+  FriendList: {
+    type: "object",
+    required: ["userId", "friends"],
+    additionalProperties: false,
+    properties: {
+      userId: { type: "string" },
+      friends: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["userId", "displayName", "avatarUrl", "since"],
+          additionalProperties: false,
+          properties: {
+            userId: { type: "string" },
+            displayName: nullable({ type: "string" }),
+            avatarUrl: nullable({ type: "string" }),
+            since: { type: "string", format: "date-time" },
+          },
+        },
+      },
+    },
+  },
+  FriendChange: {
+    type: "object",
+    required: ["userId", "friendId"],
+    additionalProperties: false,
+    properties: {
+      userId: { type: "string" },
+      friendId: { type: "string" },
+      created: { type: "boolean", description: "False if they were already friends." },
+      removed: { type: "boolean", description: "False if they were not friends." },
+    },
+  },
   Health: {
     type: "object",
     required: ["ok"],
@@ -355,6 +388,31 @@ export function openapiSpec(version: string) {
           summary: "A user's events, newest first",
           parameters: [limitParam(), { name: "cursor", in: "query", schema: { type: "string" }, description: "nextCursor from the previous page." }],
           responses: { "200": ok("A page of events", ref("EventHistory")), ...authErrors },
+        },
+      },
+      "/v1/users/{userId}/friends": {
+        parameters: [userIdParam],
+        get: {
+          operationId: "friends",
+          summary: "A user's friends, newest first",
+          responses: { "200": ok("The user's friends", ref("FriendList")), ...authErrors },
+        },
+      },
+      "/v1/users/{userId}/friends/{friendId}": {
+        parameters: [userIdParam, { name: "friendId", in: "path", required: true, schema: { type: "string", maxLength: 128 } }],
+        put: {
+          operationId: "addFriend",
+          summary: "Make two users friends (mutual). Safe to repeat",
+          responses: {
+            "200": ok("Friends now", ref("FriendChange")),
+            ...authErrors,
+            "409": errorResponse("One of them already has the maximum number of friends"),
+          },
+        },
+        delete: {
+          operationId: "removeFriend",
+          summary: "End a friendship, for both users. Safe to repeat",
+          responses: { "200": ok("Not friends now", ref("FriendChange")), ...authErrors },
         },
       },
       "/v1/leaderboards/{leaderboardId}": {

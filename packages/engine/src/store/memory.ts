@@ -1,7 +1,9 @@
 import type { TrackResult } from "../engine.js";
 import type { StreakState } from "../streaks.js";
+import { FriendLimitError } from "./types.js";
 import type {
   EventPageQuery,
+  FriendRecord,
   EventRecord,
   GroupMember,
   LeaderboardEntry,
@@ -42,6 +44,7 @@ export class MemoryStore implements Store {
   private users = new Map<string, UserData>();
   private ledger: LedgerRow[] = [];
   private members: Array<Membership & { userId: string }> = [];
+  private friendships = new Map<string, Map<string, number>>();
   private locks = new Map<string, Promise<unknown>>();
 
   async migrate(): Promise<MigrationReport> {
@@ -218,6 +221,36 @@ export class MemoryStore implements Store {
       .filter((e) => !before || e.ts < before.ts || (e.ts === before.ts && e.id < before.id))
       .slice(0, q.limit)
       .map((e) => ({ id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result }));
+  }
+
+  async addFriendship(a: string, b: string, ts: number, maxFriends: number): Promise<boolean> {
+    this.data(a);
+    this.data(b);
+    const of = (id: string) => {
+      let m = this.friendships.get(id);
+      if (!m) this.friendships.set(id, (m = new Map()));
+      return m;
+    };
+    if (of(a).has(b)) return false;
+    for (const id of [a, b]) if (of(id).size >= maxFriends) throw new FriendLimitError(id);
+    of(a).set(b, ts);
+    of(b).set(a, ts);
+    return true;
+  }
+
+  async removeFriendship(a: string, b: string): Promise<boolean> {
+    const existed = this.friendships.get(a)?.delete(b) ?? false;
+    this.friendships.get(b)?.delete(a);
+    return existed;
+  }
+
+  async friends(userId: string): Promise<FriendRecord[]> {
+    return [...(this.friendships.get(userId) ?? [])]
+      .sort((x, y) => y[1] - x[1] || (x[0] < y[0] ? -1 : 1))
+      .map(([id, since]) => {
+        const p = this.users.get(id)?.profile;
+        return { userId: id, since, displayName: p?.displayName ?? null, avatarUrl: p?.avatarUrl ?? null };
+      });
   }
 
   async ping(): Promise<void> {}

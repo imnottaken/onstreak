@@ -2,8 +2,10 @@ import type { TrackResult } from "../engine.js";
 import type { StreakState } from "../streaks.js";
 import type { LeagueOutcome } from "../leagues.js";
 import { LATEST_VERSION, MIGRATIONS, tableNames, type Tables } from "./migrations.js";
+import { FriendLimitError } from "./types.js";
 import type {
   EventPageQuery,
+  FriendRecord,
   EventRecord,
   LeaderboardEntry,
   LeaderboardQuery,
@@ -410,6 +412,54 @@ export class PostgresStore implements Store {
       ts: ms(r.ts),
       recordedAt: ms(r.recorded_at),
       result: r.result ? json<TrackResult>(r.result) : null,
+    }));
+  }
+
+  async addFriendship(a: string, b: string, ts: number, maxFriends: number): Promise<boolean> {
+    const t = this.t;
+    return this.db.transaction(async (q) => {
+      // Lock both users, always in the same order, so a and b adding each other at once cannot deadlock.
+      for (const id of a < b ? [a, b] : [b, a]) {
+        await q.query(`insert into ${t.users} (id) values ($1) on conflict (id) do nothing`, [id]);
+        await q.query(`select id from ${t.users} where id = $1 for update`, [id]);
+      }
+      const existing = await q.query(`select 1 from ${t.friends} where user_id = $1 and friend_id = $2`, [a, b]);
+      if (existing.rows.length > 0) return false;
+      for (const id of [a, b]) {
+        const { rows } = await q.query(`select count(*) as n from ${t.friends} where user_id = $1`, [id]);
+        if (num(rows[0]?.n) >= maxFriends) throw new FriendLimitError(id);
+      }
+      await q.query(`insert into ${t.friends} (user_id, friend_id, created_at) values ($1, $2, $3), ($2, $1, $3)`, [
+        a,
+        b,
+        new Date(ts).toISOString(),
+      ]);
+      return true;
+    });
+  }
+
+  async removeFriendship(a: string, b: string): Promise<boolean> {
+    const { rows } = await this.db.query(
+      `delete from ${this.t.friends} where (user_id = $1 and friend_id = $2) or (user_id = $2 and friend_id = $1) returning user_id`,
+      [a, b],
+    );
+    return rows.length > 0;
+  }
+
+  async friends(userId: string): Promise<FriendRecord[]> {
+    const t = this.t;
+    const { rows } = await this.db.query(
+      `select f.friend_id, f.created_at, u.display_name, u.avatar_url
+       from ${t.friends} f join ${t.users} u on u.id = f.friend_id
+       where f.user_id = $1
+       order by f.created_at desc, f.friend_id`,
+      [userId],
+    );
+    return rows.map((r) => ({
+      userId: String(r.friend_id),
+      since: ms(r.created_at),
+      displayName: (r.display_name as string | null) ?? null,
+      avatarUrl: (r.avatar_url as string | null) ?? null,
     }));
   }
 

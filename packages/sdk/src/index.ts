@@ -83,6 +83,11 @@ export interface EventHistory {
   nextCursor: string | null;
 }
 
+export interface FriendList {
+  userId: string;
+  friends: Array<{ userId: string; displayName: string | null; avatarUrl: string | null; since: string }>;
+}
+
 export type BatchItemResult = { ok: true; result: TrackResult } | { ok: false; status: number; error: string };
 
 export interface Health {
@@ -163,6 +168,14 @@ export function createClient(options: ClientOptions) {
       const qs = params.toString();
       return call<EventHistory>("GET", `${user(userId)}/events${qs ? `?${qs}` : ""}`);
     },
+    /** Make two users friends (mutual). `created` is false if they already were. */
+    addFriend: (userId: string, friendId: string) =>
+      call<{ userId: string; friendId: string; created: boolean }>("PUT", `${user(userId)}/friends/${encodeURIComponent(friendId)}`),
+    /** End a friendship for both users. `removed` is false if they were not friends. */
+    removeFriend: (userId: string, friendId: string) =>
+      call<{ userId: string; friendId: string; removed: boolean }>("DELETE", `${user(userId)}/friends/${encodeURIComponent(friendId)}`),
+    /** A user's friends, newest first. */
+    friends: (userId: string) => call<FriendList>("GET", `${user(userId)}/friends`),
     /** Whether the server and its database are up. Never throws for a 503. */
     health: () => call<Health>("GET", "/health", undefined, [503]),
     /** Top entries of a leaderboard, plus the given user's own rank. */
