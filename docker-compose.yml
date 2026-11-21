@@ -5,7 +5,11 @@ services:
     environment:
       ONSTREAK_API_KEY: change-me-to-a-long-secret
       DATABASE_URL: postgres://onstreak:onstreak@db:5432/onstreak
-    depends_on: [db]
+    depends_on:
+      db:
+        # Wait until Postgres accepts connections, not just until it starts.
+        condition: service_healthy
+    restart: unless-stopped
   db:
     image: postgres:16-alpine
     environment:
@@ -13,5 +17,10 @@ services:
       POSTGRES_PASSWORD: onstreak
       POSTGRES_DB: onstreak
     volumes: ["onstreak-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U onstreak -d onstreak"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 volumes:
   onstreak-data:

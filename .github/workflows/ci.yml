@@ -34,3 +34,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/docker-smoke.sh
