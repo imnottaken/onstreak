@@ -62,7 +62,7 @@ for (const [name, makeStore] of Object.entries(storeFactories)) {
         [3, "u3", "safe"], // bronze is the bottom tier
       ],
     );
-    assert.deepEqual(g1.you, { rank: 3, userId: "u3", score: 10, zone: "safe" });
+    assert.deepEqual(g1.you, { rank: 3, userId: "u3", score: 10, displayName: null, avatarUrl: null, zone: "safe" });
     assert.equal(g1.round.startsAt, "2026-11-16T00:00:00.000Z");
     assert.equal(g1.round.endsAt, "2026-11-23T00:00:00.000Z");
 

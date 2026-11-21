@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type OnstreakConfig } from "./config.js";
 import { currentRound, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
-import type { LeaderboardEntry, Membership, Store, UserTx } from "./store/types.js";
+import type { EventRecord, LeaderboardEntry, Membership, ProfileData, ProfilePatch, PublicProfile, Store, UserTx } from "./store/types.js";
 import { isValidTimeZone, leaderboardWindow, periodKey, type LeaderboardPeriod } from "./time.js";
 
 export class EngineError extends Error {
@@ -51,6 +51,12 @@ export interface LeaguePrevious {
   nextTier: string;
 }
 
+/** A ranked user, with the name and avatar they chose (null if none). */
+export interface RankedUser extends LeaderboardEntry {
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+
 export interface LeagueStatus {
   id: string;
   /** The tier the user is in now (or will join in when they next earn points). */
@@ -58,13 +64,14 @@ export interface LeagueStatus {
   tiers: string[];
   round: { key: string; startsAt: string; endsAt: string };
   /** The user's group this round, or null if they have not earned points yet this round. */
-  group: { number: number; size: number; entries: Array<{ rank: number; userId: string; score: number; zone: LeagueZone }> } | null;
-  you: { rank: number; userId: string; score: number; zone: LeagueZone } | null;
+  group: { number: number; size: number; entries: Array<RankedUser & { zone: LeagueZone }> } | null;
+  you: (RankedUser & { zone: LeagueZone }) | null;
   previous: LeaguePrevious | null;
 }
 
 export interface UserProfile {
   userId: string;
+  profile: ProfileData;
   points: Record<string, number>;
   level: { current: number; points: number; nextAt: number | null } | null;
   metrics: Record<string, number>;
@@ -78,13 +85,90 @@ export interface LeaderboardResult {
   period: LeaderboardPeriod;
   from: string | null;
   to: string | null;
-  entries: LeaderboardEntry[];
-  user: LeaderboardEntry | null;
+  entries: RankedUser[];
+  user: RankedUser | null;
 }
+
+export interface EventHistory {
+  events: Array<{
+    id: string;
+    event: string;
+    value: number;
+    timestamp: string;
+    recordedAt: string;
+    /** What the event awarded, as returned by track(). */
+    result: TrackResult | null;
+  }>;
+  /** Pass as `cursor` to get the next (older) page, or null at the end. */
+  nextCursor: string | null;
+}
+
+export type BatchItemResult = { ok: true; result: TrackResult } | { ok: false; status: number; error: string };
 
 const USER_ID = /^[^\s]{1,128}$/;
 const EVENT_KEY = /^[a-z0-9][a-z0-9_.:-]{0,63}$/i;
 const MAX_LIMIT = 100;
+export const MAX_BATCH = 100;
+const MAX_METADATA_BYTES = 8 * 1024;
+const PROFILE_FIELDS = new Set(["displayName", "avatarUrl", "metadata", "timezone"]);
+
+function encodeCursor(e: { ts: number; id: string }): string {
+  return Buffer.from(`${e.ts}:${e.id}`).toString("base64url");
+}
+
+function decodeCursor(cursor: string): { ts: number; id: string } {
+  const [ts, id] = Buffer.from(cursor, "base64url").toString("utf8").split(":");
+  const n = Number(ts);
+  if (!Number.isFinite(n) || !id || !/^[0-9a-f-]{36}$/.test(id)) throw new EngineError("cursor is not valid");
+  return { ts: n, id };
+}
+
+/** Check a profile patch and return a clean copy. */
+function validateProfilePatch(input: unknown): ProfilePatch {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new EngineError("body must be a JSON object");
+  const raw = input as Record<string, unknown>;
+  for (const key of Object.keys(raw)) {
+    if (!PROFILE_FIELDS.has(key)) throw new EngineError(`unknown field "${key}" (allowed: displayName, avatarUrl, metadata, timezone)`);
+  }
+  const patch: ProfilePatch = {};
+  if ("displayName" in raw) {
+    const v = raw.displayName;
+    if (v === null) patch.displayName = null;
+    else if (typeof v === "string" && v.trim().length >= 1 && v.trim().length <= 80) patch.displayName = v.trim();
+    else throw new EngineError("displayName must be 1-80 characters, or null");
+  }
+  if ("avatarUrl" in raw) {
+    const v = raw.avatarUrl;
+    if (v === null) patch.avatarUrl = null;
+    else {
+      let ok = false;
+      if (typeof v === "string" && v.length <= 2048) {
+        try {
+          ok = ["http:", "https:"].includes(new URL(v).protocol);
+        } catch {
+          ok = false;
+        }
+      }
+      if (!ok) throw new EngineError("avatarUrl must be an http(s) URL of at most 2048 characters, or null");
+      patch.avatarUrl = v as string;
+    }
+  }
+  if ("metadata" in raw) {
+    const v = raw.metadata;
+    if (v === null) patch.metadata = null;
+    else if (typeof v === "object" && !Array.isArray(v)) {
+      if (Buffer.byteLength(JSON.stringify(v)) > MAX_METADATA_BYTES) throw new EngineError("metadata must be at most 8 KB of JSON");
+      patch.metadata = v as Record<string, unknown>;
+    } else throw new EngineError("metadata must be a JSON object, or null");
+  }
+  if ("timezone" in raw) {
+    const v = raw.timezone;
+    if (v === null) patch.timezone = null;
+    else if (typeof v === "string" && isValidTimeZone(v)) patch.timezone = v;
+    else throw new EngineError(`unknown timezone "${String(v)}"`);
+  }
+  return patch;
+}
 
 export class Engine {
   readonly config: ResolvedConfig;
@@ -105,8 +189,9 @@ export class Engine {
     if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) throw new EngineError("value must be a positive number");
     const ts = input.timestamp === undefined ? this.now() : new Date(input.timestamp).getTime();
     if (!Number.isFinite(ts)) throw new EngineError("timestamp must be an ISO date or epoch milliseconds");
-    const timezone = input.timezone ?? this.config.defaultTimezone;
-    if (!isValidTimeZone(timezone)) throw new EngineError(`unknown timezone "${timezone}"`);
+    if (input.timezone !== undefined && (typeof input.timezone !== "string" || !isValidTimeZone(input.timezone))) {
+      throw new EngineError(`unknown timezone "${String(input.timezone)}"`);
+    }
     const idempotencyKey = input.idempotencyKey ?? null;
     if (idempotencyKey !== null && (typeof idempotencyKey !== "string" || idempotencyKey.length === 0 || idempotencyKey.length > 200)) {
       throw new EngineError("idempotencyKey must be a string of 1-200 characters");
@@ -119,8 +204,15 @@ export class Engine {
         if (previous) return { ...previous, duplicate: true };
       }
 
+      // Streak days use the zone sent with the event, else the one remembered
+      // for this user, else the config default. A zone sent with an event is remembered.
+      const profile = await tx.getProfile();
+      if (input.timezone && input.timezone !== profile.timezone) await tx.updateProfile({ timezone: input.timezone });
+      const timezone = input.timezone ?? profile.timezone ?? config.defaultTimezone;
+
+      const recordedAt = this.now();
       const eventId = randomUUID();
-      await tx.insertEvent({ id: eventId, userId, key: event, value, ts, idempotencyKey });
+      await tx.insertEvent({ id: eventId, userId, key: event, value, ts, recordedAt, idempotencyKey });
       const metrics = new Map<string, number>([[event, await tx.addMetric(event, value)]]);
 
       const levelBefore = config.levels ? levelFor(config.levels, await tx.getBalance(config.levels.currency)) : null;
@@ -130,7 +222,7 @@ export class Engine {
         if (rule.event !== event) continue;
         const amount = rule.multiplyByValue ? rule.amount * value : rule.amount;
         if (amount === 0) continue;
-        const total = await tx.addPoints(rule.currency, amount, ts, eventId);
+        const total = await tx.addPoints(rule.currency, amount, ts, eventId, recordedAt);
         const entry = points[rule.currency] ?? { awarded: 0, total };
         entry.awarded += amount;
         entry.total = total;
@@ -182,7 +274,7 @@ export class Engine {
       }
 
       const leagues: TrackResult["leagues"] = {};
-      const now = this.now();
+      const now = recordedAt;
       for (const league of config.leagues) {
         if ((points[league.currency]?.awarded ?? 0) <= 0) continue;
         // Only points earned in the round that is running now count toward a league.
@@ -201,10 +293,10 @@ export class Engine {
 
   async getUser(userId: string, options: { timezone?: string } = {}): Promise<UserProfile> {
     if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces");
-    const timezone = options.timezone ?? this.config.defaultTimezone;
-    if (!isValidTimeZone(timezone)) throw new EngineError(`unknown timezone "${timezone}"`);
+    if (options.timezone !== undefined && !isValidTimeZone(options.timezone)) throw new EngineError(`unknown timezone "${options.timezone}"`);
 
     const snap = await this.store.snapshot(userId);
+    const timezone = options.timezone ?? snap.profile.timezone ?? this.config.defaultTimezone;
     const points: Record<string, number> = {};
     for (const c of this.config.currencies) points[c] = snap.balances[c] ?? 0;
 
@@ -233,7 +325,7 @@ export class Engine {
         return { id: a.id, name: rule.name, ...(rule.description ? { description: rule.description } : {}), unlockedAt: a.unlockedAt };
       });
 
-    return { userId, points, level, metrics: snap.metrics, streaks, achievements };
+    return { userId, profile: snap.profile, points, level, metrics: snap.metrics, streaks, achievements };
   }
 
   async leaderboard(id: string, options: { limit?: number; userId?: string } = {}): Promise<LeaderboardResult> {
@@ -249,15 +341,26 @@ export class Engine {
       limit,
       ...(options.userId ? { userId: options.userId } : {}),
     });
+    const names = await this.store.profiles([...new Set([...entries, ...(user ? [user] : [])].map((e) => e.userId))]);
     return {
       id: rule.id,
       currency: rule.currency,
       period: rule.period,
       from: from === null ? null : new Date(from).toISOString(),
       to: to === null ? null : new Date(to).toISOString(),
-      entries,
-      user,
+      entries: entries.map((e) => withProfile(e, names)),
+      user: user ? withProfile(user, names) : null,
     };
+  }
+
+  /** Throws if the store (database) cannot be reached. */
+  async ping(): Promise<void> {
+    await this.store.ping();
+  }
+
+  /** Release the store's connections. Call once, when shutting down. */
+  async close(): Promise<void> {
+    await this.store.close();
   }
 
   /** A user's tier, their group's live standings this round, and how last round ended. */
@@ -267,7 +370,7 @@ export class Engine {
     if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces");
     const now = this.now();
 
-    return this.store.withUser(userId, async (tx) => {
+    const status = await this.store.withUser(userId, async (tx): Promise<LeagueStatus> => {
       const seat = await this.seat(tx, userId, league, now, null);
       let group: LeagueStatus["group"] = null;
       if (seat.current) {
@@ -279,6 +382,7 @@ export class Engine {
           currency: league.currency,
           from: seat.round.from,
           to: seat.round.to,
+          recordedBefore: null,
         });
         const tierIndex = league.tiers.indexOf(seat.current.tier);
         group = {
@@ -288,6 +392,8 @@ export class Engine {
             rank: i + 1,
             userId: m.userId,
             score: m.score,
+            displayName: null,
+            avatarUrl: null,
             zone: zoneFor(league, tierIndex, i + 1, standings.length),
           })),
         };
@@ -298,10 +404,69 @@ export class Engine {
         tiers: league.tiers,
         round: { key: seat.round.key, startsAt: new Date(seat.round.from).toISOString(), endsAt: new Date(seat.round.to).toISOString() },
         group,
-        you: group?.entries.find((e) => e.userId === userId) ?? null,
+        you: null,
         previous: seat.previous,
       };
     });
+    // Names are looked up after the transaction: they are not part of the lock.
+    if (status.group) {
+      const names = await this.store.profiles(status.group.entries.map((e) => e.userId));
+      status.group.entries = status.group.entries.map((e) => withProfile(e, names));
+      status.you = status.group.entries.find((e) => e.userId === userId) ?? null;
+    }
+    return status;
+  }
+
+  /** Set a user's display name, avatar, metadata or time zone. Returns the full profile. */
+  async updateUser(userId: string, patch: unknown): Promise<UserProfile> {
+    if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces");
+    const clean = validateProfilePatch(patch);
+    await this.store.withUser(userId, (tx) => tx.updateProfile(clean));
+    return this.getUser(userId);
+  }
+
+  /** A user's events, newest first, with what each one awarded. */
+  async events(userId: string, options: { limit?: number; cursor?: string } = {}): Promise<EventHistory> {
+    if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces");
+    const limit = options.limit ?? 20;
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) throw new EngineError(`limit must be a whole number from 1 to ${MAX_LIMIT}`);
+    const before = options.cursor ? decodeCursor(options.cursor) : undefined;
+    // Fetch one extra to know whether another page exists.
+    const rows = await this.store.events(userId, { limit: limit + 1, ...(before ? { before } : {}) });
+    const page = rows.slice(0, limit);
+    const last = page[page.length - 1];
+    return {
+      events: page.map((e: EventRecord) => ({
+        id: e.id,
+        event: e.key,
+        value: e.value,
+        timestamp: new Date(e.ts).toISOString(),
+        recordedAt: new Date(e.recordedAt).toISOString(),
+        result: e.result,
+      })),
+      nextCursor: rows.length > limit && last ? encodeCursor(last) : null,
+    };
+  }
+
+  /**
+   * Track up to 100 events in order. Each is its own transaction: a bad item
+   * is reported in place and the rest still count. Use idempotency keys if
+   * you might retry a batch.
+   */
+  async trackBatch(inputs: unknown): Promise<BatchItemResult[]> {
+    if (!Array.isArray(inputs) || inputs.length === 0 || inputs.length > MAX_BATCH) {
+      throw new EngineError(`events must be an array of 1 to ${MAX_BATCH} events`);
+    }
+    const results: BatchItemResult[] = [];
+    for (const input of inputs) {
+      try {
+        results.push({ ok: true, result: await this.track(input as TrackInput) });
+      } catch (err) {
+        if (!(err instanceof EngineError)) throw err;
+        results.push({ ok: false, status: err.status, error: err.message });
+      }
+    }
+    return results;
   }
 
   /**
@@ -347,6 +512,8 @@ export class Engine {
       currency: league.currency,
       from: r.from,
       to: r.to,
+      // Points recorded after the round ended (backfilled events) never change its result.
+      recordedBefore: r.to,
     });
     const index = standings.findIndex((s) => s.userId === userId);
     const rank = index === -1 ? standings.length + 1 : index + 1;
@@ -356,4 +523,9 @@ export class Engine {
     await tx.settleMembership(league.id, m.roundKey, { outcome, finalRank: rank, nextTier: next });
     return { round: m.roundKey, tier: m.tier, rank, outcome, nextTier: next };
   }
+}
+
+function withProfile<T extends LeaderboardEntry>(entry: T, names: Record<string, PublicProfile>): T & RankedUser {
+  const p = names[entry.userId];
+  return { ...entry, displayName: p?.displayName ?? null, avatarUrl: p?.avatarUrl ?? null };
 }

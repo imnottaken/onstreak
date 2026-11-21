@@ -30,12 +30,12 @@ test("SDK talks to the server end to end", async () => {
     assert.equal(user.streaks.daily_lesson.current, 1);
 
     const board = await xp.leaderboard("xp_all", { limit: 5, userId: "maya" });
-    assert.deepEqual(board.user, { rank: 1, userId: "maya", score: 10 });
+    assert.deepEqual(board.user, { rank: 1, userId: "maya", score: 10, displayName: null, avatarUrl: null });
 
     assert.deepEqual(r.leagues.study_league, { tier: "bronze", group: 1, joined: true, previous: null });
     const league = await xp.league("study_league", "maya");
     assert.equal(league.tier, "bronze");
-    assert.deepEqual(league.you, { rank: 1, userId: "maya", score: 10, zone: "safe" });
+    assert.deepEqual(league.you, { rank: 1, userId: "maya", score: 10, displayName: null, avatarUrl: null, zone: "safe" });
   });
 });
 

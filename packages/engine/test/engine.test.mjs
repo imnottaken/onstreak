@@ -87,14 +87,14 @@ for (const [name, makeStore] of Object.entries(storeFactories)) {
         [2, "a", 20],
       ],
     );
-    assert.deepEqual(weekly.user, { rank: 4, userId: "d", score: 10 });
+    assert.deepEqual(weekly.user, { rank: 4, userId: "d", score: 10, displayName: null, avatarUrl: null });
     assert.equal(weekly.from, "2026-11-16T00:00:00.000Z");
 
     const full = await engine.leaderboard("xp_weekly", { limit: 10 });
     assert.deepEqual(full.entries.map((e) => e.rank), [1, 2, 2, 4], "ties share a rank");
 
     const all = await engine.leaderboard("xp_all", { limit: 1 });
-    assert.deepEqual(all.entries[0], { rank: 1, userId: "old", score: 200 });
+    assert.deepEqual(all.entries[0], { rank: 1, userId: "old", score: 200, displayName: null, avatarUrl: null });
 
     now += 7 * DAY;
     assert.equal((await engine.leaderboard("xp_weekly")).entries.length, 0, "new week starts empty");

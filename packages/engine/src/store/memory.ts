@@ -1,8 +1,23 @@
 import type { TrackResult } from "../engine.js";
 import type { StreakState } from "../streaks.js";
-import type { GroupMember, LeaderboardEntry, LeaderboardQuery, Membership, Store, StoredEvent, UserSnapshot, UserTx } from "./types.js";
+import type {
+  EventPageQuery,
+  EventRecord,
+  GroupMember,
+  LeaderboardEntry,
+  LeaderboardQuery,
+  Membership,
+  MigrationReport,
+  ProfileData,
+  PublicProfile,
+  Store,
+  StoredEvent,
+  UserSnapshot,
+  UserTx,
+} from "./types.js";
 
 interface UserData {
+  profile: ProfileData;
   events: Map<string, StoredEvent & { result: TrackResult | null }>;
   idempotency: Map<string, string>;
   metrics: Map<string, number>;
@@ -16,7 +31,11 @@ interface LedgerRow {
   currency: string;
   amount: number;
   ts: number;
+  recordedAt: number;
 }
+
+const emptyProfile = (): ProfileData => ({ displayName: null, avatarUrl: null, metadata: {}, timezone: null });
+const copyProfile = (p: ProfileData): ProfileData => ({ ...p, metadata: structuredClone(p.metadata) });
 
 /** In-process store for tests, demos and local development. Data is lost on exit. */
 export class MemoryStore implements Store {
@@ -25,12 +44,15 @@ export class MemoryStore implements Store {
   private members: Array<Membership & { userId: string }> = [];
   private locks = new Map<string, Promise<unknown>>();
 
-  async migrate(): Promise<void> {}
+  async migrate(): Promise<MigrationReport> {
+    return { applied: [], version: 0 };
+  }
 
   private data(userId: string): UserData {
     let d = this.users.get(userId);
     if (!d) {
       d = {
+        profile: emptyProfile(),
         events: new Map(),
         idempotency: new Map(),
         metrics: new Map(),
@@ -57,6 +79,14 @@ export class MemoryStore implements Store {
   private tx(userId: string): UserTx {
     const d = this.data(userId);
     return {
+      getProfile: async () => copyProfile(d.profile),
+      updateProfile: async (patch) => {
+        if (patch.displayName !== undefined) d.profile.displayName = patch.displayName;
+        if (patch.avatarUrl !== undefined) d.profile.avatarUrl = patch.avatarUrl;
+        if (patch.metadata !== undefined) d.profile.metadata = structuredClone(patch.metadata ?? {});
+        if (patch.timezone !== undefined) d.profile.timezone = patch.timezone;
+        return copyProfile(d.profile);
+      },
       findByIdempotencyKey: async (key) => {
         const id = d.idempotency.get(key);
         return id ? (d.events.get(id)?.result ?? null) : null;
@@ -75,10 +105,10 @@ export class MemoryStore implements Store {
         return total;
       },
       getMetric: async (key) => d.metrics.get(key) ?? 0,
-      addPoints: async (currency, amount, ts) => {
+      addPoints: async (currency, amount, ts, _eventId, recordedAt) => {
         const total = (d.balances.get(currency) ?? 0) + amount;
         d.balances.set(currency, total);
-        this.ledger.push({ userId, currency, amount, ts });
+        this.ledger.push({ userId, currency, amount, ts, recordedAt });
         return total;
       },
       getBalance: async (currency) => d.balances.get(currency) ?? 0,
@@ -120,7 +150,14 @@ export class MemoryStore implements Store {
             userId: m.userId,
             joinedAt: m.joinedAt,
             score: this.ledger
-              .filter((l) => l.userId === m.userId && l.currency === q.currency && l.ts >= q.from && l.ts < q.to)
+              .filter(
+                (l) =>
+                  l.userId === m.userId &&
+                  l.currency === q.currency &&
+                  l.ts >= q.from &&
+                  l.ts < q.to &&
+                  (q.recordedBefore === null || l.recordedAt < q.recordedBefore),
+              )
               .reduce((sum, l) => sum + l.amount, 0),
           }));
         return rows.sort((a, b) => b.score - a.score || a.joinedAt - b.joinedAt || (a.userId < b.userId ? -1 : 1));
@@ -130,8 +167,9 @@ export class MemoryStore implements Store {
 
   async snapshot(userId: string): Promise<UserSnapshot> {
     const d = this.users.get(userId);
-    if (!d) return { metrics: {}, balances: {}, streaks: {}, achievements: [] };
+    if (!d) return { profile: emptyProfile(), metrics: {}, balances: {}, streaks: {}, achievements: [] };
     return {
+      profile: copyProfile(d.profile),
       metrics: Object.fromEntries(d.metrics),
       balances: Object.fromEntries(d.balances),
       streaks: Object.fromEntries([...d.streaks].map(([k, v]) => [k, { ...v }])),
@@ -161,4 +199,28 @@ export class MemoryStore implements Store {
       user: q.userId ? (ranked.find((e) => e.userId === q.userId) ?? null) : null,
     };
   }
+
+  async profiles(userIds: string[]): Promise<Record<string, PublicProfile>> {
+    const out: Record<string, PublicProfile> = {};
+    for (const id of userIds) {
+      const p = this.users.get(id)?.profile;
+      if (p && (p.displayName !== null || p.avatarUrl !== null)) out[id] = { displayName: p.displayName, avatarUrl: p.avatarUrl };
+    }
+    return out;
+  }
+
+  async events(userId: string, q: EventPageQuery): Promise<EventRecord[]> {
+    const d = this.users.get(userId);
+    if (!d) return [];
+    const before = q.before;
+    return [...d.events.values()]
+      .sort((a, b) => b.ts - a.ts || (a.id < b.id ? 1 : -1))
+      .filter((e) => !before || e.ts < before.ts || (e.ts === before.ts && e.id < before.id))
+      .slice(0, q.limit)
+      .map((e) => ({ id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result }));
+  }
+
+  async ping(): Promise<void> {}
+
+  async close(): Promise<void> {}
 }

@@ -79,8 +79,8 @@ test("postgres: leaderboard and group queries return real numbers, not strings",
   await engine.track({ userId: "b", event: "minutes_studied", value: 30 });
   const board = await engine.leaderboard("xp_all", { limit: 5, userId: "a" });
   assert.deepEqual(board.entries, [
-    { rank: 1, userId: "b", score: 60 },
-    { rank: 2, userId: "a", score: 20 },
+    { rank: 1, userId: "b", score: 60, displayName: null, avatarUrl: null },
+    { rank: 2, userId: "a", score: 20, displayName: null, avatarUrl: null },
   ]);
   assert.equal(typeof board.entries[0].rank, "number");
   assert.equal(typeof board.entries[0].score, "number");
