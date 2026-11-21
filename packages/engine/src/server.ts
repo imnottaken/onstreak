@@ -2,6 +2,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { Engine, EngineError } from "./engine.js";
 import { silentLogger, type Logger } from "./logger.js";
+import { openapiSpec } from "./openapi.js";
+import { packageVersion } from "./version.js";
 
 const MAX_BODY = 256 * 1024;
 const REQUEST_ID = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -70,6 +72,7 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
   if (!options.apiKey || options.apiKey.length < 16) throw new Error("apiKey must be at least 16 characters");
   const logger = options.logger ?? silentLogger;
   const healthTimeoutMs = options.healthTimeoutMs ?? 2000;
+  const spec = openapiSpec(packageVersion());
 
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const started = process.hrtime.bigint();
@@ -108,6 +111,8 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
           return send(503, { ok: false, database: "unreachable" });
         }
       }
+
+      if (req.method === "GET" && url.pathname === "/openapi.json") return send(200, spec);
 
       if (state.shuttingDown) throw new HttpError(503, "server is shutting down");
       if (!authorized(req, options.apiKey)) throw new HttpError(401, "missing or wrong API key");

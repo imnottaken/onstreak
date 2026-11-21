@@ -5,6 +5,7 @@ import { resolveConfig, type OnstreakConfig, type ResolvedConfig } from "./confi
 import { MemoryStore } from "./store/memory.js";
 import { fromPgPool, PostgresStore } from "./store/postgres.js";
 import type { Store } from "./store/types.js";
+import { packageVersion } from "./version.js";
 
 export const HELP = `onstreak: open-source gamification engine
 
@@ -37,10 +38,7 @@ const SCHEMA_NAME = /^[a-z_][a-z0-9_]{0,62}$/;
 
 export class CliError extends Error {}
 
-export function version(): string {
-  const url = new URL("../package.json", import.meta.url);
-  return (JSON.parse(readFileSync(url, "utf8")) as { version: string }).version;
-}
+export { packageVersion as version } from "./version.js";
 
 /** Read and validate the config file. Throws CliError with a readable message. */
 export function loadConfig(env: NodeJS.ProcessEnv): { path: string; config: OnstreakConfig; resolved: ResolvedConfig } {
@@ -174,7 +172,7 @@ export async function runCommand(argv: string[], env: NodeJS.ProcessEnv, io: Cli
         return 0;
       case "--version":
       case "-v":
-        io.out(version());
+        io.out(packageVersion());
         return 0;
       default:
         io.err(`unknown command: ${command}\n\n${HELP}`);

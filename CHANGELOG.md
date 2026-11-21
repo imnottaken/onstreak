@@ -15,6 +15,7 @@ All notable changes to onstreak. The format follows [Keep a Changelog](https://k
 - HTTP server with API key auth, request IDs, structured JSON logs, database health check, and graceful shutdown.
 - `onstreak check` and `onstreak migrate` commands.
 - TypeScript SDK covering every route.
+- OpenAPI 3.1 description at `GET /openapi.json`, checked against real responses in tests.
 - Docker image (non-root, with health check) and docker compose setup.
 
 ### Fixed

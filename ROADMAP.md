@@ -41,7 +41,7 @@ Things that would hurt early users if they were missing.
 - [ ] **React components** (L). `StreakFlame`, `LevelBar`, `BadgeGrid`, `Leaderboard`, `LeagueTable`, `AchievementToast`, unstyled and themeable.
 - [ ] **React hooks** (M). `useUser`, `useStreak`, `useLeague`, with optimistic updates after `track()`.
 - [ ] **Docs site** (M). Concepts, config reference, API reference, recipes.
-- [ ] **OpenAPI spec** (M). Generated from the routes, so other languages can generate clients.
+- [x] **OpenAPI spec** (M). Generated from the routes, so other languages can generate clients.
 - [ ] **Next.js + Supabase starter** (M). Clone, add keys, have a gamified app running.
 - [ ] **One-click deploys** (S each). Railway, Render, Fly.io, Vercel with Neon.
 - [ ] **Comparison page** (S). Honest comparison with Trophy, Gami.Fied, building it yourself.

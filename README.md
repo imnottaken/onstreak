@@ -95,8 +95,11 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 | `GET /v1/leagues/:id/users/:userId` | The user's tier, their group's live standings with promotion and demotion zones, and how last round ended |
 | `GET /health` | Ready: the process and the database are up (503 otherwise). No key needed |
 | `GET /health/live` | Alive: the process is up. No key needed |
+| `GET /openapi.json` | OpenAPI 3.1 description of this API. No key needed |
 
 A time zone sent with an event is remembered for that user, so later events and `GET /v1/users/:id` use it when none is given.
+
+The full machine-readable description is served at `GET /openapi.json` (OpenAPI 3.1, no key needed), so you can generate a client for any language. Tests check every response against it, so it stays accurate.
 
 The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `leaderboard`, `league` and `health`. Errors are `OnstreakError` with `status` and `requestId`.
 
