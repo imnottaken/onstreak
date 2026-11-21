@@ -87,7 +87,11 @@ await engine.track({ userId: "asha", event: "lesson_completed" });
 npm test   # builds, then runs the suite against the memory store and embedded Postgres (PGlite)
 
 # Also run against a real Postgres server, including parallel-connection and
-# server-restart tests (each test gets its own schema and cleans up after itself):
+# server-restart tests (each test gets its own schema and cleans up after itself).
+# macOS with Homebrew: one-time `brew install postgresql@16`, then
+npm run test:pg   # starts Postgres if needed, runs everything, stops it again
+
+# Any other Postgres (Docker, remote):
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npm test
 ```
 

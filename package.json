@@ -3,11 +3,18 @@
   "private": true,
   "description": "Open-source gamification engine: points, levels, streaks, achievements and leaderboards for any app.",
   "license": "MIT",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "build": "tsc -b packages/engine packages/sdk",
     "test": "npm run build && node --test packages/engine/test/*.test.mjs",
-    "start": "node packages/engine/dist/main.js"
+    "start": "node packages/engine/dist/main.js",
+    "test:pg": "bash scripts/pg.sh test",
+    "pg:start": "bash scripts/pg.sh start",
+    "pg:stop": "bash scripts/pg.sh stop"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }
