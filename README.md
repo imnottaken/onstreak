@@ -82,15 +82,23 @@ Mistakes (unknown currency, duplicate ids, a typo in a time zone) fail at startu
 
 ## HTTP API
 
-All routes except `/health` need `Authorization: Bearer <ONSTREAK_API_KEY>`.
+All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response carries an `x-request-id` header (send your own to correlate logs), and error bodies include it.
 
 | Route | |
 | --- | --- |
 | `POST /v1/events` | Track an event: `{ userId, event, value?, timestamp?, timezone?, idempotencyKey? }` |
-| `GET /v1/users/:id?timezone=` | Points, level, metrics, streak status (`done`, `pending`, `broken`) and achievements |
-| `GET /v1/leaderboards/:id?limit=&userId=` | Top entries for the current window, plus that user's own rank |
+| `POST /v1/events/batch` | Track up to 100 events in order: `{ events: [...] }`. Bad items are reported in place |
+| `GET /v1/users/:id?timezone=` | Profile, points, level, metrics, streak status (`done`, `pending`, `broken`) and achievements |
+| `PATCH /v1/users/:id` | Set `displayName`, `avatarUrl`, `metadata` (JSON, max 8 KB) or `timezone`. `null` clears a field |
+| `GET /v1/users/:id/events?limit=&cursor=` | The user's events, newest first, with what each one awarded |
+| `GET /v1/leaderboards/:id?limit=&userId=` | Top entries for the current window with names and avatars, plus that user's own rank |
 | `GET /v1/leagues/:id/users/:userId` | The user's tier, their group's live standings with promotion and demotion zones, and how last round ended |
-| `GET /health` | Liveness check |
+| `GET /health` | Ready: the process and the database are up (503 otherwise). No key needed |
+| `GET /health/live` | Alive: the process is up. No key needed |
+
+A time zone sent with an event is remembered for that user, so later events and `GET /v1/users/:id` use it when none is given.
+
+The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `leaderboard`, `league` and `health`. Errors are `OnstreakError` with `status` and `requestId`.
 
 ## Use as a library
 

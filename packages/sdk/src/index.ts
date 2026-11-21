@@ -37,13 +37,30 @@ export interface LeagueStatus {
   tier: string;
   tiers: string[];
   round: { key: string; startsAt: string; endsAt: string };
-  group: { number: number; size: number; entries: Array<{ rank: number; userId: string; score: number; zone: LeagueZone }> } | null;
-  you: { rank: number; userId: string; score: number; zone: LeagueZone } | null;
+  group: { number: number; size: number; entries: Array<LeaderboardEntry & { zone: LeagueZone }> } | null;
+  you: (LeaderboardEntry & { zone: LeagueZone }) | null;
   previous: LeaguePrevious | null;
+}
+
+export interface Profile {
+  displayName: string | null;
+  avatarUrl: string | null;
+  metadata: Record<string, unknown>;
+  /** IANA zone used for this user's streak days. */
+  timezone: string | null;
+}
+
+/** Fields to change. Omitted fields stay as they are; null clears one. */
+export interface ProfilePatch {
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  metadata?: Record<string, unknown> | null;
+  timezone?: string | null;
 }
 
 export interface UserProfile {
   userId: string;
+  profile: Profile;
   points: Record<string, number>;
   level: { current: number; points: number; nextAt: number | null } | null;
   metrics: Record<string, number>;
@@ -55,6 +72,22 @@ export interface LeaderboardEntry {
   rank: number;
   userId: string;
   score: number;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+
+export interface EventHistory {
+  events: Array<{ id: string; event: string; value: number; timestamp: string; recordedAt: string; result: TrackResult | null }>;
+  /** Pass as `cursor` for the next (older) page; null on the last page. */
+  nextCursor: string | null;
+}
+
+export type BatchItemResult = { ok: true; result: TrackResult } | { ok: false; status: number; error: string };
+
+export interface Health {
+  ok: boolean;
+  database?: "ok" | "unreachable";
+  status?: "shutting_down";
 }
 
 export interface LeaderboardResult {
@@ -78,6 +111,8 @@ export class OnstreakError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** The server's x-request-id, to find this request in its logs. */
+    readonly requestId: string | null = null,
   ) {
     super(message);
     this.name = "OnstreakError";
@@ -88,7 +123,7 @@ export function createClient(options: ClientOptions) {
   const base = options.baseUrl.replace(/\/+$/, "");
   const doFetch = options.fetch ?? fetch;
 
-  async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+  async function call<T>(method: string, path: string, body?: unknown, okStatuses: number[] = []): Promise<T> {
     const res = await doFetch(`${base}${path}`, {
       method,
       headers: {
@@ -97,17 +132,38 @@ export function createClient(options: ClientOptions) {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) throw new OnstreakError(res.status, data.error ?? `onstreak request failed with ${res.status}`);
+    const data = (await res.json().catch(() => ({}))) as { error?: string; requestId?: string };
+    if (!res.ok && !okStatuses.includes(res.status)) {
+      throw new OnstreakError(
+        res.status,
+        data.error ?? `onstreak request failed with ${res.status}`,
+        data.requestId ?? res.headers.get("x-request-id"),
+      );
+    }
     return data as T;
   }
+  const user = (userId: string) => `/v1/users/${encodeURIComponent(userId)}`;
 
   return {
     /** Record that a user did something. Returns points, streaks and achievements it triggered. */
     track: (input: TrackInput) => call<TrackResult>("POST", "/v1/events", input),
     /** A user's points, level, streaks and achievements. */
     getUser: (userId: string, opts: { timezone?: string } = {}) =>
-      call<UserProfile>("GET", `/v1/users/${encodeURIComponent(userId)}${opts.timezone ? `?timezone=${encodeURIComponent(opts.timezone)}` : ""}`),
+      call<UserProfile>("GET", `${user(userId)}${opts.timezone ? `?timezone=${encodeURIComponent(opts.timezone)}` : ""}`),
+    /** Track up to 100 events in order. Bad items are reported in place; the rest still count. */
+    trackBatch: (events: TrackInput[]) => call<{ results: BatchItemResult[] }>("POST", "/v1/events/batch", { events }).then((r) => r.results),
+    /** Set a user's display name, avatar, metadata or time zone. Returns the full profile. */
+    updateUser: (userId: string, patch: ProfilePatch) => call<UserProfile>("PATCH", user(userId), patch),
+    /** A user's events, newest first, with what each awarded. Pass `nextCursor` back to page. */
+    events: (userId: string, opts: { limit?: number; cursor?: string } = {}) => {
+      const params = new URLSearchParams();
+      if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+      if (opts.cursor) params.set("cursor", opts.cursor);
+      const qs = params.toString();
+      return call<EventHistory>("GET", `${user(userId)}/events${qs ? `?${qs}` : ""}`);
+    },
+    /** Whether the server and its database are up. Never throws for a 503. */
+    health: () => call<Health>("GET", "/health", undefined, [503]),
     /** Top entries of a leaderboard, plus the given user's own rank. */
     leaderboard: (id: string, opts: { limit?: number; userId?: string } = {}) => {
       const params = new URLSearchParams();

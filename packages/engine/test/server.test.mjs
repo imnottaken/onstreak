@@ -66,3 +66,35 @@ test("server rejects bad keys and bad requests", async () => {
 test("server refuses short API keys", () => {
   assert.throws(() => createOnstreakServer(new Engine(config, new MemoryStore()), { apiKey: "short" }), /16 characters/);
 });
+
+test("SDK covers profiles, batches, history, health and request ids", async () => {
+  await withServer(async (baseUrl) => {
+    const xp = createClient({ baseUrl, apiKey: API_KEY });
+
+    const updated = await xp.updateUser("zara", { displayName: "Zara", metadata: { plan: "pro" } });
+    assert.equal(updated.profile.displayName, "Zara");
+    assert.deepEqual(updated.profile.metadata, { plan: "pro" });
+
+    const results = await xp.trackBatch([
+      { userId: "zara", event: "lesson_completed" },
+      { userId: "zara", event: "nope nope" },
+    ]);
+    assert.equal(results[0].ok, true);
+    assert.equal(results[0].result.points.xp.total, 10);
+    assert.deepEqual({ ok: results[1].ok, status: results[1].status }, { ok: false, status: 400 });
+
+    const history = await xp.events("zara", { limit: 10 });
+    assert.equal(history.events.length, 1);
+    assert.equal(history.nextCursor, null);
+
+    const board = await xp.leaderboard("xp_all", { userId: "zara" });
+    assert.equal(board.user.displayName, "Zara");
+
+    assert.deepEqual(await xp.health(), { ok: true, database: "ok" });
+
+    const err = await xp.updateUser("zara", { nickname: "z" }).catch((e) => e);
+    assert.ok(err instanceof OnstreakError);
+    assert.equal(err.status, 400);
+    assert.match(err.requestId, /^[0-9a-f-]{36}$/, "errors carry the request id for support");
+  });
+});
