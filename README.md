@@ -1,5 +1,7 @@
 # onstreak
 
+[![ci](https://github.com/imnottaken/onstreak/actions/workflows/ci.yml/badge.svg)](https://github.com/imnottaken/onstreak/actions/workflows/ci.yml)
+
 Open-source gamification engine. Add **points, levels, streaks, achievements and leaderboards** to any app with one API call, on your own Postgres. MIT licensed.
 
 ```ts
