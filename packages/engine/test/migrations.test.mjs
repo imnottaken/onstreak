@@ -92,7 +92,8 @@ for (const [name, open] of Object.entries(databases)) {
     assert.equal((await engineA.getUser("same_id")).points.xp, 10);
     assert.equal((await engineB.getUser("same_id")).points.xp, 0, "app b never sees app a's data");
 
-    const tables = (await query("select tablename from pg_tables where tablename like 'onstreak_%'")).rows;
+    // Only look in this test's own schema: other test files run in parallel and create their own tables.
+    const tables = (await query("select tablename from pg_tables where schemaname = current_schema() and tablename like 'onstreak\\_%'")).rows;
     assert.equal(tables.length, 0, "no default-prefixed tables were created");
   });
 }
