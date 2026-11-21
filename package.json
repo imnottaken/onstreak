@@ -8,14 +8,18 @@
   ],
   "scripts": {
     "build": "tsc -b packages/engine packages/sdk packages/react",
-    "test": "npm run build && node --test packages/*/test/*.test.mjs",
+    "test": "npm run build && node --test packages/*/test/*.test.mjs examples/*/test/*.test.mjs",
     "start": "node packages/engine/dist/main.js",
     "test:pg": "bash scripts/pg.sh test",
     "pg:start": "bash scripts/pg.sh start",
     "pg:stop": "bash scripts/pg.sh stop",
-    "release:check": "node scripts/release-check.mjs"
+    "release:check": "node scripts/release-check.mjs",
+    "demo": "node examples/demo/server.mjs"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
   }
 }

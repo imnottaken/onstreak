@@ -18,6 +18,7 @@ All notable changes to onstreak. The format follows [Keep a Changelog](https://k
 - OpenAPI 3.1 description at `GET /openapi.json`, checked against real responses in tests.
 - `level.startsAt` on user profiles, so progress bars know where the current level began.
 - `@onstreak/react`: StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable and AchievementToast, accessible and themeable.
+- `npm run demo`: a study app with simulated rivals and time travel, running in memory.
 - Docker image (non-root, with health check) and docker compose setup.
 
 ### Fixed

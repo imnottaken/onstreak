@@ -25,6 +25,14 @@ const result = await xp.track({ userId: "asha", event: "lesson_completed", timez
 - **Leagues, not just leaderboards.** Each round, players who earn points are seated in small groups within their tier. When the round ends the top of each group moves up and the bottom moves down. No cron job: a user's last round is settled the next time they show up.
 - **MIT, not AGPL.** Use it in closed-source products without legal review.
 
+## Try the demo
+
+```bash
+npm install && npm run build && npm run demo   # http://localhost:3000
+```
+
+A tiny study app with simulated rivals: finish lessons, press **Next day** to build a streak, **Skip a week** to see the league settle. Runs in memory, no database or keys. The source in [examples/demo](examples/demo/server.mjs) shows the engine and the React components working together.
+
 ## Quick start
 
 ```bash
