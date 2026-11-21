@@ -21,3 +21,19 @@ test("release check refuses a tag that does not match the version", () => {
   assert.match(r.stderr, /tag v9\.9\.9 does not match package version/);
   assert.match(r.stderr, /CHANGELOG\.md has no section/);
 });
+
+test("release check catches a package depending on an old version of another", async () => {
+  const { readFileSync, writeFileSync } = await import("node:fs");
+  const path = new URL("../../react/package.json", import.meta.url);
+  const original = readFileSync(path, "utf8");
+  try {
+    const pkg = JSON.parse(original);
+    pkg.dependencies["@onstreak/sdk"] = "0.0.9";
+    writeFileSync(path, JSON.stringify(pkg, null, 2));
+    const r = run();
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /depends on @onstreak\/sdk@0\.0\.9, but this release is/);
+  } finally {
+    writeFileSync(path, original);
+  }
+});

@@ -1,0 +1,78 @@
+/* onstreak components. Optional: import "@onstreak/react/styles.css", or style the os-* classes yourself.
+   Theme with the --os-* variables. */
+:where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast) {
+  --os-fg: #1f2328;
+  --os-muted: #656d76;
+  --os-bg: #ffffff;
+  --os-surface: #f6f8fa;
+  --os-border: #d0d7de;
+  --os-accent: #f97316;
+  --os-up: #1a7f37;
+  --os-down: #cf222e;
+  --os-you: #fff8c5;
+  --os-radius: 10px;
+  color: var(--os-fg);
+  font-family: inherit;
+}
+@media (prefers-color-scheme: dark) {
+  :where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast) {
+    --os-fg: #e6edf3;
+    --os-muted: #8d96a0;
+    --os-bg: #0d1117;
+    --os-surface: #161b22;
+    --os-border: #30363d;
+    --os-up: #3fb950;
+    --os-down: #f85149;
+    --os-you: #3d2f00;
+  }
+}
+.os-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+.os-streak { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; font-size: 1.25rem; }
+.os-streak--pending .os-streak__flame, .os-streak--none .os-streak__flame, .os-streak--broken .os-streak__flame { filter: grayscale(1); opacity: 0.55; }
+.os-streak__freezes { font-size: 0.8em; color: var(--os-muted); margin-left: 4px; }
+
+.os-level__header { display: flex; justify-content: space-between; font-size: 0.875rem; margin-bottom: 6px; }
+.os-level__number { font-weight: 700; }
+.os-level__progress { color: var(--os-muted); }
+.os-level__track { height: 10px; background: var(--os-surface); border: 1px solid var(--os-border); border-radius: 999px; overflow: hidden; }
+.os-level__fill { height: 100%; background: var(--os-accent); border-radius: 999px; transition: width 300ms ease; }
+@media (prefers-reduced-motion: reduce) { .os-level__fill { transition: none; } }
+
+.os-badges { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.os-badge { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 12px 8px; background: var(--os-surface); border: 1px solid var(--os-border); border-radius: var(--os-radius); }
+.os-badge__icon { font-size: 1.75rem; }
+.os-badge__name { font-weight: 600; font-size: 0.875rem; }
+.os-badge__description, .os-badge__date { font-size: 0.75rem; color: var(--os-muted); }
+.os-badge--locked { opacity: 0.5; }
+
+.os-board__title, .os-league__title { margin: 0 0 8px; font-size: 1rem; }
+.os-board__list, .os-league__list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--os-border); border-radius: var(--os-radius); overflow: hidden; }
+.os-board__list--you { margin-top: 8px; }
+.os-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--os-border); background: var(--os-bg); }
+.os-row:first-child { border-top: 0; }
+.os-row--you { background: var(--os-you); font-weight: 600; }
+.os-row__rank { width: 2ch; text-align: right; color: var(--os-muted); font-variant-numeric: tabular-nums; }
+.os-row__name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.os-row__you { color: var(--os-muted); font-weight: 400; }
+.os-row__score { font-variant-numeric: tabular-nums; }
+.os-row__unit { color: var(--os-muted); font-size: 0.75em; }
+.os-row__zone--promotion { color: var(--os-up); font-weight: 700; }
+.os-row__zone--demotion { color: var(--os-down); font-weight: 700; }
+.os-row--promotion { box-shadow: inset 3px 0 0 var(--os-up); }
+.os-row--demotion { box-shadow: inset 3px 0 0 var(--os-down); }
+.os-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex: none; }
+.os-avatar--initials { display: inline-grid; place-items: center; background: var(--os-surface); border: 1px solid var(--os-border); font-size: 0.75rem; font-weight: 700; }
+
+.os-league__header { display: flex; justify-content: space-between; align-items: baseline; }
+.os-league__ends, .os-league__empty, .os-board__empty, .os-badges__empty { color: var(--os-muted); font-size: 0.875rem; }
+.os-league__previous { font-size: 0.875rem; margin: 0 0 8px; }
+.os-league__previous--promoted { color: var(--os-up); }
+.os-league__previous--demoted { color: var(--os-down); }
+
+.os-toast { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; background: var(--os-bg); border: 1px solid var(--os-border); border-radius: var(--os-radius); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); max-width: 360px; }
+.os-toast__icon { font-size: 1.5rem; }
+.os-toast__body { flex: 1; }
+.os-toast__list { margin: 4px 0 0; padding-left: 1.1em; }
+.os-toast__description { color: var(--os-muted); font-size: 0.875em; }
+.os-toast__close { background: none; border: 0; font-size: 1.25rem; line-height: 1; cursor: pointer; color: var(--os-muted); padding: 0 4px; }

@@ -10,6 +10,7 @@ ENV NODE_ENV=production
 COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/packages/engine/package.json ./packages/engine/
 COPY --from=build /app/packages/sdk/package.json ./packages/sdk/
+COPY --from=build /app/packages/react/package.json ./packages/react/
 RUN npm ci --omit=dev --workspace @onstreak/engine && npm cache clean --force
 COPY --from=build /app/packages/engine/dist ./packages/engine/dist
 COPY examples/onstreak.config.json ./onstreak.config.json

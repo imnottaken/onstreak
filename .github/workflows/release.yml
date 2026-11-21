@@ -50,11 +50,11 @@ jobs:
             echo "::error::Add an NPM_TOKEN repository secret (an npm automation token with publish access to @onstreak)."
             exit 1
           fi
-          npm publish --workspace @onstreak/engine --workspace @onstreak/sdk --provenance --access public
+          npm publish --workspace @onstreak/engine --workspace @onstreak/sdk --workspace @onstreak/react --provenance --access public
 
       - name: Dry-run publish
         if: github.event_name == 'workflow_dispatch'
-        run: npm publish --dry-run --workspace @onstreak/engine --workspace @onstreak/sdk --access public
+        run: npm publish --dry-run --workspace @onstreak/engine --workspace @onstreak/sdk --workspace @onstreak/react --access public
 
       - name: Release notes from CHANGELOG.md
         run: |

@@ -7,8 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc -b packages/engine packages/sdk",
-    "test": "npm run build && node --test packages/engine/test/*.test.mjs",
+    "build": "tsc -b packages/engine packages/sdk packages/react",
+    "test": "npm run build && node --test packages/*/test/*.test.mjs",
     "start": "node packages/engine/dist/main.js",
     "test:pg": "bash scripts/pg.sh test",
     "pg:start": "bash scripts/pg.sh start",

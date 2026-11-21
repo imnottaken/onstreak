@@ -103,6 +103,30 @@ The full machine-readable description is served at `GET /openapi.json` (OpenAPI 
 
 The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `leaderboard`, `league` and `health`. Errors are `OnstreakError` with `status` and `requestId`.
 
+## React components
+
+`@onstreak/react` has ready-made, accessible components: `StreakFlame`, `LevelBar`, `BadgeGrid`, `Leaderboard`, `LeagueTable` (with a live countdown) and `AchievementToast`. They take the SDK's data as props, so fetch on your server and pass it down. Never send the API key to a browser.
+
+```tsx
+// Next.js server component
+import { createClient } from "@onstreak/sdk";
+import { StreakFlame, LevelBar, Leaderboard } from "@onstreak/react";
+import "@onstreak/react/styles.css"; // optional; theme with --os-* variables
+
+const onstreak = createClient({ baseUrl: process.env.ONSTREAK_URL!, apiKey: process.env.ONSTREAK_API_KEY! });
+
+export default async function Progress({ userId }: { userId: string }) {
+  const [user, board] = await Promise.all([onstreak.getUser(userId), onstreak.leaderboard("xp_weekly", { userId })]);
+  return (
+    <>
+      <StreakFlame streak={user.streaks.daily_lesson} />
+      {user.level && <LevelBar level={user.level} />}
+      <Leaderboard board={board} currentUserId={userId} title="This week" />
+    </>
+  );
+}
+```
+
 ## Use as a library
 
 ```ts
@@ -133,7 +157,7 @@ CI runs both, against Postgres 16.
 
 ## Releasing
 
-`@onstreak/engine` and `@onstreak/sdk` share one version.
+`@onstreak/engine`, `@onstreak/sdk` and `@onstreak/react` share one version.
 
 1. Move the `[Unreleased]` notes in `CHANGELOG.md` under a new `## [x.y.z]` heading.
 2. Set `"version": "x.y.z"` in both `packages/*/package.json`.

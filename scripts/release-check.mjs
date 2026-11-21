@@ -14,12 +14,20 @@ const errors = [];
 const packages = [
   { dir: "packages/engine", required: ["dist/index.js", "dist/index.d.ts", "dist/main.js", "dist/cli.js"] },
   { dir: "packages/sdk", required: ["dist/index.js", "dist/index.d.ts"] },
+  { dir: "packages/react", required: ["dist/index.js", "dist/index.d.ts", "styles.css"] },
 ].map((p) => ({ ...p, json: JSON.parse(read(`${p.dir}/package.json`)) }));
 
-// 1. One version for both packages.
+// 1. One version for every package, and they depend on each other at that version.
 const versions = new Set(packages.map((p) => p.json.version));
 if (versions.size !== 1) errors.push(`packages must share one version, found: ${[...versions].join(", ")}`);
 const version = packages[0].json.version;
+for (const { dir, json } of packages) {
+  for (const [name, range] of Object.entries({ ...json.dependencies, ...json.peerDependencies })) {
+    if (name.startsWith("@onstreak/") && range !== version) {
+      errors.push(`${dir}/package.json: depends on ${name}@${range}, but this release is ${version}`);
+    }
+  }
+}
 if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) errors.push(`version "${version}" is not semver`);
 
 // 2. Tag and changelog agree when releasing.

@@ -1,0 +1,62 @@
+{
+  "name": "@onstreak/react",
+  "version": "0.1.0",
+  "description": "React components for onstreak: streak flame, level bar, badges, leaderboard, league table, achievement toast",
+  "license": "MIT",
+  "author": "Koustav Dey",
+  "homepage": "https://github.com/imnottaken/onstreak#readme",
+  "bugs": {
+    "url": "https://github.com/imnottaken/onstreak/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imnottaken/onstreak.git",
+    "directory": "packages/react"
+  },
+  "keywords": [
+    "gamification",
+    "streaks",
+    "leaderboard",
+    "achievements",
+    "react",
+    "components"
+  ],
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./styles.css"
+  },
+  "files": [
+    "dist",
+    "styles.css",
+    "!dist/**/*.tsbuildinfo"
+  ],
+  "sideEffects": [
+    "*.css"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "dependencies": {
+    "@onstreak/sdk": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "jsdom": "^31.0.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}
