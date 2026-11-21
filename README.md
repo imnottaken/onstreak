@@ -102,7 +102,7 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 | `PUT /v1/users/:id/friends/:friendId` | Make two users friends (mutual, safe to repeat). 409 past the friend limit |
 | `DELETE /v1/users/:id/friends/:friendId` | End a friendship for both users |
 | `GET /v1/users/:id/friends` | A user's friends, newest first, with names and avatars |
-| `GET /v1/leaderboards/:id?limit=&userId=` | Top entries for the current window with names and avatars, plus that user's own rank |
+| `GET /v1/leaderboards/:id?limit=&userId=&scope=` | Top entries for the current window with names and avatars, plus that user's own rank. `scope=friends` ranks only the user and their friends, zeros included |
 | `GET /v1/leagues/:id/users/:userId` | The user's tier, their group's live standings with promotion and demotion zones, and how last round ended |
 | `GET /health` | Ready: the process and the database are up (503 otherwise). No key needed |
 | `GET /health/live` | Alive: the process is up. No key needed |

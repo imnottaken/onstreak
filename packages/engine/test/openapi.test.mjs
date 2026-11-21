@@ -87,6 +87,10 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   await call("get", "/v1/leaderboards/xp_all?userId=ravi", "/v1/leaderboards/{leaderboardId}");
   await call("get", "/v1/leaderboards/xp_weekly?limit=1", "/v1/leaderboards/{leaderboardId}");
   await call("get", "/v1/leaderboards/nope", "/v1/leaderboards/{leaderboardId}"); // 404
+  await call("put", "/v1/users/asha/friends/maya", "/v1/users/{userId}/friends/{friendId}");
+  const friendsBoard = await call("get", "/v1/leaderboards/xp_weekly?userId=asha&scope=friends", "/v1/leaderboards/{leaderboardId}");
+  assert.deepEqual(friendsBoard.json.entries.map((e) => e.userId), ["asha", "maya"]);
+  await call("get", "/v1/leaderboards/xp_weekly?scope=friends", "/v1/leaderboards/{leaderboardId}"); // 400
 
   await call("get", "/v1/leagues/study_league/users/asha", "/v1/leagues/{leagueId}/users/{userId}");
   await call("get", "/v1/leagues/study_league/users/never-seen", "/v1/leagues/{leagueId}/users/{userId}"); // no group yet

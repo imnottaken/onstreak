@@ -186,6 +186,7 @@ export class MemoryStore implements Store {
     const scores = new Map<string, number>();
     for (const row of this.ledger) {
       if (row.currency !== q.currency) continue;
+      if (q.userIds && !q.userIds.includes(row.userId)) continue;
       if (q.from !== null && row.ts < q.from) continue;
       if (q.to !== null && row.ts >= q.to) continue;
       scores.set(row.userId, (scores.get(row.userId) ?? 0) + row.amount);

@@ -100,6 +100,8 @@ export interface LeaderboardResult {
   id: string;
   currency: string;
   period: "daily" | "weekly" | "monthly" | "all";
+  /** "friends" when only the user and their friends were ranked. */
+  scope: "all" | "friends";
   from: string | null;
   to: string | null;
   entries: LeaderboardEntry[];
@@ -179,10 +181,11 @@ export function createClient(options: ClientOptions) {
     /** Whether the server and its database are up. Never throws for a 503. */
     health: () => call<Health>("GET", "/health", undefined, [503]),
     /** Top entries of a leaderboard, plus the given user's own rank. */
-    leaderboard: (id: string, opts: { limit?: number; userId?: string } = {}) => {
+    leaderboard: (id: string, opts: { limit?: number; userId?: string; scope?: "all" | "friends" } = {}) => {
       const params = new URLSearchParams();
       if (opts.limit !== undefined) params.set("limit", String(opts.limit));
       if (opts.userId) params.set("userId", opts.userId);
+      if (opts.scope) params.set("scope", opts.scope);
       const qs = params.toString();
       return call<LeaderboardResult>("GET", `/v1/leaderboards/${encodeURIComponent(id)}${qs ? `?${qs}` : ""}`);
     },

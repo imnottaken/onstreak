@@ -80,10 +80,13 @@ export interface UserProfile {
   achievements: Array<{ id: string; name: string; description?: string; unlockedAt: string }>;
 }
 
+export type LeaderboardScope = "all" | "friends";
+
 export interface LeaderboardResult {
   id: string;
   currency: string;
   period: LeaderboardPeriod;
+  scope: LeaderboardScope;
   from: string | null;
   to: string | null;
   entries: RankedUser[];
@@ -335,24 +338,45 @@ export class Engine {
     return { userId, profile: snap.profile, points, level, metrics: snap.metrics, streaks, achievements };
   }
 
-  async leaderboard(id: string, options: { limit?: number; userId?: string } = {}): Promise<LeaderboardResult> {
+  /**
+   * Top entries for the current window. With `scope: "friends"`, only the user
+   * and their friends are ranked, and friends with no points yet are included.
+   */
+  async leaderboard(id: string, options: { limit?: number; userId?: string; scope?: LeaderboardScope } = {}): Promise<LeaderboardResult> {
     const rule = this.config.leaderboards.find((l) => l.id === id);
     if (!rule) throw new EngineError(`unknown leaderboard "${id}"`, 404);
     const limit = options.limit ?? 10;
     if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) throw new EngineError(`limit must be a whole number from 1 to ${MAX_LIMIT}`);
+    const scope = options.scope ?? "all";
+    if (scope !== "all" && scope !== "friends") throw new EngineError('scope must be "all" or "friends"');
+    if (scope === "friends" && !options.userId) throw new EngineError("a friends leaderboard needs userId");
     const { from, to } = leaderboardWindow(rule.period, this.now(), rule.timezone ?? "UTC");
-    const { entries, user } = await this.store.leaderboard({
-      currency: rule.currency,
-      from,
-      to,
-      limit,
-      ...(options.userId ? { userId: options.userId } : {}),
-    });
+
+    let entries: LeaderboardEntry[];
+    let user: LeaderboardEntry | null;
+    if (scope === "friends") {
+      const userId = options.userId as string;
+      const ids = [userId, ...(await this.store.friends(userId)).map((f) => f.userId)];
+      const scored = await this.store.leaderboard({ currency: rule.currency, from, to, limit: ids.length, userIds: ids });
+      const scores = new Map(scored.entries.map((e) => [e.userId, e.score]));
+      const ranked = rankScores(ids.map((u) => ({ userId: u, score: scores.get(u) ?? 0 })));
+      entries = ranked.slice(0, limit);
+      user = ranked.find((e) => e.userId === userId) ?? null;
+    } else {
+      ({ entries, user } = await this.store.leaderboard({
+        currency: rule.currency,
+        from,
+        to,
+        limit,
+        ...(options.userId ? { userId: options.userId } : {}),
+      }));
+    }
     const names = await this.store.profiles([...new Set([...entries, ...(user ? [user] : [])].map((e) => e.userId))]);
     return {
       id: rule.id,
       currency: rule.currency,
       period: rule.period,
+      scope,
       from: from === null ? null : new Date(from).toISOString(),
       to: to === null ? null : new Date(to).toISOString(),
       entries: entries.map((e) => withProfile(e, names)),
@@ -571,4 +595,15 @@ export class Engine {
 function withProfile<T extends LeaderboardEntry>(entry: T, names: Record<string, PublicProfile>): T & RankedUser {
   const p = names[entry.userId];
   return { ...entry, displayName: p?.displayName ?? null, avatarUrl: p?.avatarUrl ?? null };
+}
+
+/** Highest first, ties share a rank (1, 2, 2, 4), then by user id for a stable order. */
+function rankScores(rows: Array<{ userId: string; score: number }>): LeaderboardEntry[] {
+  const sorted = [...rows].sort((a, b) => b.score - a.score || (a.userId < b.userId ? -1 : 1));
+  const ranked: LeaderboardEntry[] = [];
+  sorted.forEach((r, i) => {
+    const prev = ranked[i - 1];
+    ranked.push({ ...r, rank: prev && prev.score === r.score ? prev.rank : i + 1 });
+  });
+  return ranked;
 }

@@ -154,7 +154,15 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
       if (req.method === "GET" && resource === "leaderboards" && id && parts.length === 3) {
         const limit = intParam(url, "limit");
         const userId = url.searchParams.get("userId") ?? undefined;
-        return send(200, await engine.leaderboard(id, { ...(limit !== undefined ? { limit } : {}), ...(userId ? { userId } : {}) }));
+        const scope = url.searchParams.get("scope") ?? undefined;
+        return send(
+          200,
+          await engine.leaderboard(id, {
+            ...(limit !== undefined ? { limit } : {}),
+            ...(userId ? { userId } : {}),
+            ...(scope ? { scope: scope as "all" | "friends" } : {}),
+          }),
+        );
       }
 
       if (req.method === "GET" && resource === "leagues" && id && sub === "users" && subId && parts.length === 5) {

@@ -358,6 +358,7 @@ export class PostgresStore implements Store {
          where currency = $1
            and ($2::timestamptz is null or ts >= $2::timestamptz)
            and ($3::timestamptz is null or ts < $3::timestamptz)
+           and ($6::jsonb is null or user_id in (select jsonb_array_elements_text($6::jsonb)))
          group by user_id
        ), ranked as (
          select user_id, score, rank() over (order by score desc) as rank
@@ -375,6 +376,7 @@ export class PostgresStore implements Store {
         q.to === null ? null : new Date(q.to).toISOString(),
         q.limit,
         q.userId ?? null,
+        q.userIds ? JSON.stringify(q.userIds) : null,
       ],
     );
     const toEntry = (r: Record<string, unknown>): LeaderboardEntry => ({ rank: num(r.rank), userId: String(r.user_id), score: num(r.score) });

@@ -11,6 +11,7 @@ export type {
   EventHistory,
   BatchItemResult,
   FriendList,
+  LeaderboardScope,
 } from "./engine.js";
 export { FriendLimitError } from "./store/types.js";
 export { zoneFor, outcomeFor, nextTier, currentRound } from "./leagues.js";

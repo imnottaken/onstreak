@@ -48,6 +48,61 @@ for (const [name, makeStore] of Object.entries(storeFactories)) {
   });
 }
 
+for (const [name, makeStore] of Object.entries(storeFactories)) {
+  test(`${name}: friends leaderboards rank only you and your friends, zeros included`, async (t) => {
+    let now = start;
+    const engine = new Engine(config, await makeStore(t), () => now);
+    const study = (userId, minutes) => engine.track({ userId, event: "minutes_studied", value: minutes });
+    await study("asha", 10); // 20 xp
+    await study("maya", 30); // 60 xp
+    await study("zoe", 50); // 100 xp, but not a friend
+    await study("old_friend", 40); // last week only
+    now += 7 * 86_400_000;
+    await study("asha", 10);
+    await study("maya", 30);
+    await study("zoe", 50);
+    await engine.updateUser("maya", { displayName: "Maya" });
+    await engine.addFriend("asha", "maya");
+    await engine.addFriend("asha", "ravi"); // never studied
+    await engine.addFriend("asha", "old_friend"); // studied only last week
+    await engine.addFriend("maya", "zoe"); // a friend of a friend is not asha's friend
+
+    const board = await engine.leaderboard("xp_weekly", { userId: "asha", scope: "friends" });
+    assert.equal(board.scope, "friends");
+    assert.deepEqual(
+      board.entries.map((e) => [e.rank, e.userId, e.score, e.displayName]),
+      [
+        [1, "maya", 60, "Maya"],
+        [2, "asha", 20, null],
+        [3, "old_friend", 0, null],
+        [3, "ravi", 0, null],
+      ],
+      "zoe is excluded; friends with no points this week tie at the bottom",
+    );
+    assert.deepEqual(board.user, { rank: 2, userId: "asha", score: 20, displayName: null, avatarUrl: null });
+
+    const top1 = await engine.leaderboard("xp_weekly", { userId: "asha", scope: "friends", limit: 1 });
+    assert.deepEqual(top1.entries.map((e) => e.userId), ["maya"]);
+    assert.equal(top1.user.rank, 2, "your own rank still comes back below the limit");
+
+    const allTime = await engine.leaderboard("xp_all", { userId: "asha", scope: "friends" });
+    assert.deepEqual(allTime.entries.map((e) => [e.userId, e.score]), [["maya", 120], ["old_friend", 80], ["asha", 40], ["ravi", 0]]);
+
+    const loner = await engine.leaderboard("xp_weekly", { userId: "nobody", scope: "friends" });
+    assert.deepEqual(loner.entries.map((e) => [e.rank, e.userId, e.score]), [[1, "nobody", 0]], "with no friends it is just you");
+
+    const everyone = await engine.leaderboard("xp_weekly", { userId: "asha" });
+    assert.equal(everyone.scope, "all");
+    assert.equal(everyone.entries[0].userId, "zoe", "the normal board is unchanged");
+  });
+}
+
+test("friends leaderboards need a user and a valid scope", async () => {
+  const engine = new Engine(config, new MemoryStore());
+  await assert.rejects(engine.leaderboard("xp_weekly", { scope: "friends" }), /needs userId/);
+  await assert.rejects(engine.leaderboard("xp_weekly", { userId: "a", scope: "team" }), /scope must be/);
+});
+
 test("friend requests are validated", async () => {
   const engine = new Engine(config, new MemoryStore());
   await assert.rejects(engine.addFriend("a", "a"), /own friend/);

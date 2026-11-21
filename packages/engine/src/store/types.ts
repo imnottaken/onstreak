@@ -135,6 +135,8 @@ export interface LeaderboardQuery {
   to: number | null;
   limit: number;
   userId?: string;
+  /** Only rank these users. */
+  userIds?: string[];
 }
 
 export interface MigrationReport {

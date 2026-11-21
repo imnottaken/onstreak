@@ -184,12 +184,13 @@ const schemas = {
   },
   LeaderboardResult: {
     type: "object",
-    required: ["id", "currency", "period", "from", "to", "entries", "user"],
+    required: ["id", "currency", "period", "scope", "from", "to", "entries", "user"],
     additionalProperties: false,
     properties: {
       id: { type: "string" },
       currency: { type: "string" },
       period: { enum: ["daily", "weekly", "monthly", "all"] },
+      scope: { enum: ["all", "friends"] },
       from: nullable({ type: "string", format: "date-time" }),
       to: nullable({ type: "string", format: "date-time" }),
       entries: { type: "array", items: ref("RankedUser") },
@@ -420,7 +421,16 @@ export function openapiSpec(version: string) {
         get: {
           operationId: "leaderboard",
           summary: "Top entries for the current window",
-          parameters: [limitParam(), { name: "userId", in: "query", schema: { type: "string" }, description: "Also return this user's own rank." }],
+          parameters: [
+            limitParam(),
+            { name: "userId", in: "query", schema: { type: "string" }, description: "Also return this user's own rank. Required for scope=friends." },
+            {
+              name: "scope",
+              in: "query",
+              schema: { enum: ["all", "friends"], default: "all" },
+              description: "friends: rank only the user and their friends, including friends with no points yet.",
+            },
+          ],
           responses: { "200": ok("The leaderboard", ref("LeaderboardResult")), ...authErrors, "404": errorResponse("No such leaderboard") },
         },
       },
