@@ -84,6 +84,10 @@ export function createHandler(engine: Engine, options: ServerOptions) {
         );
       }
 
+      if (req.method === "GET" && parts.length === 5 && parts[1] === "leagues" && parts[3] === "users") {
+        return send(res, 200, await engine.league(parts[2] as string, parts[4] as string));
+      }
+
       throw new HttpError(404, "not found");
     } catch (err) {
       if (err instanceof HttpError || err instanceof EngineError) return send(res, err.status, { error: err.message });

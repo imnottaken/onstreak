@@ -1,5 +1,36 @@
 import type { StreakState } from "../streaks.js";
 import type { TrackResult } from "../engine.js";
+import type { LeagueOutcome } from "../leagues.js";
+
+/** A user's seat in one league round. */
+export interface Membership {
+  leagueId: string;
+  roundKey: string;
+  tier: string;
+  group: number;
+  joinedAt: number;
+  /** Filled in once the round is over and settled. */
+  outcome: LeagueOutcome | null;
+  finalRank: number | null;
+  nextTier: string | null;
+}
+
+export interface GroupQuery {
+  leagueId: string;
+  roundKey: string;
+  tier: string;
+  group: number;
+  currency: string;
+  from: number;
+  to: number;
+}
+
+/** A group member and the points they earned in the round, best first. */
+export interface GroupMember {
+  userId: string;
+  score: number;
+  joinedAt: number;
+}
 
 export interface StoredEvent {
   id: string;
@@ -23,6 +54,13 @@ export interface UserTx {
   setStreak(id: string, state: StreakState): Promise<void>;
   unlockedAchievements(): Promise<Set<string>>;
   unlock(id: string, ts: number): Promise<void>;
+  /** The user's most recent rounds in a league, newest first. */
+  getMemberships(leagueId: string, limit: number): Promise<Membership[]>;
+  /** Seat the user in the first group of their tier with room, opening a new one if all are full. */
+  joinLeague(leagueId: string, roundKey: string, tier: string, groupSize: number, joinedAt: number): Promise<number>;
+  settleMembership(leagueId: string, roundKey: string, result: { outcome: LeagueOutcome; finalRank: number; nextTier: string }): Promise<void>;
+  /** Members of one group with their points in the round, ranked best first. */
+  groupStandings(query: GroupQuery): Promise<GroupMember[]>;
 }
 
 export interface UserSnapshot {

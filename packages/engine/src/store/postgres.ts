@@ -1,6 +1,7 @@
 import type { TrackResult } from "../engine.js";
 import type { StreakState } from "../streaks.js";
-import type { LeaderboardEntry, LeaderboardQuery, Store, UserSnapshot, UserTx } from "./types.js";
+import type { LeagueOutcome } from "../leagues.js";
+import type { LeaderboardEntry, LeaderboardQuery, Membership, Store, UserSnapshot, UserTx } from "./types.js";
 
 /** Anything that can run a parameterized query: a pg client or pool, or PGlite. */
 export interface Queryable {
@@ -96,6 +97,19 @@ create table if not exists onstreak_achievements (
   unlocked_at timestamptz not null,
   primary key (user_id, achievement_id)
 );
+create table if not exists onstreak_league_members (
+  league_id text not null,
+  user_id text not null references onstreak_users(id),
+  round_key text not null,
+  tier text not null,
+  group_no integer not null,
+  joined_at timestamptz not null,
+  outcome text,
+  final_rank integer,
+  next_tier text,
+  primary key (league_id, user_id, round_key)
+);
+create index if not exists onstreak_league_groups on onstreak_league_members (league_id, round_key, tier, group_no);
 `;
 
 const num = (v: unknown): number => (typeof v === "number" ? v : Number(v));
@@ -200,6 +214,62 @@ export class PostgresStore implements Store {
           "insert into onstreak_achievements (user_id, achievement_id, unlocked_at) values ($1, $2, $3) on conflict do nothing",
           [userId, id, new Date(ts).toISOString()],
         );
+      },
+      async getMemberships(leagueId, limit) {
+        const { rows } = await q.query(
+          "select * from onstreak_league_members where user_id = $1 and league_id = $2 order by round_key desc limit $3",
+          [userId, leagueId, limit],
+        );
+        return rows.map(
+          (r): Membership => ({
+            leagueId: String(r.league_id),
+            roundKey: String(r.round_key),
+            tier: String(r.tier),
+            group: num(r.group_no),
+            joinedAt: new Date(iso(r.joined_at)).getTime(),
+            outcome: (r.outcome as LeagueOutcome | null) ?? null,
+            finalRank: r.final_rank === null || r.final_rank === undefined ? null : num(r.final_rank),
+            nextTier: (r.next_tier as string | null) ?? null,
+          }),
+        );
+      },
+      async joinLeague(leagueId, roundKey, tier, groupSize, joinedAt) {
+        // Serialize joins per (league, round, tier) so groups never overfill.
+        await q.query("select pg_advisory_xact_lock(hashtext($1))", [`onstreak:${leagueId}:${roundKey}:${tier}`]);
+        const { rows } = await q.query(
+          `select group_no, count(*) as size from onstreak_league_members
+           where league_id = $1 and round_key = $2 and tier = $3 group by group_no order by group_no`,
+          [leagueId, roundKey, tier],
+        );
+        const sizes = new Map(rows.map((r) => [num(r.group_no), num(r.size)]));
+        let group = 1;
+        while ((sizes.get(group) ?? 0) >= groupSize) group++;
+        await q.query(
+          `insert into onstreak_league_members (league_id, user_id, round_key, tier, group_no, joined_at)
+           values ($1, $2, $3, $4, $5, $6)`,
+          [leagueId, userId, roundKey, tier, group, new Date(joinedAt).toISOString()],
+        );
+        return group;
+      },
+      async settleMembership(leagueId, roundKey, result) {
+        await q.query(
+          `update onstreak_league_members set outcome = $4, final_rank = $5, next_tier = $6
+           where league_id = $1 and user_id = $2 and round_key = $3`,
+          [leagueId, userId, roundKey, result.outcome, result.finalRank, result.nextTier],
+        );
+      },
+      async groupStandings(g) {
+        const { rows } = await q.query(
+          `select m.user_id, m.joined_at, coalesce(sum(l.amount), 0) as score
+           from onstreak_league_members m
+           left join onstreak_ledger l
+             on l.user_id = m.user_id and l.currency = $5 and l.ts >= $6::timestamptz and l.ts < $7::timestamptz
+           where m.league_id = $1 and m.round_key = $2 and m.tier = $3 and m.group_no = $4
+           group by m.user_id, m.joined_at
+           order by score desc, m.joined_at asc, m.user_id`,
+          [g.leagueId, g.roundKey, g.tier, g.group, g.currency, new Date(g.from).toISOString(), new Date(g.to).toISOString()],
+        );
+        return rows.map((r) => ({ userId: String(r.user_id), score: num(r.score), joinedAt: new Date(iso(r.joined_at)).getTime() }));
       },
     };
   }

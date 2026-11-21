@@ -49,6 +49,24 @@ export interface LevelConfig {
   thresholds: number[];
 }
 
+export interface LeagueRule {
+  id: string;
+  /** Points in this currency decide the standings. */
+  currency: string;
+  /** Lowest to highest, e.g. ["bronze", "silver", "gold"]. Everyone starts in the first. */
+  tiers: string[];
+  /** Members per group. Default 30. */
+  groupSize?: number;
+  /** How many move up from each group when the period ends. Default 7. */
+  promote?: number;
+  /** How many move down from each group when the period ends. Default 5. */
+  demote?: number;
+  /** How long a round lasts. Default weekly. */
+  period?: StreakPeriod;
+  /** Time zone where rounds start and end. Default UTC. */
+  timezone?: string;
+}
+
 export interface OnstreakConfig {
   /** Time zone used for streaks when an event does not say. Default UTC. */
   defaultTimezone?: string;
@@ -58,6 +76,19 @@ export interface OnstreakConfig {
   streaks?: StreakRule[];
   achievements?: AchievementRule[];
   leaderboards?: LeaderboardRule[];
+  leagues?: LeagueRule[];
+}
+
+/** A league with every default filled in. */
+export interface ResolvedLeague {
+  id: string;
+  currency: string;
+  tiers: string[];
+  groupSize: number;
+  promote: number;
+  demote: number;
+  period: StreakPeriod;
+  timezone: string;
 }
 
 /** Normalized config with every optional list present. */
@@ -69,6 +100,7 @@ export interface ResolvedConfig {
   streaks: StreakRule[];
   achievements: AchievementRule[];
   leaderboards: LeaderboardRule[];
+  leagues: ResolvedLeague[];
 }
 
 export class ConfigError extends Error {
@@ -164,7 +196,35 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     if (l.timezone && !isValidTimeZone(l.timezone)) throw new ConfigError(`leaderboard "${l.id}" has unknown timezone "${l.timezone}"`);
   }
 
-  return { defaultTimezone, currencies: [...currencies], points, levels, streaks, achievements, leaderboards };
+  const leagues: ResolvedLeague[] = [];
+  uniqueIds("league", (input.leagues ?? []).map((l) => l.id));
+  for (const l of input.leagues ?? []) {
+    hasCurrency(l.currency, `league "${l.id}"`);
+    if (!Array.isArray(l.tiers) || l.tiers.length < 2) throw new ConfigError(`league "${l.id}" needs at least two tiers`);
+    uniqueIds(`tier in league "${l.id}"`, l.tiers);
+    const resolved: ResolvedLeague = {
+      id: l.id,
+      currency: l.currency,
+      tiers: [...l.tiers],
+      groupSize: l.groupSize ?? 30,
+      promote: l.promote ?? 7,
+      demote: l.demote ?? 5,
+      period: l.period ?? "weekly",
+      timezone: l.timezone ?? "UTC",
+    };
+    for (const key of ["groupSize", "promote", "demote"] as const) {
+      if (!Number.isInteger(resolved[key]) || resolved[key] < 0) throw new ConfigError(`league "${l.id}" ${key} must be a whole number`);
+    }
+    if (resolved.groupSize < 2 || resolved.groupSize > 1000) throw new ConfigError(`league "${l.id}" groupSize must be 2 to 1000`);
+    if (resolved.promote + resolved.demote > resolved.groupSize) {
+      throw new ConfigError(`league "${l.id}" promote + demote cannot exceed groupSize`);
+    }
+    if (!STREAK_PERIODS.includes(resolved.period)) throw new ConfigError(`league "${l.id}" period must be daily or weekly`);
+    if (!isValidTimeZone(resolved.timezone)) throw new ConfigError(`league "${l.id}" has unknown timezone "${resolved.timezone}"`);
+    leagues.push(resolved);
+  }
+
+  return { defaultTimezone, currencies: [...currencies], points, levels, streaks, achievements, leaderboards, leagues };
 }
 
 /** Level for a points total: 1 plus every threshold reached. */

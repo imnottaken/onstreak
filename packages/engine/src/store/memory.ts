@@ -1,6 +1,6 @@
 import type { TrackResult } from "../engine.js";
 import type { StreakState } from "../streaks.js";
-import type { LeaderboardEntry, LeaderboardQuery, Store, StoredEvent, UserSnapshot, UserTx } from "./types.js";
+import type { GroupMember, LeaderboardEntry, LeaderboardQuery, Membership, Store, StoredEvent, UserSnapshot, UserTx } from "./types.js";
 
 interface UserData {
   events: Map<string, StoredEvent & { result: TrackResult | null }>;
@@ -22,6 +22,7 @@ interface LedgerRow {
 export class MemoryStore implements Store {
   private users = new Map<string, UserData>();
   private ledger: LedgerRow[] = [];
+  private members: Array<Membership & { userId: string }> = [];
   private locks = new Map<string, Promise<unknown>>();
 
   async migrate(): Promise<void> {}
@@ -91,6 +92,38 @@ export class MemoryStore implements Store {
       unlockedAchievements: async () => new Set(d.achievements.keys()),
       unlock: async (id, ts) => {
         if (!d.achievements.has(id)) d.achievements.set(id, ts);
+      },
+      getMemberships: async (leagueId, limit) =>
+        this.members
+          .filter((m) => m.userId === userId && m.leagueId === leagueId)
+          .sort((a, b) => (a.roundKey < b.roundKey ? 1 : -1))
+          .slice(0, limit)
+          .map(({ userId: _u, ...m }) => ({ ...m })),
+      joinLeague: async (leagueId, roundKey, tier, groupSize, joinedAt) => {
+        const counts = new Map<number, number>();
+        for (const m of this.members) {
+          if (m.leagueId === leagueId && m.roundKey === roundKey && m.tier === tier) counts.set(m.group, (counts.get(m.group) ?? 0) + 1);
+        }
+        let group = 1;
+        while ((counts.get(group) ?? 0) >= groupSize) group++;
+        this.members.push({ userId, leagueId, roundKey, tier, group, joinedAt, outcome: null, finalRank: null, nextTier: null });
+        return group;
+      },
+      settleMembership: async (leagueId, roundKey, result) => {
+        const m = this.members.find((x) => x.userId === userId && x.leagueId === leagueId && x.roundKey === roundKey);
+        if (m) Object.assign(m, result);
+      },
+      groupStandings: async (q) => {
+        const rows: GroupMember[] = this.members
+          .filter((m) => m.leagueId === q.leagueId && m.roundKey === q.roundKey && m.tier === q.tier && m.group === q.group)
+          .map((m) => ({
+            userId: m.userId,
+            joinedAt: m.joinedAt,
+            score: this.ledger
+              .filter((l) => l.userId === m.userId && l.currency === q.currency && l.ts >= q.from && l.ts < q.to)
+              .reduce((sum, l) => sum + l.amount, 0),
+          }));
+        return rows.sort((a, b) => b.score - a.score || a.joinedAt - b.joinedAt || (a.userId < b.userId ? -1 : 1));
       },
     };
   }

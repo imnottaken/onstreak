@@ -19,6 +19,27 @@ export interface TrackResult {
   level: { current: number; previous: number; leveledUp: boolean } | null;
   streaks: Record<string, { current: number; longest: number; freezes: number; extended: boolean; freezesUsed: number; reset: boolean }>;
   achievements: Array<{ id: string; name: string; description?: string }>;
+  leagues: Record<string, { tier: string; group: number; joined: boolean; previous: LeaguePrevious | null }>;
+}
+
+export interface LeaguePrevious {
+  round: string;
+  tier: string;
+  rank: number;
+  outcome: "promoted" | "demoted" | "stayed";
+  nextTier: string;
+}
+
+export type LeagueZone = "promotion" | "demotion" | "safe";
+
+export interface LeagueStatus {
+  id: string;
+  tier: string;
+  tiers: string[];
+  round: { key: string; startsAt: string; endsAt: string };
+  group: { number: number; size: number; entries: Array<{ rank: number; userId: string; score: number; zone: LeagueZone }> } | null;
+  you: { rank: number; userId: string; score: number; zone: LeagueZone } | null;
+  previous: LeaguePrevious | null;
 }
 
 export interface UserProfile {
@@ -95,6 +116,9 @@ export function createClient(options: ClientOptions) {
       const qs = params.toString();
       return call<LeaderboardResult>("GET", `/v1/leaderboards/${encodeURIComponent(id)}${qs ? `?${qs}` : ""}`);
     },
+    /** The user's league tier, their group's live standings this round, and how last round ended. */
+    league: (id: string, userId: string) =>
+      call<LeagueStatus>("GET", `/v1/leagues/${encodeURIComponent(id)}/users/${encodeURIComponent(userId)}`),
   };
 }
 

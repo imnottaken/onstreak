@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { levelFor, resolveConfig, type ResolvedConfig, type OnstreakConfig } from "./config.js";
+import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type OnstreakConfig } from "./config.js";
+import { currentRound, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
-import type { LeaderboardEntry, Store } from "./store/types.js";
+import type { LeaderboardEntry, Membership, Store, UserTx } from "./store/types.js";
 import { isValidTimeZone, leaderboardWindow, periodKey, type LeaderboardPeriod } from "./time.js";
 
 export class EngineError extends Error {
@@ -37,6 +38,29 @@ export interface TrackResult {
   level: { current: number; previous: number; leveledUp: boolean } | null;
   streaks: Record<string, { current: number; longest: number; freezes: number; extended: boolean; freezesUsed: number; reset: boolean }>;
   achievements: Array<{ id: string; name: string; description?: string }>;
+  /** Leagues this event counted toward. `joined` is true the first time in a round. */
+  leagues: Record<string, { tier: string; group: number; joined: boolean; previous: LeaguePrevious | null }>;
+}
+
+/** How the user's last finished round of a league ended. */
+export interface LeaguePrevious {
+  round: string;
+  tier: string;
+  rank: number;
+  outcome: LeagueOutcome;
+  nextTier: string;
+}
+
+export interface LeagueStatus {
+  id: string;
+  /** The tier the user is in now (or will join in when they next earn points). */
+  tier: string;
+  tiers: string[];
+  round: { key: string; startsAt: string; endsAt: string };
+  /** The user's group this round, or null if they have not earned points yet this round. */
+  group: { number: number; size: number; entries: Array<{ rank: number; userId: string; score: number; zone: LeagueZone }> } | null;
+  you: { rank: number; userId: string; score: number; zone: LeagueZone } | null;
+  previous: LeaguePrevious | null;
 }
 
 export interface UserProfile {
@@ -157,7 +181,19 @@ export class Engine {
         level = { current, previous: levelBefore, leveledUp: current > levelBefore };
       }
 
-      const result: TrackResult = { eventId, userId, event, value, duplicate: false, points, level, streaks, achievements };
+      const leagues: TrackResult["leagues"] = {};
+      const now = this.now();
+      for (const league of config.leagues) {
+        if ((points[league.currency]?.awarded ?? 0) <= 0) continue;
+        // Only points earned in the round that is running now count toward a league.
+        if (currentRound(league, ts).key !== currentRound(league, now).key) continue;
+        const seat = await this.seat(tx, userId, league, now, ts);
+        if (seat.current) {
+          leagues[league.id] = { tier: seat.tier, group: seat.current.group, joined: seat.joined, previous: seat.joined ? seat.previous : null };
+        }
+      }
+
+      const result: TrackResult = { eventId, userId, event, value, duplicate: false, points, level, streaks, achievements, leagues };
       await tx.setEventResult(eventId, result);
       return result;
     });
@@ -222,5 +258,102 @@ export class Engine {
       entries,
       user,
     };
+  }
+
+  /** A user's tier, their group's live standings this round, and how last round ended. */
+  async league(id: string, userId: string): Promise<LeagueStatus> {
+    const league = this.config.leagues.find((l) => l.id === id);
+    if (!league) throw new EngineError(`unknown league "${id}"`, 404);
+    if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces");
+    const now = this.now();
+
+    return this.store.withUser(userId, async (tx) => {
+      const seat = await this.seat(tx, userId, league, now, null);
+      let group: LeagueStatus["group"] = null;
+      if (seat.current) {
+        const standings = await tx.groupStandings({
+          leagueId: league.id,
+          roundKey: seat.round.key,
+          tier: seat.current.tier,
+          group: seat.current.group,
+          currency: league.currency,
+          from: seat.round.from,
+          to: seat.round.to,
+        });
+        const tierIndex = league.tiers.indexOf(seat.current.tier);
+        group = {
+          number: seat.current.group,
+          size: standings.length,
+          entries: standings.map((m, i) => ({
+            rank: i + 1,
+            userId: m.userId,
+            score: m.score,
+            zone: zoneFor(league, tierIndex, i + 1, standings.length),
+          })),
+        };
+      }
+      return {
+        id: league.id,
+        tier: seat.tier,
+        tiers: league.tiers,
+        round: { key: seat.round.key, startsAt: new Date(seat.round.from).toISOString(), endsAt: new Date(seat.round.to).toISOString() },
+        group,
+        you: group?.entries.find((e) => e.userId === userId) ?? null,
+        previous: seat.previous,
+      };
+    });
+  }
+
+  /**
+   * Work out where a user sits in a league right now. Settles their last
+   * finished round on the way (no background job needed), and when
+   * `joinAt` is given, seats them in a group for the current round.
+   */
+  private async seat(
+    tx: UserTx,
+    userId: string,
+    league: ResolvedLeague,
+    now: number,
+    joinAt: number | null,
+  ): Promise<{ round: LeagueRound; tier: string; current: Membership | null; previous: LeaguePrevious | null; joined: boolean }> {
+    const round = currentRound(league, now);
+    const [latest, before] = await tx.getMemberships(league.id, 2);
+
+    if (latest && latest.roundKey >= round.key) {
+      const previous = before ? await this.settle(tx, userId, league, before) : null;
+      return { round, tier: latest.tier, current: latest, previous, joined: false };
+    }
+
+    const previous = latest ? await this.settle(tx, userId, league, latest) : null;
+    const tier = previous ? previous.nextTier : (league.tiers[0] as string);
+    if (joinAt === null) return { round, tier, current: null, previous, joined: false };
+
+    const group = await tx.joinLeague(league.id, round.key, tier, league.groupSize, joinAt);
+    const current: Membership = { leagueId: league.id, roundKey: round.key, tier, group, joinedAt: joinAt, outcome: null, finalRank: null, nextTier: null };
+    return { round, tier, current, previous, joined: true };
+  }
+
+  /** Final result of a finished round, computed once and then stored. */
+  private async settle(tx: UserTx, userId: string, league: ResolvedLeague, m: Membership): Promise<LeaguePrevious> {
+    if (m.outcome && m.finalRank !== null && m.nextTier) {
+      return { round: m.roundKey, tier: m.tier, rank: m.finalRank, outcome: m.outcome, nextTier: m.nextTier };
+    }
+    const r = roundFromKey(league, m.roundKey);
+    const standings = await tx.groupStandings({
+      leagueId: league.id,
+      roundKey: m.roundKey,
+      tier: m.tier,
+      group: m.group,
+      currency: league.currency,
+      from: r.from,
+      to: r.to,
+    });
+    const index = standings.findIndex((s) => s.userId === userId);
+    const rank = index === -1 ? standings.length + 1 : index + 1;
+    const size = Math.max(standings.length, rank);
+    const outcome = outcomeFor(league, league.tiers.indexOf(m.tier), rank, size);
+    const next = nextTier(league, m.tier, outcome);
+    await tx.settleMembership(league.id, m.roundKey, { outcome, finalRank: rank, nextTier: next });
+    return { round: m.roundKey, tier: m.tier, rank, outcome, nextTier: next };
   }
 }
