@@ -111,6 +111,21 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   c.check("put", "/v1/users/{userId}/friends/{friendId}", full.status, await full.json());
   assert.equal(full.status, 409);
 
+  await call("put", "/v1/rivalries/weekly_duel/users/asha/rivals/ravi", "/v1/rivalries/{rivalryId}/users/{userId}/rivals/{rivalId}");
+  await call("put", "/v1/rivalries/weekly_duel/users/ravi/rivals/asha", "/v1/rivalries/{rivalryId}/users/{userId}/rivals/{rivalId}"); // already
+  await call("put", "/v1/rivalries/nope/users/asha/rivals/ravi", "/v1/rivalries/{rivalryId}/users/{userId}/rivals/{rivalId}"); // 404
+  await call("put", "/v1/rivalries/weekly_duel/users/asha/rivals/asha", "/v1/rivalries/{rivalryId}/users/{userId}/rivals/{rivalId}"); // 400
+  const rivals = await call("get", "/v1/rivalries/weekly_duel/users/asha", "/v1/rivalries/{rivalryId}/users/{userId}");
+  assert.equal(rivals.json.rivals[0].rivalId, "ravi");
+  await call("get", "/v1/rivalries/nope/users/asha", "/v1/rivalries/{rivalryId}/users/{userId}"); // 404
+  await call("delete", "/v1/rivalries/weekly_duel/users/asha/rivals/ravi", "/v1/rivalries/{rivalryId}/users/{userId}/rivals/{rivalId}");
+  const smallRivals = await serve(t, new MemoryStore(), { ...config, rivalries: [{ id: "weekly_duel", currency: "xp", max: 1 }] });
+  const rival = (a, b) => fetch(`${smallRivals.base}/v1/rivalries/weekly_duel/users/${a}/rivals/${b}`, { method: "PUT", headers: { authorization: `Bearer ${API_KEY}` } });
+  await rival("x", "y");
+  const tooMany = await rival("x", "z");
+  c.check("put", "/v1/rivalries/{rivalryId}/users/{userId}/rivals/{rivalId}", tooMany.status, await tooMany.json());
+  assert.equal(tooMany.status, 409);
+
   await call("get", "/health", "/health", undefined, { key: null });
   store.ping = async () => {
     throw new Error("down");

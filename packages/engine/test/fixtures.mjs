@@ -19,4 +19,5 @@ export const config = {
     { id: "xp_all", currency: "xp", period: "all" },
   ],
   leagues: [{ id: "study_league", currency: "xp", tiers: ["bronze", "silver", "gold"] }],
+  rivalries: [{ id: "weekly_duel", currency: "xp" }],
 };

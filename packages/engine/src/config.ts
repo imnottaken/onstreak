@@ -67,6 +67,26 @@ export interface LeagueRule {
   timezone?: string;
 }
 
+export interface RivalryRule {
+  id: string;
+  /** Points in this currency decide each round. */
+  currency: string;
+  /** How long a round lasts. Default weekly. */
+  period?: StreakPeriod;
+  /** Time zone where rounds start and end. Default UTC. */
+  timezone?: string;
+  /** Most rivals one user can have in this rivalry. Default 10. */
+  max?: number;
+}
+
+export interface ResolvedRivalry {
+  id: string;
+  currency: string;
+  period: StreakPeriod;
+  timezone: string;
+  max: number;
+}
+
 export interface OnstreakConfig {
   /** Time zone used for streaks when an event does not say. Default UTC. */
   defaultTimezone?: string;
@@ -77,6 +97,7 @@ export interface OnstreakConfig {
   achievements?: AchievementRule[];
   leaderboards?: LeaderboardRule[];
   leagues?: LeagueRule[];
+  rivalries?: RivalryRule[];
   friends?: {
     /** Most friends one user can have. Default 1000. */
     max?: number;
@@ -105,6 +126,7 @@ export interface ResolvedConfig {
   achievements: AchievementRule[];
   leaderboards: LeaderboardRule[];
   leagues: ResolvedLeague[];
+  rivalries: ResolvedRivalry[];
   friends: { max: number };
 }
 
@@ -229,6 +251,23 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     leagues.push(resolved);
   }
 
+  const rivalries: ResolvedRivalry[] = [];
+  uniqueIds("rivalry", (input.rivalries ?? []).map((r) => r.id));
+  for (const r of input.rivalries ?? []) {
+    hasCurrency(r.currency, `rivalry "${r.id}"`);
+    const resolved: ResolvedRivalry = {
+      id: r.id,
+      currency: r.currency,
+      period: r.period ?? "weekly",
+      timezone: r.timezone ?? "UTC",
+      max: r.max ?? 10,
+    };
+    if (!STREAK_PERIODS.includes(resolved.period)) throw new ConfigError(`rivalry "${r.id}" period must be daily or weekly`);
+    if (!isValidTimeZone(resolved.timezone)) throw new ConfigError(`rivalry "${r.id}" has unknown timezone "${resolved.timezone}"`);
+    if (!Number.isInteger(resolved.max) || resolved.max < 1 || resolved.max > 1000) throw new ConfigError(`rivalry "${r.id}" max must be a whole number from 1 to 1000`);
+    rivalries.push(resolved);
+  }
+
   const maxFriends = input.friends?.max ?? 1000;
   if (!Number.isInteger(maxFriends) || maxFriends < 1 || maxFriends > 100_000) {
     throw new ConfigError("friends.max must be a whole number from 1 to 100000");
@@ -243,6 +282,7 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     achievements,
     leaderboards,
     leagues,
+    rivalries,
     friends: { max: maxFriends },
   };
 }

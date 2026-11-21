@@ -85,6 +85,8 @@ Everything is declared in one JSON file. See [examples/onstreak.config.json](exa
 | `achievements` | Unlock when a metric, streak or point total reaches `gte` |
 | `leaderboards` | `{ id, currency, period: daily \| weekly \| monthly \| all, timezone? }` |
 | `leagues` | `{ id, currency, tiers, groupSize?, promote?, demote?, period?, timezone? }` (defaults: 30 per group, 7 up, 5 down, weekly) |
+| `rivalries` | `{ id, currency, period?, timezone?, max? }` (defaults: weekly, UTC, 10 rivals each) |
+| `friends` | `{ max? }` (default 1000) |
 
 Mistakes (unknown currency, duplicate ids, a typo in a time zone) fail at startup with a clear message.
 
@@ -102,6 +104,9 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 | `PUT /v1/users/:id/friends/:friendId` | Make two users friends (mutual, safe to repeat). 409 past the friend limit |
 | `DELETE /v1/users/:id/friends/:friendId` | End a friendship for both users |
 | `GET /v1/users/:id/friends` | A user's friends, newest first, with names and avatars |
+| `PUT /v1/rivalries/:id/users/:userId/rivals/:rivalId` | Start a head-to-head rivalry (mutual, safe to repeat). 409 past the rivalry's `max` |
+| `DELETE /v1/rivalries/:id/users/:userId/rivals/:rivalId` | End a rivalry and drop its record |
+| `GET /v1/rivalries/:id/users/:userId` | Each rival's live score this round, win/loss/draw record, current streak and last result |
 | `GET /v1/leaderboards/:id?limit=&userId=&scope=` | Top entries for the current window with names and avatars, plus that user's own rank. `scope=friends` ranks only the user and their friends, zeros included |
 | `GET /v1/leagues/:id/users/:userId` | The user's tier, their group's live standings with promotion and demotion zones, and how last round ended |
 | `GET /health` | Ready: the process and the database are up (503 otherwise). No key needed |
@@ -112,7 +117,7 @@ A time zone sent with an event is remembered for that user, so later events and 
 
 The full machine-readable description is served at `GET /openapi.json` (OpenAPI 3.1, no key needed), so you can generate a client for any language. Tests check every response against it, so it stays accurate.
 
-The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `leaderboard`, `league` and `health`. Errors are `OnstreakError` with `status` and `requestId`.
+The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `leaderboard`, `league` and `health`. Errors are `OnstreakError` with `status` and `requestId`.
 
 ## React components
 
@@ -178,7 +183,6 @@ The release workflow runs every test against real Postgres, checks the packages 
 
 ## Roadmap
 
-- Friend rivalries (head-to-head weekly matchups)
 - Quests and time-limited challenges
 - Webhooks for level-ups and unlocks
 - Admin dashboard

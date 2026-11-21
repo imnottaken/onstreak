@@ -2,10 +2,12 @@ import type { TrackResult } from "../engine.js";
 import type { StreakState } from "../streaks.js";
 import type { LeagueOutcome } from "../leagues.js";
 import { LATEST_VERSION, MIGRATIONS, tableNames, type Tables } from "./migrations.js";
-import { FriendLimitError } from "./types.js";
+import { FriendLimitError, RivalLimitError } from "./types.js";
 import type {
   EventPageQuery,
   FriendRecord,
+  RivalRecord,
+  WindowScoreQuery,
   EventRecord,
   LeaderboardEntry,
   LeaderboardQuery,
@@ -463,6 +465,103 @@ export class PostgresStore implements Store {
       displayName: (r.display_name as string | null) ?? null,
       avatarUrl: (r.avatar_url as string | null) ?? null,
     }));
+  }
+
+  async addRivalry(rivalryId: string, a: string, b: string, startedRound: string, ts: number, max: number): Promise<boolean> {
+    const t = this.t;
+    const [ua, ub] = a < b ? [a, b] : [b, a];
+    return this.db.transaction(async (q) => {
+      for (const id of [ua, ub]) {
+        await q.query(`insert into ${t.users} (id) values ($1) on conflict (id) do nothing`, [id]);
+        await q.query(`select id from ${t.users} where id = $1 for update`, [id]);
+      }
+      const existing = await q.query(`select 1 from ${t.rivalries} where rivalry_id = $1 and user_a = $2 and user_b = $3`, [rivalryId, ua, ub]);
+      if (existing.rows.length > 0) return false;
+      for (const id of [a, b]) {
+        const { rows } = await q.query(`select count(*) as n from ${t.rivalries} where rivalry_id = $1 and (user_a = $2 or user_b = $2)`, [rivalryId, id]);
+        if (num(rows[0]?.n) >= max) throw new RivalLimitError(id);
+      }
+      await q.query(`insert into ${t.rivalries} (rivalry_id, user_a, user_b, started_round, created_at) values ($1, $2, $3, $4, $5)`, [
+        rivalryId,
+        ua,
+        ub,
+        startedRound,
+        new Date(ts).toISOString(),
+      ]);
+      return true;
+    });
+  }
+
+  async removeRivalry(rivalryId: string, a: string, b: string): Promise<boolean> {
+    const [ua, ub] = a < b ? [a, b] : [b, a];
+    const { rows } = await this.db.query(
+      `delete from ${this.t.rivalries} where rivalry_id = $1 and user_a = $2 and user_b = $3 returning rivalry_id`,
+      [rivalryId, ua, ub],
+    );
+    return rows.length > 0;
+  }
+
+  async rivalries(rivalryId: string, userId: string): Promise<RivalRecord[]> {
+    const t = this.t;
+    const [pairs, rounds] = await Promise.all([
+      this.db.query(
+        `select case when user_a = $2 then user_b else user_a end as rival, started_round, created_at
+         from ${t.rivalries} where rivalry_id = $1 and (user_a = $2 or user_b = $2)
+         order by created_at desc, rival`,
+        [rivalryId, userId],
+      ),
+      this.db.query(
+        `select user_a, user_b, round_key, score_a, score_b from ${t.rivalryRounds}
+         where rivalry_id = $1 and (user_a = $2 or user_b = $2) order by round_key`,
+        [rivalryId, userId],
+      ),
+    ]);
+    const byRival = new Map<string, RivalRecord["rounds"]>();
+    for (const r of rounds.rows) {
+      const mine = r.user_a === userId;
+      const rival = String(mine ? r.user_b : r.user_a);
+      const list = byRival.get(rival) ?? [];
+      list.push({ roundKey: String(r.round_key), you: num(mine ? r.score_a : r.score_b), them: num(mine ? r.score_b : r.score_a) });
+      byRival.set(rival, list);
+    }
+    return pairs.rows.map((r) => ({
+      rivalId: String(r.rival),
+      startedRound: String(r.started_round),
+      since: ms(r.created_at),
+      rounds: byRival.get(String(r.rival)) ?? [],
+    }));
+  }
+
+  async recordRivalryRound(rivalryId: string, a: string, b: string, roundKey: string, scoreA: number, scoreB: number): Promise<void> {
+    const t = this.t;
+    const [ua, ub, sa, sb] = a < b ? [a, b, scoreA, scoreB] : [b, a, scoreB, scoreA];
+    // Only if the rivalry still exists (it may have been ended meanwhile).
+    await this.db.query(
+      `insert into ${t.rivalryRounds} (rivalry_id, user_a, user_b, round_key, score_a, score_b)
+       select $1, $2, $3, $4, $5, $6
+       where exists (select 1 from ${t.rivalries} where rivalry_id = $1 and user_a = $2 and user_b = $3)
+       on conflict do nothing`,
+      [rivalryId, ua, ub, roundKey, sa, sb],
+    );
+  }
+
+  async windowScores(q: WindowScoreQuery): Promise<Record<string, number>> {
+    if (q.userIds.length === 0) return {};
+    const { rows } = await this.db.query(
+      `select user_id, sum(amount) as score from ${this.t.ledger}
+       where currency = $1 and ts >= $2::timestamptz and ts < $3::timestamptz
+         and ($4::timestamptz is null or recorded_at < $4::timestamptz)
+         and user_id in (select jsonb_array_elements_text($5::jsonb))
+       group by user_id`,
+      [
+        q.currency,
+        new Date(q.from).toISOString(),
+        new Date(q.to).toISOString(),
+        q.recordedBefore === null ? null : new Date(q.recordedBefore).toISOString(),
+        JSON.stringify(q.userIds),
+      ],
+    );
+    return Object.fromEntries(rows.map((r) => [String(r.user_id), num(r.score)]));
   }
 
   async ping(): Promise<void> {

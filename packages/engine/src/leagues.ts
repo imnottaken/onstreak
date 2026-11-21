@@ -11,12 +11,15 @@ export interface LeagueRound {
   to: number;
 }
 
-export function currentRound(league: ResolvedLeague, ms: number): LeagueRound {
+/** Anything with rounds: leagues and rivalries. */
+export type RoundRule = Pick<ResolvedLeague, "period" | "timezone">;
+
+export function currentRound(league: RoundRule, ms: number): LeagueRound {
   const { from, to } = leaderboardWindow(league.period, ms, league.timezone);
   return { key: dayKey(from as number, league.timezone), from: from as number, to: to as number };
 }
 
-export function roundFromKey(league: ResolvedLeague, key: string): LeagueRound {
+export function roundFromKey(league: RoundRule, key: string): LeagueRound {
   const days = league.period === "weekly" ? 7 : 1;
   return { key, from: startOfDay(key, league.timezone), to: startOfDay(addDays(key, days), league.timezone) };
 }
@@ -44,4 +47,9 @@ export function nextTier(league: ResolvedLeague, tier: string, outcome: LeagueOu
   const i = Math.max(0, league.tiers.indexOf(tier));
   const j = outcome === "promoted" ? i + 1 : outcome === "demoted" ? i - 1 : i;
   return league.tiers[Math.min(league.tiers.length - 1, Math.max(0, j))] as string;
+}
+
+/** The key of the round after `key`. */
+export function nextRoundKey(rule: RoundRule, key: string): string {
+  return addDays(key, rule.period === "weekly" ? 7 : 1);
 }

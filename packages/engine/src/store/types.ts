@@ -53,6 +53,24 @@ export interface FriendRecord extends PublicProfile {
   since: number;
 }
 
+/** One of a user's rivals in a rivalry, with settled rounds from the user's side. */
+export interface RivalRecord {
+  rivalId: string;
+  startedRound: string;
+  since: number;
+  /** Settled rounds, oldest first; `you` is the asking user's score. */
+  rounds: Array<{ roundKey: string; you: number; them: number }>;
+}
+
+export interface WindowScoreQuery {
+  currency: string;
+  from: number;
+  to: number;
+  /** Only count points recorded before this instant (null: everything so far). */
+  recordedBefore: number | null;
+  userIds: string[];
+}
+
 /** A user's own profile fields. */
 export interface ProfileData {
   displayName: string | null;
@@ -167,6 +185,16 @@ export interface Store {
   removeFriendship(a: string, b: string): Promise<boolean>;
   /** A user's friends, newest first. */
   friends(userId: string): Promise<FriendRecord[]>;
+  /** Start a rivalry between two users. Returns false if it already exists. Throws RivalLimitError past `max`. */
+  addRivalry(rivalryId: string, a: string, b: string, startedRound: string, ts: number, max: number): Promise<boolean>;
+  /** End a rivalry and drop its history. Returns false if there was none. */
+  removeRivalry(rivalryId: string, a: string, b: string): Promise<boolean>;
+  /** A user's rivals in one rivalry, newest first. */
+  rivalries(rivalryId: string, userId: string): Promise<RivalRecord[]>;
+  /** Store a finished round's scores (first write wins; repeats are ignored). */
+  recordRivalryRound(rivalryId: string, a: string, b: string, roundKey: string, scoreA: number, scoreB: number): Promise<void>;
+  /** Points each user earned in a window. Users with none are left out. */
+  windowScores(query: WindowScoreQuery): Promise<Record<string, number>>;
   /** Throws if the database cannot be reached. */
   ping(): Promise<void>;
   /** Release connections. */
@@ -178,5 +206,13 @@ export class FriendLimitError extends Error {
   constructor(readonly userId: string) {
     super(`${userId} already has the maximum number of friends`);
     this.name = "FriendLimitError";
+  }
+}
+
+/** Thrown by stores when a rivalry would exceed the per-user limit. */
+export class RivalLimitError extends Error {
+  constructor(readonly userId: string) {
+    super(`${userId} already has the maximum number of rivals`);
+    this.name = "RivalLimitError";
   }
 }

@@ -52,7 +52,7 @@ Things that would hurt early users if they were missing.
 
 ## Phase 3: Signature features (what makes it different)
 
-- [ ] **Friend rivalries** (L). Pick a rival, weekly head-to-head on points, win/loss record, rematch. The leet-rivals mechanic.
+- [x] **Friend rivalries** (L). Pick a rival, weekly head-to-head on points, win/loss record, rematch. The leet-rivals mechanic.
 - [x] **Friends and follows** (M). A social graph inside onstreak, needed for friend leaderboards and rivalries.
 - [x] **Friends-only leaderboards** (M).
 - [ ] **Teams, guilds and clubs** (L). Members, team points, team leaderboards, team leagues.

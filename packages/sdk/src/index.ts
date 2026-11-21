@@ -88,6 +88,24 @@ export interface FriendList {
   friends: Array<{ userId: string; displayName: string | null; avatarUrl: string | null; since: string }>;
 }
 
+export type RivalOutcome = "won" | "lost" | "draw";
+
+export interface RivalryStatus {
+  rivalryId: string;
+  userId: string;
+  round: { key: string; startsAt: string; endsAt: string };
+  rivals: Array<{
+    rivalId: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    since: string;
+    current: { you: number; them: number; leading: "you" | "them" | "tied" };
+    record: { wins: number; losses: number; draws: number };
+    streak: { outcome: RivalOutcome; length: number } | null;
+    last: { round: string; you: number; them: number; outcome: RivalOutcome } | null;
+  }>;
+}
+
 export type BatchItemResult = { ok: true; result: TrackResult } | { ok: false; status: number; error: string };
 
 export interface Health {
@@ -178,6 +196,21 @@ export function createClient(options: ClientOptions) {
       call<{ userId: string; friendId: string; removed: boolean }>("DELETE", `${user(userId)}/friends/${encodeURIComponent(friendId)}`),
     /** A user's friends, newest first. */
     friends: (userId: string) => call<FriendList>("GET", `${user(userId)}/friends`),
+    /** A user's rivals: this round's live score, record, streak and last result. */
+    rivals: (rivalryId: string, userId: string) =>
+      call<RivalryStatus>("GET", `/v1/rivalries/${encodeURIComponent(rivalryId)}/users/${encodeURIComponent(userId)}`),
+    /** Start a rivalry (mutual). `created` is false if they already were rivals. */
+    addRival: (rivalryId: string, userId: string, rivalId: string) =>
+      call<{ rivalryId: string; userId: string; rivalId: string; created: boolean }>(
+        "PUT",
+        `/v1/rivalries/${encodeURIComponent(rivalryId)}/users/${encodeURIComponent(userId)}/rivals/${encodeURIComponent(rivalId)}`,
+      ),
+    /** End a rivalry and its history. `removed` is false if they were not rivals. */
+    removeRival: (rivalryId: string, userId: string, rivalId: string) =>
+      call<{ rivalryId: string; userId: string; rivalId: string; removed: boolean }>(
+        "DELETE",
+        `/v1/rivalries/${encodeURIComponent(rivalryId)}/users/${encodeURIComponent(userId)}/rivals/${encodeURIComponent(rivalId)}`,
+      ),
     /** Whether the server and its database are up. Never throws for a 503. */
     health: () => call<Health>("GET", "/health", undefined, [503]),
     /** Top entries of a leaderboard, plus the given user's own rank. */

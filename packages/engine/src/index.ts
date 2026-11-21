@@ -12,10 +12,12 @@ export type {
   BatchItemResult,
   FriendList,
   LeaderboardScope,
+  RivalryStatus,
+  RivalOutcome,
 } from "./engine.js";
-export { FriendLimitError } from "./store/types.js";
-export { zoneFor, outcomeFor, nextTier, currentRound } from "./leagues.js";
-export type { LeagueOutcome, LeagueZone, LeagueRound } from "./leagues.js";
+export { FriendLimitError, RivalLimitError } from "./store/types.js";
+export { zoneFor, outcomeFor, nextTier, currentRound, roundFromKey, nextRoundKey } from "./leagues.js";
+export type { LeagueOutcome, LeagueZone, LeagueRound, RoundRule } from "./leagues.js";
 export { resolveConfig, levelFor, ConfigError } from "./config.js";
 export type {
   OnstreakConfig,
@@ -28,6 +30,8 @@ export type {
   LevelConfig,
   LeagueRule,
   ResolvedLeague,
+  RivalryRule,
+  ResolvedRivalry,
 } from "./config.js";
 export { initialStreak, recordActivity, streakStatus } from "./streaks.js";
 export type { StreakState, StreakStatus, StreakUpdate } from "./streaks.js";
@@ -52,6 +56,8 @@ export type {
   EventPageQuery,
   MigrationReport,
   FriendRecord,
+  RivalRecord,
+  WindowScoreQuery,
 } from "./store/types.js";
 export { createHandler, createOnstreakServer } from "./server.js";
 export type { ServerOptions, OnstreakServer } from "./server.js";

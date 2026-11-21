@@ -1,9 +1,11 @@
 import type { TrackResult } from "../engine.js";
 import type { StreakState } from "../streaks.js";
-import { FriendLimitError } from "./types.js";
+import { FriendLimitError, RivalLimitError } from "./types.js";
 import type {
   EventPageQuery,
   FriendRecord,
+  RivalRecord,
+  WindowScoreQuery,
   EventRecord,
   GroupMember,
   LeaderboardEntry,
@@ -45,6 +47,8 @@ export class MemoryStore implements Store {
   private ledger: LedgerRow[] = [];
   private members: Array<Membership & { userId: string }> = [];
   private friendships = new Map<string, Map<string, number>>();
+  /** Keyed by "rivalryId|userA|userB" with userA < userB. */
+  private rivals = new Map<string, { rivalryId: string; a: string; b: string; startedRound: string; since: number; rounds: Map<string, [number, number]> }>();
   private locks = new Map<string, Promise<unknown>>();
 
   async migrate(): Promise<MigrationReport> {
@@ -252,6 +256,59 @@ export class MemoryStore implements Store {
         const p = this.users.get(id)?.profile;
         return { userId: id, since, displayName: p?.displayName ?? null, avatarUrl: p?.avatarUrl ?? null };
       });
+  }
+
+  async addRivalry(rivalryId: string, a: string, b: string, startedRound: string, ts: number, max: number): Promise<boolean> {
+    this.data(a);
+    this.data(b);
+    const [ua, ub] = a < b ? [a, b] : [b, a];
+    const key = `${rivalryId}|${ua}|${ub}`;
+    if (this.rivals.has(key)) return false;
+    for (const id of [a, b]) {
+      const count = [...this.rivals.values()].filter((r) => r.rivalryId === rivalryId && (r.a === id || r.b === id)).length;
+      if (count >= max) throw new RivalLimitError(id);
+    }
+    this.rivals.set(key, { rivalryId, a: ua, b: ub, startedRound, since: ts, rounds: new Map() });
+    return true;
+  }
+
+  async removeRivalry(rivalryId: string, a: string, b: string): Promise<boolean> {
+    const [ua, ub] = a < b ? [a, b] : [b, a];
+    return this.rivals.delete(`${rivalryId}|${ua}|${ub}`);
+  }
+
+  async rivalries(rivalryId: string, userId: string): Promise<RivalRecord[]> {
+    return [...this.rivals.values()]
+      .filter((r) => r.rivalryId === rivalryId && (r.a === userId || r.b === userId))
+      .map((r) => {
+        const mine = r.a === userId;
+        return {
+          rivalId: mine ? r.b : r.a,
+          startedRound: r.startedRound,
+          since: r.since,
+          rounds: [...r.rounds]
+            .sort((x, y) => (x[0] < y[0] ? -1 : 1))
+            .map(([roundKey, [sa, sb]]) => ({ roundKey, you: mine ? sa : sb, them: mine ? sb : sa })),
+        };
+      })
+      .sort((x, y) => y.since - x.since || (x.rivalId < y.rivalId ? -1 : 1));
+  }
+
+  async recordRivalryRound(rivalryId: string, a: string, b: string, roundKey: string, scoreA: number, scoreB: number): Promise<void> {
+    const [ua, ub, sa, sb] = a < b ? [a, b, scoreA, scoreB] : [b, a, scoreB, scoreA];
+    const r = this.rivals.get(`${rivalryId}|${ua}|${ub}`);
+    if (r && !r.rounds.has(roundKey)) r.rounds.set(roundKey, [sa, sb]);
+  }
+
+  async windowScores(q: WindowScoreQuery): Promise<Record<string, number>> {
+    const out: Record<string, number> = {};
+    for (const l of this.ledger) {
+      if (l.currency !== q.currency || l.ts < q.from || l.ts >= q.to) continue;
+      if (q.recordedBefore !== null && l.recordedAt >= q.recordedBefore) continue;
+      if (!q.userIds.includes(l.userId)) continue;
+      out[l.userId] = (out[l.userId] ?? 0) + l.amount;
+    }
+    return out;
   }
 
   async ping(): Promise<void> {}

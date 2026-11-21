@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type OnstreakConfig } from "./config.js";
-import { currentRound, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
+import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig } from "./config.js";
+import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
-import { FriendLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type Store, type UserTx } from "./store/types.js";
+import { FriendLimitError, RivalLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type Store, type UserTx } from "./store/types.js";
 import { isValidTimeZone, leaderboardWindow, periodKey, type LeaderboardPeriod } from "./time.js";
 
 export class EngineError extends Error {
@@ -111,6 +111,31 @@ export interface FriendList {
   userId: string;
   friends: Array<{ userId: string; displayName: string | null; avatarUrl: string | null; since: string }>;
 }
+
+export type RivalOutcome = "won" | "lost" | "draw";
+
+export interface RivalryStatus {
+  rivalryId: string;
+  userId: string;
+  /** The round being played now. */
+  round: { key: string; startsAt: string; endsAt: string };
+  rivals: Array<{
+    rivalId: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    since: string;
+    /** Points each side has earned so far this round. */
+    current: { you: number; them: number; leading: "you" | "them" | "tied" };
+    /** Finished rounds where at least one side scored. */
+    record: { wins: number; losses: number; draws: number };
+    /** The run of identical results ending with the last counted round. */
+    streak: { outcome: RivalOutcome; length: number } | null;
+    last: { round: string; you: number; them: number; outcome: RivalOutcome } | null;
+  }>;
+}
+
+/** Rounds settled per rival per request at most; any more settle on the next request. */
+const MAX_SETTLE_ROUNDS = 260;
 
 export type BatchItemResult = { ok: true; result: TrackResult } | { ok: false; status: number; error: string };
 
@@ -414,10 +439,106 @@ export class Engine {
     };
   }
 
-  private checkPair(userId: string, friendId: string): void {
+  /** Start a rivalry between two users (mutual, safe to repeat). Counting starts with the current round. */
+  async addRival(rivalryId: string, userId: string, rivalId: string): Promise<{ rivalryId: string; userId: string; rivalId: string; created: boolean }> {
+    const rule = this.rivalry(rivalryId);
+    this.checkPair(userId, rivalId, "rivalId", "rival");
+    const now = this.now();
+    try {
+      const created = await this.store.addRivalry(rule.id, userId, rivalId, currentRound(rule, now).key, now, rule.max);
+      return { rivalryId: rule.id, userId, rivalId, created };
+    } catch (err) {
+      if (err instanceof RivalLimitError) throw new EngineError(`${err.userId} already has the maximum of ${rule.max} rivals in "${rule.id}"`, 409);
+      throw err;
+    }
+  }
+
+  /** End a rivalry for both users. Its history is dropped. */
+  async removeRival(rivalryId: string, userId: string, rivalId: string): Promise<{ rivalryId: string; userId: string; rivalId: string; removed: boolean }> {
+    const rule = this.rivalry(rivalryId);
+    this.checkPair(userId, rivalId, "rivalId", "rival");
+    return { rivalryId: rule.id, userId, rivalId, removed: await this.store.removeRivalry(rule.id, userId, rivalId) };
+  }
+
+  /**
+   * A user's rivals with this round's live score, their record and streak.
+   * Finished rounds are settled here, on first look, then stored.
+   */
+  async rivals(rivalryId: string, userId: string): Promise<RivalryStatus> {
+    const rule = this.rivalry(rivalryId);
     if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces");
-    if (typeof friendId !== "string" || !USER_ID.test(friendId)) throw new EngineError("friendId must be a non-empty string without spaces");
-    if (userId === friendId) throw new EngineError("a user cannot be their own friend");
+    const now = this.now();
+    const round = currentRound(rule, now);
+    const records = await this.store.rivalries(rule.id, userId);
+
+    const rivals: RivalryStatus["rivals"] = [];
+    for (const r of records) {
+      const rounds = [...r.rounds];
+      const known = new Set(rounds.map((x) => x.roundKey));
+      let key = r.startedRound;
+      for (let i = 0; key < round.key && i < MAX_SETTLE_ROUNDS; i++, key = nextRoundKey(rule, key)) {
+        if (known.has(key)) continue;
+        const win = roundFromKey(rule, key);
+        // Final: only points recorded before the round ended count, so late events cannot change it.
+        const s = await this.store.windowScores({ currency: rule.currency, from: win.from, to: win.to, recordedBefore: win.to, userIds: [userId, r.rivalId] });
+        const you = s[userId] ?? 0;
+        const them = s[r.rivalId] ?? 0;
+        await this.store.recordRivalryRound(rule.id, userId, r.rivalId, key, you, them);
+        rounds.push({ roundKey: key, you, them });
+      }
+      rounds.sort((a, b) => (a.roundKey < b.roundKey ? -1 : 1));
+
+      const live = await this.store.windowScores({ currency: rule.currency, from: round.from, to: round.to, recordedBefore: null, userIds: [userId, r.rivalId] });
+      const you = live[userId] ?? 0;
+      const them = live[r.rivalId] ?? 0;
+
+      // Rounds where neither side scored are not contests: they count for nothing and break nothing.
+      const counted = rounds.filter((x) => x.you > 0 || x.them > 0).map((x) => ({ ...x, outcome: rivalOutcome(x.you, x.them) }));
+      const record = { wins: 0, losses: 0, draws: 0 };
+      for (const x of counted) record[x.outcome === "won" ? "wins" : x.outcome === "lost" ? "losses" : "draws"]++;
+      const last = counted[counted.length - 1];
+      let streak: RivalryStatus["rivals"][number]["streak"] = null;
+      if (last) {
+        let length = 0;
+        for (let i = counted.length - 1; i >= 0 && counted[i]!.outcome === last.outcome; i--) length++;
+        streak = { outcome: last.outcome, length };
+      }
+
+      rivals.push({
+        rivalId: r.rivalId,
+        displayName: null,
+        avatarUrl: null,
+        since: new Date(r.since).toISOString(),
+        current: { you, them, leading: you > them ? "you" : them > you ? "them" : "tied" },
+        record,
+        streak,
+        last: last ? { round: last.roundKey, you: last.you, them: last.them, outcome: last.outcome } : null,
+      });
+    }
+
+    const names = await this.store.profiles(rivals.map((r) => r.rivalId));
+    for (const r of rivals) {
+      r.displayName = names[r.rivalId]?.displayName ?? null;
+      r.avatarUrl = names[r.rivalId]?.avatarUrl ?? null;
+    }
+    return {
+      rivalryId: rule.id,
+      userId,
+      round: { key: round.key, startsAt: new Date(round.from).toISOString(), endsAt: new Date(round.to).toISOString() },
+      rivals,
+    };
+  }
+
+  private rivalry(id: string): ResolvedRivalry {
+    const rule = this.config.rivalries.find((r) => r.id === id);
+    if (!rule) throw new EngineError(`unknown rivalry "${id}"`, 404);
+    return rule;
+  }
+
+  private checkPair(userId: string, friendId: string, field = "friendId", noun = "friend"): void {
+    if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces");
+    if (typeof friendId !== "string" || !USER_ID.test(friendId)) throw new EngineError(`${field} must be a non-empty string without spaces`);
+    if (userId === friendId) throw new EngineError(`a user cannot be their own ${noun}`);
   }
 
   /** Throws if the store (database) cannot be reached. */
@@ -606,4 +727,8 @@ function rankScores(rows: Array<{ userId: string; score: number }>): Leaderboard
     ranked.push({ ...r, rank: prev && prev.score === r.score ? prev.rank : i + 1 });
   });
   return ranked;
+}
+
+function rivalOutcome(you: number, them: number): RivalOutcome {
+  return you > them ? "won" : you < them ? "lost" : "draw";
 }

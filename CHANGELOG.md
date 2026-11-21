@@ -21,6 +21,7 @@ All notable changes to onstreak. The format follows [Keep a Changelog](https://k
 - `npm run demo`: a study app with simulated rivals and time travel, running in memory.
 - Friends: mutual friendships with a configurable limit (`friends.max`, default 1000), safe under concurrent requests.
 - Friends leaderboards: `scope=friends` ranks a user against their friends, including friends with no points yet.
+- Rivalries: configurable head-to-head matchups (`rivalries`, daily or weekly rounds in any time zone). Each rival shows the live score, a win/loss/draw record, the current streak and the last result. Finished rounds are settled once, only count points recorded before the round ended, and rounds where neither side scored are skipped.
 - Docker image (non-root, with health check) and docker compose setup.
 
 ### Fixed

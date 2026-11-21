@@ -322,6 +322,72 @@ const schemas = {
       removed: { type: "boolean", description: "False if they were not friends." },
     },
   },
+  RivalryStatus: {
+    type: "object",
+    required: ["rivalryId", "userId", "round", "rivals"],
+    additionalProperties: false,
+    properties: {
+      rivalryId: { type: "string" },
+      userId: { type: "string" },
+      round: {
+        type: "object",
+        required: ["key", "startsAt", "endsAt"],
+        additionalProperties: false,
+        properties: { key: { type: "string" }, startsAt: { type: "string", format: "date-time" }, endsAt: { type: "string", format: "date-time" } },
+      },
+      rivals: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["rivalId", "displayName", "avatarUrl", "since", "current", "record", "streak", "last"],
+          additionalProperties: false,
+          properties: {
+            rivalId: { type: "string" },
+            displayName: nullable({ type: "string" }),
+            avatarUrl: nullable({ type: "string" }),
+            since: { type: "string", format: "date-time" },
+            current: {
+              type: "object",
+              required: ["you", "them", "leading"],
+              additionalProperties: false,
+              properties: { you: { type: "number" }, them: { type: "number" }, leading: { enum: ["you", "them", "tied"] } },
+            },
+            record: {
+              type: "object",
+              required: ["wins", "losses", "draws"],
+              additionalProperties: false,
+              description: "Finished rounds where at least one side scored.",
+              properties: { wins: { type: "integer" }, losses: { type: "integer" }, draws: { type: "integer" } },
+            },
+            streak: nullable({
+              type: "object",
+              required: ["outcome", "length"],
+              additionalProperties: false,
+              properties: { outcome: { enum: ["won", "lost", "draw"] }, length: { type: "integer", minimum: 1 } },
+            }),
+            last: nullable({
+              type: "object",
+              required: ["round", "you", "them", "outcome"],
+              additionalProperties: false,
+              properties: { round: { type: "string" }, you: { type: "number" }, them: { type: "number" }, outcome: { enum: ["won", "lost", "draw"] } },
+            }),
+          },
+        },
+      },
+    },
+  },
+  RivalChange: {
+    type: "object",
+    required: ["rivalryId", "userId", "rivalId"],
+    additionalProperties: false,
+    properties: {
+      rivalryId: { type: "string" },
+      userId: { type: "string" },
+      rivalId: { type: "string" },
+      created: { type: "boolean", description: "False if they were already rivals." },
+      removed: { type: "boolean", description: "False if they were not rivals." },
+    },
+  },
   Health: {
     type: "object",
     required: ["ok"],
@@ -414,6 +480,37 @@ export function openapiSpec(version: string) {
           operationId: "removeFriend",
           summary: "End a friendship, for both users. Safe to repeat",
           responses: { "200": ok("Not friends now", ref("FriendChange")), ...authErrors },
+        },
+      },
+      "/v1/rivalries/{rivalryId}/users/{userId}": {
+        parameters: [{ name: "rivalryId", in: "path", required: true, schema: { type: "string" } }, userIdParam],
+        get: {
+          operationId: "rivals",
+          summary: "A user's rivals: this round's live score, record, streak and last result",
+          description: "Finished rounds are settled on first look and never change afterwards.",
+          responses: { "200": ok("The user's rivals", ref("RivalryStatus")), ...authErrors, "404": errorResponse("No such rivalry") },
+        },
+      },
+      "/v1/rivalries/{rivalryId}/users/{userId}/rivals/{rivalId}": {
+        parameters: [
+          { name: "rivalryId", in: "path", required: true, schema: { type: "string" } },
+          userIdParam,
+          { name: "rivalId", in: "path", required: true, schema: { type: "string", maxLength: 128 } },
+        ],
+        put: {
+          operationId: "addRival",
+          summary: "Start a rivalry (mutual). Safe to repeat",
+          responses: {
+            "200": ok("Rivals now", ref("RivalChange")),
+            ...authErrors,
+            "404": errorResponse("No such rivalry"),
+            "409": errorResponse("One of them already has the maximum number of rivals"),
+          },
+        },
+        delete: {
+          operationId: "removeRival",
+          summary: "End a rivalry and its history. Safe to repeat",
+          responses: { "200": ok("Not rivals now", ref("RivalChange")), ...authErrors, "404": errorResponse("No such rivalry") },
         },
       },
       "/v1/leaderboards/{leaderboardId}": {

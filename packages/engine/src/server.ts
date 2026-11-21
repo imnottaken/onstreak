@@ -117,7 +117,7 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
       if (state.shuttingDown) throw new HttpError(503, "server is shutting down");
       if (!authorized(req, options.apiKey)) throw new HttpError(401, "missing or wrong API key");
       if (parts[0] !== "v1") throw new HttpError(404, "not found");
-      const [, resource, id, sub, subId] = parts;
+      const [, resource, id, sub, subId, subSub, subSubId] = parts;
 
       if (req.method === "POST" && resource === "events" && parts.length === 2) {
         const body = await readJson(req);
@@ -149,6 +149,14 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         if (req.method === "GET" && parts.length === 4) return send(200, await engine.friends(id));
         if (req.method === "PUT" && subId && parts.length === 5) return send(200, await engine.addFriend(id, subId));
         if (req.method === "DELETE" && subId && parts.length === 5) return send(200, await engine.removeFriend(id, subId));
+      }
+
+      if (resource === "rivalries" && id && sub === "users" && subId) {
+        if (req.method === "GET" && parts.length === 5) return send(200, await engine.rivals(id, subId));
+        if (subSub === "rivals" && subSubId && parts.length === 7) {
+          if (req.method === "PUT") return send(200, await engine.addRival(id, subId, subSubId));
+          if (req.method === "DELETE") return send(200, await engine.removeRival(id, subId, subSubId));
+        }
       }
 
       if (req.method === "GET" && resource === "leaderboards" && id && parts.length === 3) {

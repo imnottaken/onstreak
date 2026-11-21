@@ -23,6 +23,8 @@ export interface Tables {
   achievements: string;
   leagueMembers: string;
   friends: string;
+  rivalries: string;
+  rivalryRounds: string;
 }
 
 export function tableNames(prefix: string): Tables {
@@ -38,6 +40,8 @@ export function tableNames(prefix: string): Tables {
     achievements: `${prefix}achievements`,
     leagueMembers: `${prefix}league_members`,
     friends: `${prefix}friends`,
+    rivalries: `${prefix}rivalries`,
+    rivalryRounds: `${prefix}rivalry_rounds`,
   };
 }
 
@@ -159,6 +163,34 @@ export const MIGRATIONS: readonly Migration[] = [
          created_at timestamptz not null default now(),
          primary key (user_id, friend_id),
          check (user_id <> friend_id)
+       )`,
+    ],
+  },
+  {
+    version: 6,
+    name: "rivalries",
+    statements: (t) => [
+      // One row per pair, stored once with user_a < user_b.
+      `create table if not exists ${t.rivalries} (
+         rivalry_id text not null,
+         user_a text not null references ${t.users}(id),
+         user_b text not null references ${t.users}(id),
+         started_round text not null,
+         created_at timestamptz not null default now(),
+         primary key (rivalry_id, user_a, user_b),
+         check (user_a < user_b)
+       )`,
+      `create index if not exists ${t.prefix}rivalries_b on ${t.rivalries} (rivalry_id, user_b)`,
+      // Finished rounds, written once when first settled.
+      `create table if not exists ${t.rivalryRounds} (
+         rivalry_id text not null,
+         user_a text not null,
+         user_b text not null,
+         round_key text not null,
+         score_a double precision not null,
+         score_b double precision not null,
+         primary key (rivalry_id, user_a, user_b, round_key),
+         foreign key (rivalry_id, user_a, user_b) references ${t.rivalries} (rivalry_id, user_a, user_b) on delete cascade
        )`,
     ],
   },
