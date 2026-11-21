@@ -73,7 +73,8 @@ export interface UserProfile {
   userId: string;
   profile: ProfileData;
   points: Record<string, number>;
-  level: { current: number; points: number; nextAt: number | null } | null;
+  /** startsAt: points where the current level began; nextAt: points for the next one (null at max). */
+  level: { current: number; points: number; startsAt: number; nextAt: number | null } | null;
   metrics: Record<string, number>;
   streaks: Record<string, { current: number; longest: number; freezes: number; lastPeriod: string | null; status: StreakStatus }>;
   achievements: Array<{ id: string; name: string; description?: string; unlockedAt: string }>;
@@ -306,6 +307,7 @@ export class Engine {
       level = {
         current: levelFor(this.config.levels, total),
         points: total,
+        startsAt: [...this.config.levels.thresholds].reverse().find((t) => t <= total) ?? 0,
         nextAt: this.config.levels.thresholds.find((t) => t > total) ?? null,
       };
     }

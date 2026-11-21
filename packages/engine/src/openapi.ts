@@ -137,9 +137,14 @@ const schemas = {
       points: map({ type: "number" }),
       level: nullable({
         type: "object",
-        required: ["current", "points", "nextAt"],
+        required: ["current", "points", "startsAt", "nextAt"],
         additionalProperties: false,
-        properties: { current: { type: "integer" }, points: { type: "number" }, nextAt: nullable({ type: "number" }) },
+        properties: {
+          current: { type: "integer" },
+          points: { type: "number" },
+          startsAt: { type: "number", description: "Points where the current level began (0 at level 1)." },
+          nextAt: nullable({ type: "number", description: "Points needed for the next level; null at the top level." }),
+        },
       }),
       metrics: map({ type: "number" }),
       streaks: map({

@@ -62,7 +62,8 @@ export interface UserProfile {
   userId: string;
   profile: Profile;
   points: Record<string, number>;
-  level: { current: number; points: number; nextAt: number | null } | null;
+  /** startsAt: points where the current level began; nextAt: points for the next one (null at max). */
+  level: { current: number; points: number; startsAt: number; nextAt: number | null } | null;
   metrics: Record<string, number>;
   streaks: Record<string, { current: number; longest: number; freezes: number; lastPeriod: string | null; status: "none" | "done" | "pending" | "broken" }>;
   achievements: Array<{ id: string; name: string; description?: string; unlockedAt: string }>;

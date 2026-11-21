@@ -16,6 +16,7 @@ All notable changes to onstreak. The format follows [Keep a Changelog](https://k
 - `onstreak check` and `onstreak migrate` commands.
 - TypeScript SDK covering every route.
 - OpenAPI 3.1 description at `GET /openapi.json`, checked against real responses in tests.
+- `level.startsAt` on user profiles, so progress bars know where the current level began.
 - Docker image (non-root, with health check) and docker compose setup.
 
 ### Fixed
