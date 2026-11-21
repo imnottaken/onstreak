@@ -1,0 +1,13 @@
+{
+  "name": "onstreak",
+  "private": true,
+  "description": "Open-source gamification engine: points, levels, streaks, achievements and leaderboards for any app.",
+  "license": "MIT",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "tsc -b packages/engine packages/sdk",
+    "test": "npm run build && node --test packages/engine/test/*.test.mjs",
+    "start": "node packages/engine/dist/main.js"
+  },
+  "engines": { "node": ">=20" }
+}

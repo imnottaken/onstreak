@@ -1,0 +1,19 @@
+{
+  "name": "@onstreak/engine",
+  "version": "0.1.0",
+  "description": "onstreak gamification engine and HTTP server",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "bin": { "onstreak": "dist/main.js" },
+  "files": ["dist"],
+  "dependencies": { "pg": "^8.13.0" },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.2.17",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "typescript": "^5.9.0"
+  }
+}

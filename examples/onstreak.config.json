@@ -1,0 +1,22 @@
+{
+  "defaultTimezone": "Asia/Kolkata",
+  "currencies": ["xp", "coins"],
+  "points": [
+    { "event": "lesson_completed", "currency": "xp", "amount": 10 },
+    { "event": "lesson_completed", "currency": "coins", "amount": 1 },
+    { "event": "minutes_studied", "currency": "xp", "amount": 2, "multiplyByValue": true }
+  ],
+  "levels": { "currency": "xp", "thresholds": [25, 60, 120, 250, 500] },
+  "streaks": [
+    { "id": "daily_lesson", "event": "lesson_completed", "period": "daily", "freezes": { "start": 1, "max": 2, "earnEvery": 7 } }
+  ],
+  "achievements": [
+    { "id": "first_lesson", "name": "First steps", "when": { "metric": "lesson_completed", "gte": 1 } },
+    { "id": "streak_7", "name": "Week warrior", "description": "Learn 7 days in a row", "when": { "streak": "daily_lesson", "gte": 7 } },
+    { "id": "xp_500", "name": "Scholar", "when": { "points": "xp", "gte": 500 } }
+  ],
+  "leaderboards": [
+    { "id": "xp_weekly", "currency": "xp", "period": "weekly", "timezone": "Asia/Kolkata" },
+    { "id": "xp_all", "currency": "xp", "period": "all" }
+  ]
+}

@@ -1,0 +1,17 @@
+services:
+  onstreak:
+    build: .
+    ports: ["8787:8787"]
+    environment:
+      ONSTREAK_API_KEY: change-me-to-a-long-secret
+      DATABASE_URL: postgres://onstreak:onstreak@db:5432/onstreak
+    depends_on: [db]
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: onstreak
+      POSTGRES_PASSWORD: onstreak
+      POSTGRES_DB: onstreak
+    volumes: ["onstreak-data:/var/lib/postgresql/data"]
+volumes:
+  onstreak-data:

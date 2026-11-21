@@ -1,0 +1,175 @@
+import { isValidTimeZone, type LeaderboardPeriod, type StreakPeriod } from "./time.js";
+
+export interface PointRule {
+  /** Event key that earns points, e.g. "lesson_completed". */
+  event: string;
+  currency: string;
+  amount: number;
+  /** Multiply `amount` by the event's value (e.g. minutes studied). */
+  multiplyByValue?: boolean;
+}
+
+export interface StreakRule {
+  id: string;
+  event: string;
+  period: StreakPeriod;
+  freezes?: {
+    /** Freezes a new user starts with. */
+    start?: number;
+    /** Most freezes a user can hold. */
+    max?: number;
+    /** Earn one freeze every N periods of streak. */
+    earnEvery?: number;
+  };
+}
+
+export type AchievementCondition =
+  | { metric: string; gte: number }
+  | { streak: string; gte: number }
+  | { points: string; gte: number };
+
+export interface AchievementRule {
+  id: string;
+  name: string;
+  description?: string;
+  when: AchievementCondition;
+}
+
+export interface LeaderboardRule {
+  id: string;
+  currency: string;
+  period: LeaderboardPeriod;
+  /** Time zone that defines where days, weeks and months start. Default UTC. */
+  timezone?: string;
+}
+
+export interface LevelConfig {
+  currency: string;
+  /** Points needed to reach level 2, 3, 4, ... in ascending order. */
+  thresholds: number[];
+}
+
+export interface OnstreakConfig {
+  /** Time zone used for streaks when an event does not say. Default UTC. */
+  defaultTimezone?: string;
+  currencies: string[];
+  points?: PointRule[];
+  levels?: LevelConfig;
+  streaks?: StreakRule[];
+  achievements?: AchievementRule[];
+  leaderboards?: LeaderboardRule[];
+}
+
+/** Normalized config with every optional list present. */
+export interface ResolvedConfig {
+  defaultTimezone: string;
+  currencies: string[];
+  points: PointRule[];
+  levels: LevelConfig | null;
+  streaks: StreakRule[];
+  achievements: AchievementRule[];
+  leaderboards: LeaderboardRule[];
+}
+
+export class ConfigError extends Error {
+  constructor(message: string) {
+    super(`Invalid onstreak config: ${message}`);
+    this.name = "ConfigError";
+  }
+}
+
+const ID = /^[a-z0-9][a-z0-9_.:-]{0,63}$/i;
+const STREAK_PERIODS: readonly string[] = ["daily", "weekly"];
+const BOARD_PERIODS: readonly string[] = ["daily", "weekly", "monthly", "all"];
+
+function isNonNegative(n: unknown): n is number {
+  return typeof n === "number" && Number.isFinite(n) && n >= 0;
+}
+
+function uniqueIds(kind: string, ids: string[]): void {
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (typeof id !== "string" || !ID.test(id)) throw new ConfigError(`${kind} id "${id}" must be 1-64 letters, digits, _ . : -`);
+    if (seen.has(id)) throw new ConfigError(`duplicate ${kind} id "${id}"`);
+    seen.add(id);
+  }
+}
+
+export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
+  if (!input || typeof input !== "object") throw new ConfigError("config must be an object");
+  const defaultTimezone = input.defaultTimezone ?? "UTC";
+  if (!isValidTimeZone(defaultTimezone)) throw new ConfigError(`unknown defaultTimezone "${defaultTimezone}"`);
+
+  const currencies = input.currencies ?? [];
+  if (!Array.isArray(currencies) || currencies.length === 0) throw new ConfigError("currencies needs at least one entry, e.g. [\"xp\"]");
+  uniqueIds("currency", currencies);
+  const hasCurrency = (c: string, where: string) => {
+    if (!currencies.includes(c)) throw new ConfigError(`${where} uses unknown currency "${c}"`);
+  };
+
+  const points = input.points ?? [];
+  for (const rule of points) {
+    if (typeof rule.event !== "string" || !ID.test(rule.event)) throw new ConfigError(`point rule has bad event "${rule.event}"`);
+    hasCurrency(rule.currency, `point rule for "${rule.event}"`);
+    if (typeof rule.amount !== "number" || !Number.isFinite(rule.amount)) throw new ConfigError(`point rule for "${rule.event}" needs a numeric amount`);
+  }
+
+  let levels: LevelConfig | null = null;
+  if (input.levels) {
+    hasCurrency(input.levels.currency, "levels");
+    const t = input.levels.thresholds;
+    if (!Array.isArray(t) || t.length === 0 || !t.every(isNonNegative)) throw new ConfigError("levels.thresholds must be non-negative numbers");
+    for (let i = 1; i < t.length; i++) {
+      if ((t[i] as number) <= (t[i - 1] as number)) throw new ConfigError("levels.thresholds must be strictly ascending");
+    }
+    levels = { currency: input.levels.currency, thresholds: [...t] };
+  }
+
+  const streaks = input.streaks ?? [];
+  uniqueIds("streak", streaks.map((s) => s.id));
+  for (const s of streaks) {
+    if (typeof s.event !== "string" || !ID.test(s.event)) throw new ConfigError(`streak "${s.id}" has bad event "${s.event}"`);
+    if (!STREAK_PERIODS.includes(s.period)) throw new ConfigError(`streak "${s.id}" period must be daily or weekly`);
+    const f = s.freezes;
+    if (f) {
+      for (const key of ["start", "max", "earnEvery"] as const) {
+        if (f[key] !== undefined && !(isNonNegative(f[key]) && Number.isInteger(f[key]))) {
+          throw new ConfigError(`streak "${s.id}" freezes.${key} must be a whole number`);
+        }
+      }
+      if ((f.start ?? 0) > (f.max ?? 0)) throw new ConfigError(`streak "${s.id}" freezes.start cannot exceed freezes.max`);
+    }
+  }
+
+  const achievements = input.achievements ?? [];
+  uniqueIds("achievement", achievements.map((a) => a.id));
+  for (const a of achievements) {
+    if (typeof a.name !== "string" || a.name.length === 0) throw new ConfigError(`achievement "${a.id}" needs a name`);
+    const w = a.when as Record<string, unknown> | undefined;
+    const kinds = w ? ["metric", "streak", "points"].filter((k) => k in w) : [];
+    if (kinds.length !== 1 || !isNonNegative(w?.gte)) {
+      throw new ConfigError(`achievement "${a.id}" needs when: { metric | streak | points, gte }`);
+    }
+    if ("streak" in a.when && !streaks.some((s) => s.id === (a.when as { streak: string }).streak)) {
+      throw new ConfigError(`achievement "${a.id}" refers to unknown streak "${a.when.streak}"`);
+    }
+    if ("points" in a.when) hasCurrency(a.when.points, `achievement "${a.id}"`);
+  }
+
+  const leaderboards = input.leaderboards ?? [];
+  uniqueIds("leaderboard", leaderboards.map((l) => l.id));
+  for (const l of leaderboards) {
+    hasCurrency(l.currency, `leaderboard "${l.id}"`);
+    if (!BOARD_PERIODS.includes(l.period)) throw new ConfigError(`leaderboard "${l.id}" period must be daily, weekly, monthly or all`);
+    if (l.timezone && !isValidTimeZone(l.timezone)) throw new ConfigError(`leaderboard "${l.id}" has unknown timezone "${l.timezone}"`);
+  }
+
+  return { defaultTimezone, currencies: [...currencies], points, levels, streaks, achievements, leaderboards };
+}
+
+/** Level for a points total: 1 plus every threshold reached. */
+export function levelFor(levels: LevelConfig, total: number): number {
+  let level = 1;
+  for (const t of levels.thresholds) if (total >= t) level++;
+  return level;
+}
