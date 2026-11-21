@@ -31,7 +31,10 @@ test("postgres: 50 parallel events for one user are each counted exactly once", 
   assert.equal(profile.points.coins, 50);
   assert.equal(profile.metrics.lesson_completed, 50);
   assert.equal(profile.streaks.daily_lesson.current, 1, "all on one day");
-  assert.deepEqual(profile.achievements.map((a) => a.id), ["first_lesson"], "unlocked once");
+  // 500 xp crosses the 100 xp threshold too, so two achievements are expected.
+  assert.deepEqual(profile.achievements.map((a) => a.id).sort(), ["first_lesson", "xp_100"]);
+  const unlockedBy = results.flatMap((r) => r.achievements.map((a) => a.id)).sort();
+  assert.deepEqual(unlockedBy, ["first_lesson", "xp_100"], "each achievement was unlocked by exactly one of the 50 events");
 
   const extended = results.filter((r) => r.streaks.daily_lesson.extended).length;
   assert.equal(extended, 1, "exactly one event grew the streak");
