@@ -6,6 +6,8 @@ import { JSDOM } from "jsdom";
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true });
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
+// Node 21+ has a global navigator; Node 20 does not, and react-dom reads it.
+if (typeof globalThis.navigator === "undefined") globalThis.navigator = dom.window.navigator;
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const React = await import("react");
