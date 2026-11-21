@@ -12,7 +12,8 @@
     "start": "node packages/engine/dist/main.js",
     "test:pg": "bash scripts/pg.sh test",
     "pg:start": "bash scripts/pg.sh start",
-    "pg:stop": "bash scripts/pg.sh stop"
+    "pg:stop": "bash scripts/pg.sh stop",
+    "release:check": "node scripts/release-check.mjs"
   },
   "engines": {
     "node": ">=20"

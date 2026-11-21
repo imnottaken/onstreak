@@ -3,9 +3,47 @@
   "version": "0.1.0",
   "description": "Tiny TypeScript client for an onstreak server",
   "license": "MIT",
+  "author": "Koustav Dey",
+  "homepage": "https://github.com/imnottaken/onstreak#readme",
+  "bugs": {
+    "url": "https://github.com/imnottaken/onstreak/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imnottaken/onstreak.git",
+    "directory": "packages/sdk"
+  },
+  "keywords": [
+    "gamification",
+    "streaks",
+    "leaderboard",
+    "achievements",
+    "xp",
+    "leagues",
+    "points",
+    "engagement",
+    "client",
+    "sdk"
+  ],
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "files": ["dist"]
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.tsbuildinfo"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
 }

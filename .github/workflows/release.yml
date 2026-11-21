@@ -1,0 +1,72 @@
+name: release
+# Push a tag like v0.2.0 to publish both packages to npm (with provenance)
+# and create a GitHub release from CHANGELOG.md.
+# Run it by hand (Actions > release > Run workflow) for a full dry run that
+# publishes nothing and creates no release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the GitHub release
+  id-token: write # npm provenance
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      REQUIRE_POSTGRES: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run release:check
+
+      - name: Publish to npm
+        if: github.event_name == 'push'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::Add an NPM_TOKEN repository secret (an npm automation token with publish access to @onstreak)."
+            exit 1
+          fi
+          npm publish --workspace @onstreak/engine --workspace @onstreak/sdk --provenance --access public
+
+      - name: Dry-run publish
+        if: github.event_name == 'workflow_dispatch'
+        run: npm publish --dry-run --workspace @onstreak/engine --workspace @onstreak/sdk --access public
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version=$(node -p "require('./packages/engine/package.json').version")
+          # On a dry run, preview the Unreleased section instead.
+          section=$([ "$GITHUB_EVENT_NAME" = "push" ] && echo "$version" || echo "Unreleased")
+          awk -v s="$section" 'index($0, "## [" s "]") == 1 {f=1; next} /^## \[/ {if (f) exit} f' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "::error::CHANGELOG.md has no notes for $section"; exit 1; }
+          cat notes.md
+
+      - name: Create GitHub release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md

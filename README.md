@@ -128,6 +128,16 @@ TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npm test
 
 CI runs both, against Postgres 16.
 
+## Releasing
+
+`@onstreak/engine` and `@onstreak/sdk` share one version.
+
+1. Move the `[Unreleased]` notes in `CHANGELOG.md` under a new `## [x.y.z]` heading.
+2. Set `"version": "x.y.z"` in both `packages/*/package.json`.
+3. Commit, then `git tag vx.y.z && git push --tags`.
+
+The release workflow runs every test against real Postgres, checks the packages (`npm run release:check`, which also runs in CI on every push), publishes both to npm with provenance, and creates a GitHub release from the changelog. It needs an `NPM_TOKEN` repository secret. Run the workflow by hand for a dry run that publishes nothing.
+
 ## Roadmap
 
 - Friend rivalries (head-to-head weekly matchups)
