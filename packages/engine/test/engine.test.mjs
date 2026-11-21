@@ -1,28 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PGlite } from "@electric-sql/pglite";
-import { Engine, MemoryStore, PostgresStore, fromPglite, ConfigError } from "../dist/index.js";
+import { Engine, MemoryStore, ConfigError } from "../dist/index.js";
 import { config } from "./fixtures.mjs";
+import { storeFactories } from "./helpers.mjs";
 
 
 const DAY = 86_400_000;
 const start = Date.parse("2026-11-16T06:00:00Z"); // Monday, 11:30 in India
 
-// Run the same behaviour suite against both stores.
-const stores = {
-  memory: async () => new MemoryStore(),
-  postgres: async () => {
-    const store = new PostgresStore(fromPglite(new PGlite()));
-    await store.migrate();
-    await store.migrate(); // migrations are idempotent
-    return store;
-  },
-};
-
-for (const [name, makeStore] of Object.entries(stores)) {
-  test(`${name}: points, levels, streaks and achievements`, async () => {
+// Run the same behaviour suite against every store.
+for (const [name, makeStore] of Object.entries(storeFactories)) {
+  test(`${name}: points, levels, streaks and achievements`, async (t) => {
     let now = start;
-    const engine = new Engine(config, await makeStore(), () => now);
+    const engine = new Engine(config, await makeStore(t), () => now);
 
     const first = await engine.track({ userId: "asha", event: "lesson_completed" });
     assert.deepEqual(first.points, { xp: { awarded: 10, total: 10 }, coins: { awarded: 1, total: 1 } });
@@ -61,8 +51,8 @@ for (const [name, makeStore] of Object.entries(stores)) {
     assert.equal(later.streaks.daily_lesson.current, 0);
   });
 
-  test(`${name}: idempotency keys stop double counting`, async () => {
-    const engine = new Engine(config, await makeStore(), () => start);
+  test(`${name}: idempotency keys stop double counting`, async (t) => {
+    const engine = new Engine(config, await makeStore(t), () => start);
     const a = await engine.track({ userId: "ravi", event: "lesson_completed", idempotencyKey: "req-1" });
     const b = await engine.track({ userId: "ravi", event: "lesson_completed", idempotencyKey: "req-1" });
     assert.equal(a.duplicate, false);
@@ -71,17 +61,17 @@ for (const [name, makeStore] of Object.entries(stores)) {
     assert.equal((await engine.getUser("ravi")).points.xp, 10);
   });
 
-  test(`${name}: concurrent events for one user all count`, async () => {
-    const engine = new Engine(config, await makeStore(), () => start);
+  test(`${name}: concurrent events for one user all count`, async (t) => {
+    const engine = new Engine(config, await makeStore(t), () => start);
     await Promise.all(Array.from({ length: 20 }, () => engine.track({ userId: "zoe", event: "lesson_completed" })));
     const profile = await engine.getUser("zoe");
     assert.equal(profile.points.xp, 200);
     assert.equal(profile.metrics.lesson_completed, 20);
   });
 
-  test(`${name}: leaderboards rank by points in the current window`, async () => {
+  test(`${name}: leaderboards rank by points in the current window`, async (t) => {
     let now = start;
-    const engine = new Engine(config, await makeStore(), () => now);
+    const engine = new Engine(config, await makeStore(t), () => now);
     // Last week: only counts for the all-time board.
     await engine.track({ userId: "old", event: "minutes_studied", value: 100, timestamp: start - 7 * DAY });
     await engine.track({ userId: "a", event: "minutes_studied", value: 10 }); // 20

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PGlite } from "@electric-sql/pglite";
-import { Engine, MemoryStore, PostgresStore, fromPglite, resolveConfig, zoneFor } from "../dist/index.js";
+import { Engine, MemoryStore, resolveConfig, zoneFor } from "../dist/index.js";
+import { storeFactories } from "./helpers.mjs";
 
 const config = {
   currencies: ["xp"],
@@ -11,15 +11,6 @@ const config = {
 
 const DAY = 86_400_000;
 const monday = Date.parse("2026-11-16T10:00:00Z");
-
-const stores = {
-  memory: async () => new MemoryStore(),
-  postgres: async () => {
-    const store = new PostgresStore(fromPglite(new PGlite()));
-    await store.migrate();
-    return store;
-  },
-};
 
 test("zones: top promotes, bottom demotes, edges and small groups are safe", () => {
   const league = resolveConfig(config).leagues[0];
@@ -46,10 +37,10 @@ test("league config mistakes fail fast", () => {
   assert.throws(() => resolveConfig({ ...base, leagues: [{ id: "l", currency: "gold", tiers: ["a", "b"] }] }), /unknown currency/);
 });
 
-for (const [name, makeStore] of Object.entries(stores)) {
-  test(`${name}: groups fill up, then rounds settle into promotions and demotions`, async () => {
+for (const [name, makeStore] of Object.entries(storeFactories)) {
+  test(`${name}: groups fill up, then rounds settle into promotions and demotions`, async (t) => {
     let now = monday;
-    const engine = new Engine(config, await makeStore(), () => now);
+    const engine = new Engine(config, await makeStore(t), () => now);
     const win = (userId, value) => engine.track({ userId, event: "win", value });
 
     // Week 1, everyone starts in bronze. Groups hold 3.
@@ -115,10 +106,10 @@ for (const [name, makeStore] of Object.entries(stores)) {
     assert.deepEqual((await engine.league("arena", "u5")).previous, down.leagues.arena.previous);
   });
 
-  test(`${name}: events without points, or from a past round, do not seat anyone`, async () => {
+  test(`${name}: events without points, or from a past round, do not seat anyone`, async (t) => {
     const engine = new Engine(
       { ...config, points: [...config.points, { event: "login", currency: "xp", amount: 0 }] },
-      await makeStore(),
+      await makeStore(t),
       () => monday,
     );
     assert.deepEqual((await engine.track({ userId: "a", event: "login" })).leagues, {});

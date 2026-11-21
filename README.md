@@ -84,8 +84,14 @@ await engine.track({ userId: "asha", event: "lesson_completed" });
 ## Develop
 
 ```bash
-npm test   # builds, then runs the suite against the memory store and real Postgres (PGlite)
+npm test   # builds, then runs the suite against the memory store and embedded Postgres (PGlite)
+
+# Also run against a real Postgres server, including parallel-connection and
+# server-restart tests (each test gets its own schema and cleans up after itself):
+TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npm test
 ```
+
+CI runs both, against Postgres 16.
 
 ## Roadmap
 
