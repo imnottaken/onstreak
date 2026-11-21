@@ -46,7 +46,8 @@ Things that would hurt early users if they were missing.
 - [ ] **Next.js + Supabase starter** (M). Clone, add keys, have a gamified app running.
 - [ ] **One-click deploys** (S each). Railway, Render, Fly.io, Vercel with Neon.
 - [ ] **Comparison page** (S). Honest comparison with Trophy, Gami.Fied, building it yourself.
-- [ ] **Contributing guide, issue templates, good-first-issues** (S).
+- [x] **Contributing guide, issue templates, security policy** (S).
+- [ ] **Good-first-issues** (S). Open a handful of labelled starter issues.
 - [ ] **Benchmarks** (S). Events per second and leaderboard latency on a known machine.
 
 ## Phase 3: Signature features (what makes it different)
