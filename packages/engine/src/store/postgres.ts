@@ -2,7 +2,7 @@ import type { ItemUseResult, TrackResult } from "../engine.js";
 import type { StreakState } from "../streaks.js";
 import type { LeagueOutcome } from "../leagues.js";
 import { LATEST_VERSION, MIGRATIONS, tableNames, type Tables } from "./migrations.js";
-import { FriendLimitError, RivalLimitError } from "./types.js";
+import { AlreadyInTeamError, FriendLimitError, RivalLimitError, TeamFullError } from "./types.js";
 import type {
   EventPageQuery,
   FriendRecord,
@@ -13,6 +13,9 @@ import type {
   BoostRecord,
   ReferralRecord,
   CommunityTotalQuery,
+  TeamRecord,
+  TeamMemberRecord,
+  TeamScoreQuery,
   RivalRecord,
   WindowScoreQuery,
   EventRecord,
@@ -640,6 +643,92 @@ export class PostgresStore implements Store {
         : `select coalesce(sum(value), 0) as total from ${this.t.events} where key = $1 and ts >= $2 and ts < $3 and ($4::text is null or user_id = $4)`;
     const { rows } = await this.db.query(sql, [q.key, new Date(q.from).toISOString(), new Date(q.to).toISOString(), q.userId ?? null]);
     return num(rows[0]?.total);
+  }
+
+  async saveTeam(team: TeamRecord): Promise<boolean> {
+    const { rows } = await this.db.query(
+      `insert into ${this.t.teams} (id, name, created_at) values ($1, $2, $3)
+       on conflict (id) do update set name = excluded.name
+       returning (xmax = 0) as created`,
+      [team.id, team.name, new Date(team.createdAt).toISOString()],
+    );
+    return Boolean(rows[0]?.created);
+  }
+
+  async getTeam(teamId: string): Promise<TeamRecord | null> {
+    const { rows } = await this.db.query(`select * from ${this.t.teams} where id = $1`, [teamId]);
+    return rows[0] ? { id: String(rows[0].id), name: String(rows[0].name), createdAt: ms(rows[0].created_at) } : null;
+  }
+
+  async addTeamMember(teamId: string, userId: string, joinedAt: number, maxMembers: number): Promise<boolean> {
+    const t = this.t;
+    return this.db.transaction(async (q) => {
+      await q.query(`insert into ${t.users} (id) values ($1) on conflict (id) do nothing`, [userId]);
+      await q.query(`select id from ${t.users} where id = $1 for update`, [userId]);
+      // Joins to one team run one at a time, so it never overfills.
+      await q.query("select pg_advisory_xact_lock(hashtext($1))", [`${t.prefix}team:${teamId}`]);
+      const current = await q.query(`select team_id from ${t.teamMembers} where user_id = $1`, [userId]);
+      if (current.rows[0]) {
+        if (String(current.rows[0].team_id) === teamId) return false;
+        throw new AlreadyInTeamError(String(current.rows[0].team_id));
+      }
+      const { rows } = await q.query(`select count(*) as n from ${t.teamMembers} where team_id = $1`, [teamId]);
+      if (num(rows[0]?.n) >= maxMembers) throw new TeamFullError(teamId);
+      await q.query(`insert into ${t.teamMembers} (user_id, team_id, joined_at) values ($1, $2, $3)`, [userId, teamId, new Date(joinedAt).toISOString()]);
+      return true;
+    });
+  }
+
+  async removeTeamMember(teamId: string, userId: string): Promise<boolean> {
+    const { rows } = await this.db.query(`delete from ${this.t.teamMembers} where user_id = $1 and team_id = $2 returning user_id`, [userId, teamId]);
+    return rows.length > 0;
+  }
+
+  async teamMembers(teamId: string): Promise<TeamMemberRecord[]> {
+    const { rows } = await this.db.query(`select * from ${this.t.teamMembers} where team_id = $1 order by joined_at, user_id`, [teamId]);
+    return rows.map((r) => ({ userId: String(r.user_id), teamId: String(r.team_id), joinedAt: ms(r.joined_at) }));
+  }
+
+  async userTeam(userId: string): Promise<TeamMemberRecord | null> {
+    const { rows } = await this.db.query(`select * from ${this.t.teamMembers} where user_id = $1`, [userId]);
+    return rows[0] ? { userId: String(rows[0].user_id), teamId: String(rows[0].team_id), joinedAt: ms(rows[0].joined_at) } : null;
+  }
+
+  async teamMemberScores(teamId: string, currency: string, from: number | null, to: number | null): Promise<Record<string, number>> {
+    const { rows } = await this.db.query(
+      `select m.user_id, sum(l.amount) as score
+       from ${this.t.teamMembers} m
+       join ${this.t.ledger} l on l.user_id = m.user_id and l.currency = $2 and l.ts >= m.joined_at
+        and ($3::timestamptz is null or l.ts >= $3::timestamptz) and ($4::timestamptz is null or l.ts < $4::timestamptz)
+       where m.team_id = $1
+       group by m.user_id`,
+      [teamId, currency, from === null ? null : new Date(from).toISOString(), to === null ? null : new Date(to).toISOString()],
+    );
+    return Object.fromEntries(rows.map((r) => [String(r.user_id), num(r.score)]));
+  }
+
+  async teamScores(q: TeamScoreQuery) {
+    const t = this.t;
+    const { rows } = await this.db.query(
+      `with scores as (
+         select m.team_id, sum(l.amount) as score
+         from ${t.teamMembers} m
+         join ${t.ledger} l on l.user_id = m.user_id and l.currency = $1 and l.ts >= m.joined_at
+          and ($2::timestamptz is null or l.ts >= $2::timestamptz) and ($3::timestamptz is null or l.ts < $3::timestamptz)
+         group by m.team_id
+       ), ranked as (
+         select tm.id as team_id, coalesce(s.score, 0) as score,
+                rank() over (order by coalesce(s.score, 0) desc) as rank,
+                row_number() over (order by coalesce(s.score, 0) desc, tm.id) as pos
+         from ${t.teams} tm left join scores s on s.team_id = tm.id
+       )
+       select * from ranked where pos <= $4 or team_id = $5 order by pos`,
+      [q.currency, q.from === null ? null : new Date(q.from).toISOString(), q.to === null ? null : new Date(q.to).toISOString(), q.limit, q.teamId ?? null],
+    );
+    const toEntry = (r: Record<string, unknown>) => ({ rank: num(r.rank), teamId: String(r.team_id), score: num(r.score) });
+    const entries = rows.filter((r) => num(r.pos) <= q.limit).map(toEntry);
+    const team = q.teamId ? rows.find((r) => r.team_id === q.teamId) : undefined;
+    return { entries, team: team ? toEntry(team) : null };
   }
 
   async seasonAwards(userId: string): Promise<Record<string, { rank: number; claimedAt: number }>> {

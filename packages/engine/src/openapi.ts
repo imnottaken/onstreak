@@ -21,7 +21,7 @@ const schemas = {
     additionalProperties: false,
     properties: {
       error: { type: "string", description: "What went wrong, in plain words." },
-      code: { type: "string", description: 'A stable reason to branch on, when there is one: "insufficient_funds", "limit_reached", "not_owned", "streak_broken", "already_referred", "already_refunded", "not_broken", "repair_expired".' },
+      code: { type: "string", description: 'A stable reason to branch on, when there is one: "insufficient_funds", "limit_reached", "not_owned", "streak_broken", "already_referred", "already_refunded", "not_broken", "repair_expired", "team_full", "already_in_team".' },
       requestId: { type: "string", description: "Matches the x-request-id header and the server logs." },
     },
   },
@@ -464,6 +464,90 @@ const schemas = {
       final: { type: "boolean", description: "True once the season has ended: the standings will not change." },
       entries: { type: "array", items: ref("RankedUser") },
       user: nullable(ref("RankedUser")),
+    },
+  },
+  Team: {
+    type: "object",
+    required: ["id", "name", "createdAt"],
+    additionalProperties: false,
+    properties: { id: { type: "string" }, name: { type: "string" }, createdAt: { type: "string", format: "date-time" } },
+  },
+  TeamSaved: {
+    type: "object",
+    required: ["team", "created"],
+    additionalProperties: false,
+    properties: { team: ref("Team"), created: { type: "boolean" } },
+  },
+  TeamStatus: {
+    type: "object",
+    required: ["id", "name", "createdAt", "maxMembers", "members", "leaderboard"],
+    additionalProperties: false,
+    properties: {
+      id: { type: "string" },
+      name: { type: "string" },
+      createdAt: { type: "string", format: "date-time" },
+      maxMembers: { type: "integer", minimum: 1 },
+      members: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["userId", "displayName", "avatarUrl", "joinedAt"],
+          additionalProperties: false,
+          properties: {
+            userId: { type: "string" },
+            displayName: nullable({ type: "string" }),
+            avatarUrl: nullable({ type: "string" }),
+            joinedAt: { type: "string", format: "date-time" },
+            score: { type: "number", description: "Points earned for the team in the leaderboard's window (only with ?leaderboard=)." },
+          },
+        },
+      },
+      leaderboard: nullable({
+        type: "object",
+        required: ["id", "score", "rank"],
+        additionalProperties: false,
+        properties: { id: { type: "string" }, score: { type: "number" }, rank: { type: "integer", minimum: 1 } },
+      }),
+    },
+  },
+  TeamMembership: {
+    type: "object",
+    required: ["teamId", "userId"],
+    additionalProperties: false,
+    properties: { teamId: { type: "string" }, userId: { type: "string" }, created: { type: "boolean" }, removed: { type: "boolean" } },
+  },
+  UserTeam: {
+    type: "object",
+    required: ["userId", "team"],
+    additionalProperties: false,
+    properties: {
+      userId: { type: "string" },
+      team: nullable({
+        type: "object",
+        required: ["id", "name", "createdAt", "joinedAt"],
+        additionalProperties: false,
+        properties: { id: { type: "string" }, name: { type: "string" }, createdAt: { type: "string", format: "date-time" }, joinedAt: { type: "string", format: "date-time" } },
+      }),
+    },
+  },
+  TeamRank: {
+    type: "object",
+    required: ["rank", "teamId", "name", "score"],
+    additionalProperties: false,
+    properties: { rank: { type: "integer", minimum: 1 }, teamId: { type: "string" }, name: { type: "string" }, score: { type: "number" } },
+  },
+  TeamLeaderboard: {
+    type: "object",
+    required: ["id", "currency", "period", "from", "to", "entries", "team"],
+    additionalProperties: false,
+    properties: {
+      id: { type: "string" },
+      currency: { type: "string" },
+      period: { enum: ["daily", "weekly", "monthly", "all"] },
+      from: nullable({ type: "string", format: "date-time" }),
+      to: nullable({ type: "string", format: "date-time" }),
+      entries: { type: "array", items: ref("TeamRank") },
+      team: nullable(ref("TeamRank")),
     },
   },
   Boost: {
@@ -1007,6 +1091,57 @@ export function openapiSpec(version: string) {
           operationId: "referrals",
           summary: "Who referred a user and whom they referred",
           responses: { "200": ok("The user's referrals", ref("ReferralList")), ...authErrors, "404": errorResponse("Referrals are not configured") },
+        },
+      },
+      "/v1/teams/{teamId}": {
+        parameters: [{ name: "teamId", in: "path", required: true, schema: { type: "string", maxLength: 64 } }],
+        put: {
+          operationId: "saveTeam",
+          summary: "Create a team, or rename it",
+          requestBody: { required: true, content: json({ type: "object", required: ["name"], additionalProperties: false, properties: { name: { type: "string", minLength: 1, maxLength: 80 } } }) },
+          responses: { "200": ok("The team", ref("TeamSaved")), ...authErrors },
+        },
+        get: {
+          operationId: "team",
+          summary: "A team and its members",
+          parameters: [{ name: "leaderboard", in: "query", schema: { type: "string" }, description: "Also show each member's points for the team, and the team's rank, on this leaderboard." }],
+          responses: { "200": ok("The team", ref("TeamStatus")), ...authErrors, "404": errorResponse("Unknown team or leaderboard") },
+        },
+      },
+      "/v1/teams/{teamId}/members/{userId}": {
+        parameters: [{ name: "teamId", in: "path", required: true, schema: { type: "string", maxLength: 64 } }, userIdParam],
+        put: {
+          operationId: "addTeamMember",
+          summary: "Put a user in a team",
+          description: "A user is in one team at a time. Their points count for the team from now on.",
+          responses: {
+            "200": ok("The membership", ref("TeamMembership")),
+            ...authErrors,
+            "404": errorResponse("Unknown team"),
+            "409": errorResponse('In another team ("already_in_team") or the team is full ("team_full")'),
+          },
+        },
+        delete: {
+          operationId: "removeTeamMember",
+          summary: "Take a user out of a team",
+          responses: { "200": ok("Whether they were removed", ref("TeamMembership")), ...authErrors, "404": errorResponse("Unknown team") },
+        },
+      },
+      "/v1/users/{userId}/team": {
+        parameters: [userIdParam],
+        get: {
+          operationId: "userTeam",
+          summary: "The team a user is in",
+          responses: { "200": ok("The user's team, or null", ref("UserTeam")), ...authErrors },
+        },
+      },
+      "/v1/leaderboards/{leaderboardId}/teams": {
+        parameters: [{ name: "leaderboardId", in: "path", required: true, schema: { type: "string" } }],
+        get: {
+          operationId: "teamLeaderboard",
+          summary: "Teams ranked by their members' points in a leaderboard's window",
+          parameters: [limitParam(), { name: "teamId", in: "query", schema: { type: "string" } }],
+          responses: { "200": ok("The ranking", ref("TeamLeaderboard")), ...authErrors, "404": errorResponse("Unknown leaderboard") },
         },
       },
       "/v1/seasons": {

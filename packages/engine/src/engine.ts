@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, type StreakRule, boostSpecProblem, questRunsAt } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { breakPeriod, initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
-import { FriendLimitError, RivalLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type ReferralRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
+import { AlreadyInTeamError, FriendLimitError, RivalLimitError, TeamFullError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type ReferralRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
 import { addDays, isValidTimeZone, leaderboardWindow, periodKey, periodsBetween, startOfDay, type LeaderboardPeriod } from "./time.js";
 
 export class EngineError extends Error {
@@ -357,6 +357,32 @@ export interface SeasonStandings {
   entries: RankedUser[];
   user: RankedUser | null;
 }
+
+export interface Team {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface TeamStatus extends Team {
+  maxMembers: number;
+  /** Earliest joined first. With a leaderboard, `score` is what each earned for the team in its window. */
+  members: Array<{ userId: string; displayName: string | null; avatarUrl: string | null; joinedAt: string; score?: number }>;
+  /** The team's place on a leaderboard, when one was asked for. */
+  leaderboard: { id: string; score: number; rank: number } | null;
+}
+
+export interface TeamLeaderboard {
+  id: string;
+  currency: string;
+  period: LeaderboardPeriod;
+  from: string | null;
+  to: string | null;
+  entries: Array<{ rank: number; teamId: string; name: string; score: number }>;
+  team: { rank: number; teamId: string; name: string; score: number } | null;
+}
+
+const TEAM_ID = /^[a-z0-9][a-z0-9_.:-]{0,63}$/i;
 
 export interface ItemUseInput {
   /** How many to use at once. Default 1. */
@@ -1180,6 +1206,111 @@ export class Engine {
       entries: entries.map((e) => withProfile(e, names)),
       user: user ? withProfile(user, names) : null,
     };
+  }
+
+  /** Create a team or rename it. */
+  async saveTeam(teamId: string, input: { name?: unknown }): Promise<{ team: Team; created: boolean }> {
+    if (typeof teamId !== "string" || !TEAM_ID.test(teamId)) throw new EngineError("team id must be 1-64 letters, digits, _ . : -");
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new EngineError("body must be a JSON object");
+    const name = typeof input.name === "string" ? input.name.trim() : "";
+    if (name.length < 1 || name.length > 80) throw new EngineError("name must be 1-80 characters");
+    const created = await this.store.saveTeam({ id: teamId, name, createdAt: this.now() });
+    const team = (await this.store.getTeam(teamId))!;
+    return { team: { id: team.id, name: team.name, createdAt: new Date(team.createdAt).toISOString() }, created };
+  }
+
+  /** A team with its members; with a leaderboard id, each member's points for the team and the team's rank. */
+  async team(teamId: string, options: { leaderboard?: string } = {}): Promise<TeamStatus> {
+    const team = await this.requireTeam(teamId);
+    const members = await this.store.teamMembers(team.id);
+    const names = await this.store.profiles(members.map((m) => m.userId));
+    let scores: Record<string, number> | null = null;
+    let leaderboard: TeamStatus["leaderboard"] = null;
+    if (options.leaderboard !== undefined) {
+      const rule = this.config.leaderboards.find((l) => l.id === options.leaderboard);
+      if (!rule) throw new EngineError(`unknown leaderboard "${String(options.leaderboard)}"`, 404);
+      const { from, to } = leaderboardWindow(rule.period, this.now(), rule.timezone ?? "UTC");
+      scores = await this.store.teamMemberScores(team.id, rule.currency, from, to);
+      const placed = (await this.store.teamScores({ currency: rule.currency, from, to, limit: 1, teamId: team.id })).team;
+      leaderboard = { id: rule.id, score: placed?.score ?? 0, rank: placed?.rank ?? 1 };
+    }
+    return {
+      id: team.id,
+      name: team.name,
+      createdAt: new Date(team.createdAt).toISOString(),
+      maxMembers: this.config.teams.maxMembers,
+      members: members.map((m) => ({
+        userId: m.userId,
+        displayName: names[m.userId]?.displayName ?? null,
+        avatarUrl: names[m.userId]?.avatarUrl ?? null,
+        joinedAt: new Date(m.joinedAt).toISOString(),
+        ...(scores ? { score: scores[m.userId] ?? 0 } : {}),
+      })),
+      leaderboard,
+    };
+  }
+
+  /**
+   * Put a user in a team. A user is in one team at a time: 409 with code
+   * "already_in_team" if they are in another (remove them first), and
+   * "team_full" past teams.maxMembers. Points count for the team from now on.
+   */
+  async addTeamMember(teamId: string, userId: string): Promise<{ teamId: string; userId: string; created: boolean }> {
+    checkUserId(userId);
+    const team = await this.requireTeam(teamId);
+    try {
+      const created = await this.store.addTeamMember(team.id, userId, this.now(), this.config.teams.maxMembers);
+      return { teamId: team.id, userId, created };
+    } catch (err) {
+      if (err instanceof TeamFullError) throw new EngineError(`team "${team.id}" already has the maximum of ${this.config.teams.maxMembers} members`, 409, "team_full");
+      if (err instanceof AlreadyInTeamError) throw new EngineError(`${userId} is already in team "${err.teamId}"`, 409, "already_in_team");
+      throw err;
+    }
+  }
+
+  /** Take a user out of a team. Points they earned for it stop counting. */
+  async removeTeamMember(teamId: string, userId: string): Promise<{ teamId: string; userId: string; removed: boolean }> {
+    checkUserId(userId);
+    const team = await this.requireTeam(teamId);
+    return { teamId: team.id, userId, removed: await this.store.removeTeamMember(team.id, userId) };
+  }
+
+  /** The team a user is in, if any. */
+  async userTeam(userId: string): Promise<{ userId: string; team: (Team & { joinedAt: string }) | null }> {
+    checkUserId(userId);
+    const m = await this.store.userTeam(userId);
+    if (!m) return { userId, team: null };
+    const team = (await this.store.getTeam(m.teamId))!;
+    return { userId, team: { id: team.id, name: team.name, createdAt: new Date(team.createdAt).toISOString(), joinedAt: new Date(m.joinedAt).toISOString() } };
+  }
+
+  /** Teams ranked on a leaderboard by their members' points, each counted from when they joined. */
+  async teamLeaderboard(id: string, options: { limit?: number; teamId?: string } = {}): Promise<TeamLeaderboard> {
+    const rule = this.config.leaderboards.find((l) => l.id === id);
+    if (!rule) throw new EngineError(`unknown leaderboard "${String(id)}"`, 404);
+    const limit = options.limit ?? 10;
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) throw new EngineError(`limit must be a whole number from 1 to ${MAX_LIMIT}`);
+    const { from, to } = leaderboardWindow(rule.period, this.now(), rule.timezone ?? "UTC");
+    const { entries, team } = await this.store.teamScores({ currency: rule.currency, from, to, limit, ...(options.teamId ? { teamId: options.teamId } : {}) });
+    const ids = [...new Set([...entries, ...(team ? [team] : [])].map((e) => e.teamId))];
+    const teams = new Map((await Promise.all(ids.map((tid) => this.store.getTeam(tid)))).filter((x): x is NonNullable<typeof x> => x !== null).map((x) => [x.id, x.name]));
+    const named = (e: { rank: number; teamId: string; score: number }) => ({ ...e, name: teams.get(e.teamId) ?? e.teamId });
+    return {
+      id: rule.id,
+      currency: rule.currency,
+      period: rule.period,
+      from: from === null ? null : new Date(from).toISOString(),
+      to: to === null ? null : new Date(to).toISOString(),
+      entries: entries.map(named),
+      team: team ? named(team) : null,
+    };
+  }
+
+  private async requireTeam(teamId: string) {
+    if (typeof teamId !== "string" || !TEAM_ID.test(teamId)) throw new EngineError("team id must be 1-64 letters, digits, _ . : -");
+    const team = await this.store.getTeam(teamId);
+    if (!team) throw new EngineError(`unknown team "${teamId}"`, 404);
+    return team;
   }
 
   async friends(userId: string): Promise<FriendList> {

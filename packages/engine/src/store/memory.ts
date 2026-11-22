@@ -1,6 +1,6 @@
 import type { TrackResult } from "../engine.js";
 import type { StreakState } from "../streaks.js";
-import { FriendLimitError, RivalLimitError } from "./types.js";
+import { AlreadyInTeamError, FriendLimitError, RivalLimitError, TeamFullError } from "./types.js";
 import type {
   EventPageQuery,
   FriendRecord,
@@ -25,6 +25,9 @@ import type {
   CalendarState,
   ReferralRecord,
   CommunityTotalQuery,
+  TeamRecord,
+  TeamMemberRecord,
+  TeamScoreQuery,
   UserTx,
 } from "./types.js";
 
@@ -79,6 +82,9 @@ export class MemoryStore implements Store {
   private communityClaimRows = new Set<string>();
   /** Keyed by "userId|seasonId". */
   private seasonAwardRows = new Map<string, { rank: number; claimedAt: number }>();
+  private teamRows = new Map<string, TeamRecord>();
+  /** Keyed by user id: a user is in at most one team. */
+  private teamMemberRows = new Map<string, TeamMemberRecord>();
 
   async migrate(): Promise<MigrationReport> {
     return { applied: [], version: 0 };
@@ -374,6 +380,78 @@ export class MemoryStore implements Store {
     const users = q.userId ? [this.users.get(q.userId)].filter((d): d is UserData => !!d) : [...this.users.values()];
     for (const d of users) for (const e of d.events.values()) if (e.key === q.key && e.ts >= q.from && e.ts < q.to) total += e.value;
     return total;
+  }
+
+  async saveTeam(team: TeamRecord): Promise<boolean> {
+    const existing = this.teamRows.get(team.id);
+    if (existing) {
+      existing.name = team.name;
+      return false;
+    }
+    this.teamRows.set(team.id, { ...team });
+    return true;
+  }
+
+  async getTeam(teamId: string): Promise<TeamRecord | null> {
+    const t = this.teamRows.get(teamId);
+    return t ? { ...t } : null;
+  }
+
+  async addTeamMember(teamId: string, userId: string, joinedAt: number, maxMembers: number): Promise<boolean> {
+    const current = this.teamMemberRows.get(userId);
+    if (current?.teamId === teamId) return false;
+    if (current) throw new AlreadyInTeamError(current.teamId);
+    const size = [...this.teamMemberRows.values()].filter((m) => m.teamId === teamId).length;
+    if (size >= maxMembers) throw new TeamFullError(teamId);
+    this.data(userId);
+    this.teamMemberRows.set(userId, { userId, teamId, joinedAt });
+    return true;
+  }
+
+  async removeTeamMember(teamId: string, userId: string): Promise<boolean> {
+    if (this.teamMemberRows.get(userId)?.teamId !== teamId) return false;
+    this.teamMemberRows.delete(userId);
+    return true;
+  }
+
+  async teamMembers(teamId: string): Promise<TeamMemberRecord[]> {
+    return [...this.teamMemberRows.values()]
+      .filter((m) => m.teamId === teamId)
+      .sort((a, b) => a.joinedAt - b.joinedAt || (a.userId < b.userId ? -1 : 1))
+      .map((m) => ({ ...m }));
+  }
+
+  async userTeam(userId: string): Promise<TeamMemberRecord | null> {
+    const m = this.teamMemberRows.get(userId);
+    return m ? { ...m } : null;
+  }
+
+  async teamMemberScores(teamId: string, currency: string, from: number | null, to: number | null): Promise<Record<string, number>> {
+    const out: Record<string, number> = {};
+    for (const l of this.ledger) {
+      const m = this.teamMemberRows.get(l.userId);
+      if (!m || m.teamId !== teamId || l.currency !== currency) continue;
+      if (l.ts < m.joinedAt || (from !== null && l.ts < from) || (to !== null && l.ts >= to)) continue;
+      out[l.userId] = (out[l.userId] ?? 0) + l.amount;
+    }
+    return out;
+  }
+
+  async teamScores(q: TeamScoreQuery) {
+    const scores = new Map<string, number>([...this.teamRows.keys()].map((id) => [id, 0]));
+    for (const l of this.ledger) {
+      const m = this.teamMemberRows.get(l.userId);
+      if (!m || l.currency !== q.currency) continue;
+      if (l.ts < m.joinedAt || (q.from !== null && l.ts < q.from) || (q.to !== null && l.ts >= q.to)) continue;
+      scores.set(m.teamId, (scores.get(m.teamId) ?? 0) + l.amount);
+    }
+    const sorted = [...scores].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+    const ranked: Array<{ rank: number; teamId: string; score: number }> = [];
+    sorted.forEach(([teamId, score], i) => {
+      const prev = ranked[i - 1];
+      ranked.push({ teamId, score, rank: prev && prev.score === score ? prev.rank : i + 1 });
+    });
+    return { entries: ranked.slice(0, q.limit), team: q.teamId ? (ranked.find((e) => e.teamId === q.teamId) ?? null) : null };
   }
 
   async seasonAwards(userId: string): Promise<Record<string, { rank: number; claimedAt: number }>> {

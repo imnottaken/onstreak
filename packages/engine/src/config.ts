@@ -279,6 +279,10 @@ export interface OnstreakConfig {
     /** Most friends one user can have. Default 1000. */
     max?: number;
   };
+  teams?: {
+    /** Most members one team can have. Default 50. */
+    maxMembers?: number;
+  };
 }
 
 /** A league with every default filled in. */
@@ -313,6 +317,7 @@ export interface ResolvedConfig {
   communityGoals: ResolvedCommunityGoal[];
   seasons: ResolvedSeason[];
   friends: { max: number };
+  teams: { maxMembers: number };
 }
 
 export class ConfigError extends Error {
@@ -651,6 +656,9 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     throw new ConfigError("friends.max must be a whole number from 1 to 100000");
   }
 
+  const maxMembers = input.teams?.maxMembers ?? 50;
+  if (!Number.isInteger(maxMembers) || maxMembers < 1 || maxMembers > 100_000) throw new ConfigError("teams.maxMembers must be a whole number from 1 to 100000");
+
   return {
     defaultTimezone,
     currencies: [...currencies],
@@ -669,6 +677,7 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     communityGoals,
     seasons,
     friends: { max: maxFriends },
+    teams: { maxMembers },
   };
 }
 

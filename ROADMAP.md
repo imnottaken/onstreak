@@ -55,7 +55,8 @@ Things that would hurt early users if they were missing.
 - [x] **Friend rivalries** (L). Pick a rival, weekly head-to-head on points, win/loss record, rematch. The leet-rivals mechanic.
 - [x] **Friends and follows** (M). A social graph inside onstreak, needed for friend leaderboards and rivalries.
 - [x] **Friends-only leaderboards** (M).
-- [ ] **Teams, guilds and clubs** (L). Members, team points, team leaderboards, team leagues.
+- [x] **Teams, guilds and clubs** (L). Members, team points, team leaderboards.
+- [ ] **Team leagues and team quests** (M). Teams in league groups, goals a team completes together.
 - [x] **Quests and missions** (L). Daily and weekly quests ("finish 3 lessons today", "earn 50 XP"), rewards on completion.
 - [x] **Multi-step quests** (M). Quest chains and one-off (non-repeating) quests.
 - [ ] **Missions with several goals** (S). One quest that needs several goals done together.

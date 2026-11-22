@@ -34,6 +34,8 @@ export interface Tables {
   referrals: string;
   communityRewards: string;
   seasonAwards: string;
+  teams: string;
+  teamMembers: string;
 }
 
 export function tableNames(prefix: string): Tables {
@@ -60,6 +62,8 @@ export function tableNames(prefix: string): Tables {
     referrals: `${prefix}referrals`,
     communityRewards: `${prefix}community_rewards`,
     seasonAwards: `${prefix}season_awards`,
+    teams: `${prefix}teams`,
+    teamMembers: `${prefix}team_members`,
   };
 }
 
@@ -356,6 +360,24 @@ export const MIGRATIONS: readonly Migration[] = [
          claimed_at timestamptz not null,
          primary key (user_id, season_id)
        )`,
+    ],
+  },
+  {
+    version: 17,
+    name: "teams",
+    statements: (t) => [
+      `create table if not exists ${t.teams} (
+         id text primary key,
+         name text not null,
+         created_at timestamptz not null
+       )`,
+      // A user is in at most one team.
+      `create table if not exists ${t.teamMembers} (
+         user_id text primary key references ${t.users}(id),
+         team_id text not null references ${t.teams}(id),
+         joined_at timestamptz not null
+       )`,
+      `create index if not exists ${t.prefix}team_members_team on ${t.teamMembers} (team_id, joined_at)`,
     ],
   },
 ];

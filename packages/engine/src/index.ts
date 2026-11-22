@@ -39,8 +39,11 @@ export type {
   SeasonStatus,
   SeasonList,
   SeasonStandings,
+  Team,
+  TeamStatus,
+  TeamLeaderboard,
 } from "./engine.js";
-export { FriendLimitError, RivalLimitError } from "./store/types.js";
+export { FriendLimitError, RivalLimitError, TeamFullError, AlreadyInTeamError } from "./store/types.js";
 export { zoneFor, outcomeFor, nextTier, currentRound, roundFromKey, nextRoundKey } from "./leagues.js";
 export type { LeagueOutcome, LeagueZone, LeagueRound, RoundRule } from "./leagues.js";
 export { resolveConfig, levelFor, ConfigError, MAX_BOOST_MINUTES, questRunsAt } from "./config.js";
@@ -103,6 +106,9 @@ export type {
   CalendarState,
   ReferralRecord,
   CommunityTotalQuery,
+  TeamRecord,
+  TeamMemberRecord,
+  TeamScoreQuery,
 } from "./store/types.js";
 export { createHandler, createOnstreakServer } from "./server.js";
 export type { ServerOptions, OnstreakServer } from "./server.js";

@@ -266,6 +266,28 @@ export interface SeasonStandings {
   user: LeaderboardEntry | null;
 }
 
+export interface Team {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface TeamStatus extends Team {
+  maxMembers: number;
+  members: Array<{ userId: string; displayName: string | null; avatarUrl: string | null; joinedAt: string; score?: number }>;
+  leaderboard: { id: string; score: number; rank: number } | null;
+}
+
+export interface TeamLeaderboard {
+  id: string;
+  currency: string;
+  period: "daily" | "weekly" | "monthly" | "all";
+  from: string | null;
+  to: string | null;
+  entries: Array<{ rank: number; teamId: string; name: string; score: number }>;
+  team: { rank: number; teamId: string; name: string; score: number } | null;
+}
+
 export interface Boost {
   id: string;
   factor: number;
@@ -445,6 +467,27 @@ export function createClient(options: ClientOptions) {
     addReferral: (userId: string, referrerId: string) => call<ReferralResult>("PUT", `${user(userId)}/referred-by/${encodeURIComponent(referrerId)}`),
     /** Who referred a user and whom they referred. */
     referrals: (userId: string) => call<ReferralList>("GET", `${user(userId)}/referrals`),
+    /** Create a team, or rename it. */
+    saveTeam: (teamId: string, input: { name: string }) => call<{ team: Team; created: boolean }>("PUT", `/v1/teams/${encodeURIComponent(teamId)}`, input),
+    /** A team and its members; with a leaderboard id, members' points for the team and its rank. */
+    team: (teamId: string, opts: { leaderboard?: string } = {}) =>
+      call<TeamStatus>("GET", `/v1/teams/${encodeURIComponent(teamId)}${opts.leaderboard ? `?leaderboard=${encodeURIComponent(opts.leaderboard)}` : ""}`),
+    /** Put a user in a team. Throws 409 "already_in_team" or "team_full". */
+    addTeamMember: (teamId: string, userId: string) =>
+      call<{ teamId: string; userId: string; created: boolean }>("PUT", `/v1/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`),
+    /** Take a user out of a team. */
+    removeTeamMember: (teamId: string, userId: string) =>
+      call<{ teamId: string; userId: string; removed: boolean }>("DELETE", `/v1/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`),
+    /** The team a user is in, or null. */
+    userTeam: (userId: string) => call<{ userId: string; team: (Team & { joinedAt: string }) | null }>("GET", `${user(userId)}/team`),
+    /** Teams ranked by their members' points in a leaderboard's window. */
+    teamLeaderboard: (id: string, opts: { limit?: number; teamId?: string } = {}) => {
+      const params = new URLSearchParams();
+      if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+      if (opts.teamId) params.set("teamId", opts.teamId);
+      const qs = params.toString();
+      return call<TeamLeaderboard>("GET", `/v1/leaderboards/${encodeURIComponent(id)}/teams${qs ? `?${qs}` : ""}`);
+    },
     /** Every season; with userId, that user's score, rank and award (paid on the first look after the season ends). */
     seasons: (opts: { userId?: string } = {}) => call<SeasonList>("GET", `/v1/seasons${opts.userId ? `?userId=${encodeURIComponent(opts.userId)}` : ""}`),
     /** A season's standings: live while it runs, fixed once it ends. */

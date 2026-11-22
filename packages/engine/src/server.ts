@@ -223,6 +223,26 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         );
       }
 
+      if (resource === "teams" && id && parts.length === 3) {
+        if (req.method === "PUT") return send(200, await engine.saveTeam(id, (await readJson(req)) as { name?: unknown }));
+        if (req.method === "GET") {
+          const leaderboard = url.searchParams.get("leaderboard") ?? undefined;
+          return send(200, await engine.team(id, leaderboard ? { leaderboard } : {}));
+        }
+      }
+      if (resource === "teams" && id && sub === "members" && subId && parts.length === 5) {
+        if (req.method === "PUT") return send(200, await engine.addTeamMember(id, subId));
+        if (req.method === "DELETE") return send(200, await engine.removeTeamMember(id, subId));
+      }
+      if (req.method === "GET" && resource === "users" && id && sub === "team" && parts.length === 4) {
+        return send(200, await engine.userTeam(id));
+      }
+      if (req.method === "GET" && resource === "leaderboards" && id && sub === "teams" && parts.length === 4) {
+        const limit = intParam(url, "limit");
+        const teamId = url.searchParams.get("teamId") ?? undefined;
+        return send(200, await engine.teamLeaderboard(id, { ...(limit !== undefined ? { limit } : {}), ...(teamId ? { teamId } : {}) }));
+      }
+
       if (req.method === "GET" && resource === "seasons" && parts.length === 2) {
         const userId = url.searchParams.get("userId") ?? undefined;
         return send(200, await engine.seasons(userId ? { userId } : {}));

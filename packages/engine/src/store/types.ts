@@ -334,10 +334,66 @@ export interface Store {
   boosts(userId: string, after: number): Promise<BoostRecord[]>;
   /** A user's purchases, newest first. */
   purchases(userId: string, query: PurchasePageQuery): Promise<PurchaseRecord[]>;
+  /** Create a team, or rename it. Returns whether it was created. */
+  saveTeam(team: TeamRecord): Promise<boolean>;
+  getTeam(teamId: string): Promise<TeamRecord | null>;
+  /**
+   * Put a user in a team (creating the user if needed). Returns false if
+   * they already were in it. Throws AlreadyInTeamError if they are in
+   * another team, TeamFullError past `maxMembers`.
+   */
+  addTeamMember(teamId: string, userId: string, joinedAt: number, maxMembers: number): Promise<boolean>;
+  /** Returns false if the user was not in the team. */
+  removeTeamMember(teamId: string, userId: string): Promise<boolean>;
+  /** Members, earliest joined first. */
+  teamMembers(teamId: string): Promise<TeamMemberRecord[]>;
+  userTeam(userId: string): Promise<TeamMemberRecord | null>;
+  /** Teams ranked by their members' points (each from when they joined), plus one team's place. */
+  teamScores(query: TeamScoreQuery): Promise<{ entries: Array<{ rank: number; teamId: string; score: number }>; team: { rank: number; teamId: string; score: number } | null }>;
+  /** Points each member of a team earned in a window since they joined. */
+  teamMemberScores(teamId: string, currency: string, from: number | null, to: number | null): Promise<Record<string, number>>;
   /** Throws if the database cannot be reached. */
   ping(): Promise<void>;
   /** Release connections. */
   close(): Promise<void>;
+}
+
+export interface TeamRecord {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
+export interface TeamMemberRecord {
+  userId: string;
+  teamId: string;
+  joinedAt: number;
+}
+
+export interface TeamScoreQuery {
+  currency: string;
+  /** Window in epoch ms, or null for all time. A member's points count from when they joined. */
+  from: number | null;
+  to: number | null;
+  limit: number;
+  /** Also return this team's place. */
+  teamId?: string;
+}
+
+/** Thrown by stores when a team is full. */
+export class TeamFullError extends Error {
+  constructor(readonly teamId: string) {
+    super(`team ${teamId} is full`);
+    this.name = "TeamFullError";
+  }
+}
+
+/** Thrown by stores when a user is already in another team. */
+export class AlreadyInTeamError extends Error {
+  constructor(readonly teamId: string) {
+    super(`already in team ${teamId}`);
+    this.name = "AlreadyInTeamError";
+  }
 }
 
 /** Thrown by stores when a friendship would exceed the friend limit. */

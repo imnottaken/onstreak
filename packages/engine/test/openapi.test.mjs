@@ -234,6 +234,22 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   await refCall("get", "/v1/users/new1/referrals", "/v1/users/{userId}/referrals");
 
   await call("get", "/v1/community-goals", "/v1/community-goals"); // none configured
+  await call("put", "/v1/teams/owls", "/v1/teams/{teamId}", { name: "Owls" });
+  await call("put", "/v1/teams/owls", "/v1/teams/{teamId}", { name: "" }); // 400
+  await call("put", "/v1/teams/owls/members/asha", "/v1/teams/{teamId}/members/{userId}");
+  await call("put", "/v1/teams/larks", "/v1/teams/{teamId}", { name: "Larks" });
+  const twoTeams = await call("put", "/v1/teams/larks/members/asha", "/v1/teams/{teamId}/members/{userId}");
+  assert.deepEqual([twoTeams.status, twoTeams.json.code], [409, "already_in_team"]);
+  await call("put", "/v1/teams/nope/members/asha", "/v1/teams/{teamId}/members/{userId}"); // 404
+  await call("get", "/v1/teams/owls?leaderboard=xp_all", "/v1/teams/{teamId}");
+  await call("get", "/v1/teams/owls", "/v1/teams/{teamId}");
+  await call("get", "/v1/teams/nope", "/v1/teams/{teamId}"); // 404
+  await call("get", "/v1/users/asha/team", "/v1/users/{userId}/team");
+  await call("get", "/v1/leaderboards/xp_all/teams?teamId=larks", "/v1/leaderboards/{leaderboardId}/teams");
+  await call("get", "/v1/leaderboards/nope/teams", "/v1/leaderboards/{leaderboardId}/teams"); // 404
+  await call("delete", "/v1/teams/owls/members/asha", "/v1/teams/{teamId}/members/{userId}");
+  await call("delete", "/v1/teams/nope/members/asha", "/v1/teams/{teamId}/members/{userId}"); // 404
+  await call("get", "/v1/users/asha/team", "/v1/users/{userId}/team"); // no team
   const seasonal = await serve(t, new MemoryStore(), {
     ...config,
     seasons: [
