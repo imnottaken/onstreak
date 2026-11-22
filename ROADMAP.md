@@ -56,7 +56,8 @@ Things that would hurt early users if they were missing.
 - [x] **Friends and follows** (M). A social graph inside onstreak, needed for friend leaderboards and rivalries.
 - [x] **Friends-only leaderboards** (M).
 - [x] **Teams, guilds and clubs** (L). Members, team points, team leaderboards.
-- [ ] **Team leagues and team quests** (M). Teams in league groups, goals a team completes together.
+- [x] **Team quests** (S). Goals a team completes together.
+- [ ] **Team leagues** (M). Teams placed in league groups with promotion and demotion.
 - [x] **Quests and missions** (L). Daily and weekly quests ("finish 3 lessons today", "earn 50 XP"), rewards on completion.
 - [x] **Multi-step quests** (M). Quest chains and one-off (non-repeating) quests.
 - [x] **Missions with several goals** (S). One quest that needs several goals done together.

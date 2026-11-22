@@ -545,6 +545,50 @@ const schemas = {
       }),
     },
   },
+  TeamGoalList: {
+    type: "object",
+    required: ["teamId", "goals"],
+    additionalProperties: false,
+    properties: {
+      teamId: { type: "string" },
+      goals: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id", "name", "period", "goal", "progress", "target", "completed", "rewards", "startsAt", "endsAt", "contributions", "you"],
+          additionalProperties: false,
+          properties: {
+            id: { type: "string" },
+            name: { type: "string" },
+            description: { type: "string" },
+            period: { enum: ["daily", "weekly"] },
+            goal: {
+              oneOf: [
+                { type: "object", required: ["event", "target"], additionalProperties: false, properties: { event: { type: "string" }, target: { type: "number" } } },
+                { type: "object", required: ["points", "target"], additionalProperties: false, properties: { points: { type: "string" }, target: { type: "number" } } },
+              ],
+            },
+            progress: { type: "number" },
+            target: { type: "number" },
+            completed: { type: "boolean" },
+            rewards: { type: "array", items: ref("QuestReward") },
+            startsAt: { type: "string", format: "date-time" },
+            endsAt: { type: "string", format: "date-time" },
+            contributions: {
+              type: "array",
+              items: { type: "object", required: ["userId", "amount"], additionalProperties: false, properties: { userId: { type: "string" }, amount: { type: "number" } } },
+            },
+            you: nullable({
+              type: "object",
+              required: ["contribution", "rewarded", "paidNow"],
+              additionalProperties: false,
+              properties: { contribution: { type: "number" }, rewarded: { type: "boolean" }, paidNow: { type: "array", items: ref("QuestReward") } },
+            }),
+          },
+        },
+      },
+    },
+  },
   TeamRank: {
     type: "object",
     required: ["rank", "teamId", "name", "score"],
@@ -1121,6 +1165,16 @@ export function openapiSpec(version: string) {
           summary: "A team and its members",
           parameters: [{ name: "leaderboard", in: "query", schema: { type: "string" }, description: "Also show each member's points for the team, and the team's rank, on this leaderboard." }],
           responses: { "200": ok("The team", ref("TeamStatus")), ...authErrors, "404": errorResponse("Unknown team or leaderboard") },
+        },
+      },
+      "/v1/teams/{teamId}/goals": {
+        parameters: [{ name: "teamId", in: "path", required: true, schema: { type: "string", maxLength: 64 } }],
+        get: {
+          operationId: "teamGoals",
+          summary: "The team's goals for the current day or week",
+          description: "With userId, that member's part; a member who contributed is paid the rewards the first time they look after a goal is reached.",
+          parameters: [{ name: "userId", in: "query", schema: { type: "string", maxLength: 128 } }],
+          responses: { "200": ok("The team's goals", ref("TeamGoalList")), ...authErrors, "404": errorResponse("Unknown team") },
         },
       },
       "/v1/teams/{teamId}/members/{userId}": {

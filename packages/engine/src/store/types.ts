@@ -247,6 +247,8 @@ export interface UserTx {
   claimCommunityReward(goalId: string, at: number): Promise<boolean>;
   /** Record that the user took a season's rank award. Returns false if they already had. */
   claimSeasonAward(seasonId: string, rank: number, at: number): Promise<boolean>;
+  /** Record that the user took a team goal's rewards for one period. Returns false if they already had. */
+  claimTeamGoalReward(goalId: string, periodKey: string, teamId: string, at: number): Promise<boolean>;
 }
 
 export interface UserSnapshot {
@@ -350,6 +352,10 @@ export interface Store {
   userTeam(userId: string): Promise<TeamMemberRecord | null>;
   /** Teams ranked by their members' points (each from when they joined), plus one team's place. */
   teamScores(query: TeamScoreQuery): Promise<{ entries: Array<{ rank: number; teamId: string; score: number }>; team: { rank: number; teamId: string; score: number } | null }>;
+  /** Each current member's contribution to a team goal in a window, counted from when they joined: event values summed, or points earned. */
+  teamContributions(teamId: string, kind: "event" | "points", key: string, from: number, to: number): Promise<Record<string, number>>;
+  /** Team goal periods this user was paid for, as "goalId|periodKey". */
+  teamGoalClaims(userId: string): Promise<Set<string>>;
   /** Points each member of a team earned in a window since they joined. */
   teamMemberScores(teamId: string, currency: string, from: number | null, to: number | null): Promise<Record<string, number>>;
   /** Throws if the database cannot be reached. */

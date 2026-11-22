@@ -385,6 +385,13 @@ export class PostgresStore implements Store {
         }
         return settled;
       },
+      async claimTeamGoalReward(goalId, periodKey, teamId, at) {
+        const { rows } = await q.query(
+          `insert into ${t.teamGoalRewards} (user_id, goal_id, period_key, team_id, claimed_at) values ($1, $2, $3, $4, $5) on conflict do nothing returning goal_id`,
+          [userId, goalId, periodKey, teamId, new Date(at).toISOString()],
+        );
+        return rows.length > 0;
+      },
       async claimSeasonAward(seasonId, rank, at) {
         const { rows } = await q.query(
           `insert into ${t.seasonAwards} (user_id, season_id, rank, claimed_at) values ($1, $2, $3, $4) on conflict do nothing returning season_id`,
@@ -692,6 +699,25 @@ export class PostgresStore implements Store {
   async userTeam(userId: string): Promise<TeamMemberRecord | null> {
     const { rows } = await this.db.query(`select * from ${this.t.teamMembers} where user_id = $1`, [userId]);
     return rows[0] ? { userId: String(rows[0].user_id), teamId: String(rows[0].team_id), joinedAt: ms(rows[0].joined_at) } : null;
+  }
+
+  async teamContributions(teamId: string, kind: "event" | "points", key: string, from: number, to: number): Promise<Record<string, number>> {
+    const t = this.t;
+    const sql =
+      kind === "points"
+        ? `select m.user_id, sum(l.amount) as total from ${t.teamMembers} m
+           join ${t.ledger} l on l.user_id = m.user_id and l.currency = $2 and l.ts >= greatest(m.joined_at, $3::timestamptz) and l.ts < $4::timestamptz
+           where m.team_id = $1 group by m.user_id`
+        : `select m.user_id, sum(e.value) as total from ${t.teamMembers} m
+           join ${t.events} e on e.user_id = m.user_id and e.key = $2 and e.ts >= greatest(m.joined_at, $3::timestamptz) and e.ts < $4::timestamptz
+           where m.team_id = $1 group by m.user_id`;
+    const { rows } = await this.db.query(sql, [teamId, key, new Date(from).toISOString(), new Date(to).toISOString()]);
+    return Object.fromEntries(rows.map((r) => [String(r.user_id), num(r.total)]).filter(([, n]) => n !== 0));
+  }
+
+  async teamGoalClaims(userId: string): Promise<Set<string>> {
+    const { rows } = await this.db.query(`select goal_id, period_key from ${this.t.teamGoalRewards} where user_id = $1`, [userId]);
+    return new Set(rows.map((r) => `${r.goal_id}|${r.period_key}`));
   }
 
   async teamMemberScores(teamId: string, currency: string, from: number | null, to: number | null): Promise<Record<string, number>> {

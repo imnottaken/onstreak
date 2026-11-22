@@ -85,6 +85,8 @@ export class MemoryStore implements Store {
   private teamRows = new Map<string, TeamRecord>();
   /** Keyed by user id: a user is in at most one team. */
   private teamMemberRows = new Map<string, TeamMemberRecord>();
+  /** "userId|goalId|periodKey". */
+  private teamGoalClaimRows = new Set<string>();
 
   async migrate(): Promise<MigrationReport> {
     return { applied: [], version: 0 };
@@ -211,6 +213,12 @@ export class MemoryStore implements Store {
           if (r.rewarded) rewardedSoFar++;
         }
         return due.map((r) => ({ ...r }));
+      },
+      claimTeamGoalReward: async (goalId, periodKey) => {
+        const key = `${userId}|${goalId}|${periodKey}`;
+        if (this.teamGoalClaimRows.has(key)) return false;
+        this.teamGoalClaimRows.add(key);
+        return true;
       },
       claimSeasonAward: async (seasonId, rank, at) => {
         const key = `${userId}|${seasonId}`;
@@ -424,6 +432,26 @@ export class MemoryStore implements Store {
   async userTeam(userId: string): Promise<TeamMemberRecord | null> {
     const m = this.teamMemberRows.get(userId);
     return m ? { ...m } : null;
+  }
+
+  async teamContributions(teamId: string, kind: "event" | "points", key: string, from: number, to: number): Promise<Record<string, number>> {
+    const out: Record<string, number> = {};
+    for (const m of this.teamMemberRows.values()) {
+      if (m.teamId !== teamId) continue;
+      const since = Math.max(from, m.joinedAt);
+      let total = 0;
+      if (kind === "points") {
+        for (const l of this.ledger) if (l.userId === m.userId && l.currency === key && l.ts >= since && l.ts < to) total += l.amount;
+      } else {
+        for (const e of this.users.get(m.userId)?.events.values() ?? []) if (e.key === key && e.ts >= since && e.ts < to) total += e.value;
+      }
+      if (total !== 0) out[m.userId] = total;
+    }
+    return out;
+  }
+
+  async teamGoalClaims(userId: string): Promise<Set<string>> {
+    return new Set([...this.teamGoalClaimRows].filter((k) => k.startsWith(`${userId}|`)).map((k) => k.slice(userId.length + 1)));
   }
 
   async teamMemberScores(teamId: string, currency: string, from: number | null, to: number | null): Promise<Record<string, number>> {

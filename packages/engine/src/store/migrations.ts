@@ -36,6 +36,7 @@ export interface Tables {
   seasonAwards: string;
   teams: string;
   teamMembers: string;
+  teamGoalRewards: string;
 }
 
 export function tableNames(prefix: string): Tables {
@@ -64,6 +65,7 @@ export function tableNames(prefix: string): Tables {
     seasonAwards: `${prefix}season_awards`,
     teams: `${prefix}teams`,
     teamMembers: `${prefix}team_members`,
+    teamGoalRewards: `${prefix}team_goal_rewards`,
   };
 }
 
@@ -378,6 +380,20 @@ export const MIGRATIONS: readonly Migration[] = [
          joined_at timestamptz not null
        )`,
       `create index if not exists ${t.prefix}team_members_team on ${t.teamMembers} (team_id, joined_at)`,
+    ],
+  },
+  {
+    version: 18,
+    name: "team goals",
+    statements: (t) => [
+      `create table if not exists ${t.teamGoalRewards} (
+         user_id text not null references ${t.users}(id),
+         goal_id text not null,
+         period_key text not null,
+         team_id text not null,
+         claimed_at timestamptz not null,
+         primary key (user_id, goal_id, period_key)
+       )`,
     ],
   },
 ];

@@ -111,6 +111,7 @@ test("SDK covers profiles, batches, history, health and request ids", async () =
     assert.equal((await xp.userTeam("omar")).team.id, "crew");
     assert.equal((await xp.teamLeaderboard("xp_all")).entries[0].teamId, "crew");
     assert.equal((await xp.team("crew")).members.length, 1);
+    assert.deepEqual((await xp.teamGoals("crew", { userId: "omar" })).goals, []);
     assert.equal((await xp.removeTeamMember("crew", "omar")).removed, true);
     const noReferrals = await xp.referrals("omar").catch((e) => e);
     assert.equal(noReferrals.status, 404, "referrals are not configured here");

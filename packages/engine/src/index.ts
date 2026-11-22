@@ -42,6 +42,8 @@ export type {
   Team,
   TeamStatus,
   TeamLeaderboard,
+  TeamGoalStatus,
+  TeamGoalList,
 } from "./engine.js";
 export { FriendLimitError, RivalLimitError, TeamFullError, AlreadyInTeamError } from "./store/types.js";
 export { zoneFor, outcomeFor, nextTier, currentRound, roundFromKey, nextRoundKey } from "./leagues.js";
@@ -73,6 +75,7 @@ export type {
   ResolvedCommunityGoal,
   SeasonRule,
   ResolvedSeason,
+  TeamGoalRule,
 } from "./config.js";
 export { initialStreak, recordActivity, streakStatus } from "./streaks.js";
 export type { StreakState, StreakStatus, StreakUpdate } from "./streaks.js";

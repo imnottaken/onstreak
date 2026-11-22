@@ -230,6 +230,10 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
           return send(200, await engine.team(id, leaderboard ? { leaderboard } : {}));
         }
       }
+      if (req.method === "GET" && resource === "teams" && id && sub === "goals" && parts.length === 4) {
+        const userId = url.searchParams.get("userId") ?? undefined;
+        return send(200, await engine.teamGoals(id, userId ? { userId } : {}));
+      }
       if (resource === "teams" && id && sub === "members" && subId && parts.length === 5) {
         if (req.method === "PUT") return send(200, await engine.addTeamMember(id, subId));
         if (req.method === "DELETE") return send(200, await engine.removeTeamMember(id, subId));

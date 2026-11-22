@@ -374,6 +374,30 @@ export interface TeamStatus extends Team {
   leaderboard: { id: string; score: number; rank: number } | null;
 }
 
+export interface TeamGoalStatus {
+  id: string;
+  name: string;
+  description?: string;
+  period: "daily" | "weekly";
+  goal: QuestGoal;
+  /** The team's total this period, from members' activity since they joined. */
+  progress: number;
+  target: number;
+  completed: boolean;
+  rewards: QuestReward[];
+  startsAt: string;
+  endsAt: string;
+  /** Current members' contributions this period, biggest first. */
+  contributions: Array<{ userId: string; amount: number }>;
+  /** The asking member's part, when a userId was given. */
+  you: { contribution: number; rewarded: boolean; paidNow: QuestReward[] } | null;
+}
+
+export interface TeamGoalList {
+  teamId: string;
+  goals: TeamGoalStatus[];
+}
+
 export interface TeamLeaderboard {
   id: string;
   currency: string;
@@ -1329,6 +1353,65 @@ export class Engine {
       entries: entries.map(named),
       team: team ? named(team) : null,
     };
+  }
+
+  /**
+   * The team's goals for the current day or week. With a userId of a member,
+   * also their part; a member who contributed is paid the rewards the first
+   * time they look after the goal is reached.
+   */
+  async teamGoals(teamId: string, options: { userId?: string } = {}): Promise<TeamGoalList> {
+    const team = await this.requireTeam(teamId);
+    const userId = options.userId;
+    if (userId !== undefined) checkUserId(userId);
+    const member = userId ? (await this.store.userTeam(userId))?.teamId === team.id : false;
+    const claims = userId && member ? await this.store.teamGoalClaims(userId) : new Set<string>();
+    const now = this.now();
+    const goals: TeamGoalStatus[] = [];
+    for (const g of this.config.teamGoals) {
+      const round = currentRound({ period: g.period, timezone: g.timezone ?? this.config.defaultTimezone }, now);
+      const kind = "event" in g.goal ? "event" : "points";
+      const key = "event" in g.goal ? g.goal.event : g.goal.points;
+      const by = await this.store.teamContributions(team.id, kind, key, round.from, round.to);
+      const progress = round6(Object.values(by).reduce((a, b) => a + b, 0));
+      const completed = progress >= g.goal.target;
+      const rewards = (g.rewards ?? []).map((r) => ({ ...r }));
+      let you: TeamGoalStatus["you"] = null;
+      if (userId) {
+        const contribution = round6(by[userId] ?? 0);
+        let rewarded = claims.has(`${g.id}|${round.key}`);
+        let paidNow: QuestReward[] = [];
+        if (member && completed && contribution > 0 && !rewarded) {
+          const won = await this.store.withUser(userId, async (tx) => {
+            if (!(await tx.claimTeamGoalReward(g.id, round.key, team.id, now))) return false;
+            const eventId = randomUUID();
+            for (const r of rewards) await tx.addPoints(r.currency, r.amount, now, eventId, now);
+            return true;
+          });
+          rewarded = true;
+          if (won) paidNow = rewards.map((r) => ({ ...r }));
+        }
+        you = { contribution, rewarded, paidNow };
+      }
+      goals.push({
+        id: g.id,
+        name: g.name,
+        ...(g.description ? { description: g.description } : {}),
+        period: g.period,
+        goal: { ...g.goal },
+        progress,
+        target: g.goal.target,
+        completed,
+        rewards,
+        startsAt: new Date(round.from).toISOString(),
+        endsAt: new Date(round.to).toISOString(),
+        contributions: Object.entries(by)
+          .map(([u, amount]) => ({ userId: u, amount: round6(amount) }))
+          .sort((a, b) => b.amount - a.amount || (a.userId < b.userId ? -1 : 1)),
+        you,
+      });
+    }
+    return { teamId: team.id, goals };
   }
 
   private async requireTeam(teamId: string) {

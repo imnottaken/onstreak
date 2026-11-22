@@ -227,6 +227,22 @@ export interface ResolvedSeason extends Omit<SeasonRule, "from" | "to" | "reward
   rewards: Array<{ top: number; title?: string; rewards: QuestReward[] }>;
 }
 
+/**
+ * A goal a team reaches together each day or week ("our team: 20 lessons
+ * this week"). Members' activity counts from when they joined. Once it is
+ * reached, members who contributed are paid `rewards` (on their first look).
+ */
+export interface TeamGoalRule {
+  id: string;
+  name: string;
+  description?: string;
+  period: StreakPeriod;
+  goal: QuestGoal;
+  rewards?: QuestReward[];
+  /** Where days and weeks start. Default: the config's defaultTimezone. */
+  timezone?: string;
+}
+
 /** A personal multiplier: `factor` on points from point rules for `minutes`. No currency means every currency. */
 export interface BoostSpec {
   factor: number;
@@ -286,6 +302,7 @@ export interface OnstreakConfig {
   referrals?: ReferralConfig;
   communityGoals?: CommunityGoalRule[];
   seasons?: SeasonRule[];
+  teamGoals?: TeamGoalRule[];
   friends?: {
     /** Most friends one user can have. Default 1000. */
     max?: number;
@@ -327,6 +344,7 @@ export interface ResolvedConfig {
   referrals: ReferralConfig | null;
   communityGoals: ResolvedCommunityGoal[];
   seasons: ResolvedSeason[];
+  teamGoals: TeamGoalRule[];
   friends: { max: number };
   teams: { maxMembers: number };
 }
@@ -670,6 +688,25 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     });
   }
 
+  const teamGoals = input.teamGoals ?? [];
+  uniqueIds("team goal", teamGoals.map((g) => g.id));
+  for (const g of teamGoals) {
+    if (typeof g.name !== "string" || g.name.length === 0) throw new ConfigError(`team goal "${g.id}" needs a name`);
+    if (!STREAK_PERIODS.includes(g.period)) throw new ConfigError(`team goal "${g.id}" period must be daily or weekly`);
+    const goal = g.goal as Record<string, unknown> | undefined;
+    const kinds = goal && typeof goal === "object" ? ["event", "points"].filter((k) => k in goal) : [];
+    if (kinds.length !== 1 || typeof goal?.target !== "number" || !Number.isFinite(goal.target) || goal.target <= 0) {
+      throw new ConfigError(`team goal "${g.id}" needs goal: { event | points, target } with a positive target`);
+    }
+    if ("event" in g.goal && (typeof g.goal.event !== "string" || !ID.test(g.goal.event))) throw new ConfigError(`team goal "${g.id}" has bad event "${g.goal.event}"`);
+    if ("points" in g.goal) hasCurrency(g.goal.points, `team goal "${g.id}"`);
+    for (const r of g.rewards ?? []) {
+      hasCurrency(r.currency, `team goal "${g.id}" reward`);
+      if (typeof r.amount !== "number" || !Number.isFinite(r.amount) || r.amount <= 0) throw new ConfigError(`team goal "${g.id}" rewards need a positive amount`);
+    }
+    if (g.timezone !== undefined && !isValidTimeZone(g.timezone)) throw new ConfigError(`team goal "${g.id}" has unknown timezone "${g.timezone}"`);
+  }
+
   const maxFriends = input.friends?.max ?? 1000;
   if (!Number.isInteger(maxFriends) || maxFriends < 1 || maxFriends > 100_000) {
     throw new ConfigError("friends.max must be a whole number from 1 to 100000");
@@ -695,6 +732,7 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     referrals,
     communityGoals,
     seasons,
+    teamGoals,
     friends: { max: maxFriends },
     teams: { maxMembers },
   };

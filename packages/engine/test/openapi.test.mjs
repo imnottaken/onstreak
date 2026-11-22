@@ -245,6 +245,17 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   await call("get", "/v1/teams/owls", "/v1/teams/{teamId}");
   await call("get", "/v1/teams/nope", "/v1/teams/{teamId}"); // 404
   await call("get", "/v1/users/asha/team", "/v1/users/{userId}/team");
+  await call("get", "/v1/teams/owls/goals?userId=asha", "/v1/teams/{teamId}/goals"); // none configured here
+  await call("get", "/v1/teams/nope/goals", "/v1/teams/{teamId}/goals"); // 404
+  const teamy = await serve(t, new MemoryStore(), { ...config, teamGoals: [{ id: "tg", name: "Together", period: "weekly", goal: { event: "lesson_completed", target: 1 }, rewards: [{ currency: "coins", amount: 1 }] }] });
+  const teamyCall = (method, path, body) => fetch(`${teamy.base}${path}`, { method, headers: { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  await teamyCall("PUT", "/v1/teams/t1", { name: "T1" });
+  await teamyCall("PUT", "/v1/teams/t1/members/m1");
+  await teamyCall("POST", "/v1/events", { userId: "m1", event: "lesson_completed" });
+  const tgRes = await teamyCall("GET", "/v1/teams/t1/goals?userId=m1");
+  const tg = await tgRes.json();
+  c.check("get", "/v1/teams/{teamId}/goals", tgRes.status, tg);
+  assert.deepEqual([tg.goals[0].completed, tg.goals[0].you.paidNow.length], [true, 1]);
   await call("get", "/v1/leaderboards/xp_all/teams?teamId=larks", "/v1/leaderboards/{leaderboardId}/teams");
   await call("get", "/v1/leaderboards/nope/teams", "/v1/leaderboards/{leaderboardId}/teams"); // 404
   await call("delete", "/v1/teams/owls/members/asha", "/v1/teams/{teamId}/members/{userId}");

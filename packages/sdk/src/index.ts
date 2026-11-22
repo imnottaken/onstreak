@@ -281,6 +281,25 @@ export interface TeamStatus extends Team {
   leaderboard: { id: string; score: number; rank: number } | null;
 }
 
+export interface TeamGoalList {
+  teamId: string;
+  goals: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    period: "daily" | "weekly";
+    goal: { event: string; target: number } | { points: string; target: number };
+    progress: number;
+    target: number;
+    completed: boolean;
+    rewards: QuestReward[];
+    startsAt: string;
+    endsAt: string;
+    contributions: Array<{ userId: string; amount: number }>;
+    you: { contribution: number; rewarded: boolean; paidNow: QuestReward[] } | null;
+  }>;
+}
+
 export interface TeamLeaderboard {
   id: string;
   currency: string;
@@ -475,6 +494,9 @@ export function createClient(options: ClientOptions) {
     /** A team and its members; with a leaderboard id, members' points for the team and its rank. */
     team: (teamId: string, opts: { leaderboard?: string } = {}) =>
       call<TeamStatus>("GET", `/v1/teams/${encodeURIComponent(teamId)}${opts.leaderboard ? `?leaderboard=${encodeURIComponent(opts.leaderboard)}` : ""}`),
+    /** The team's goals this day or week; with userId, that member's part (and rewards once reached). */
+    teamGoals: (teamId: string, opts: { userId?: string } = {}) =>
+      call<TeamGoalList>("GET", `/v1/teams/${encodeURIComponent(teamId)}/goals${opts.userId ? `?userId=${encodeURIComponent(opts.userId)}` : ""}`),
     /** Put a user in a team. Throws 409 "already_in_team" or "team_full". */
     addTeamMember: (teamId: string, userId: string) =>
       call<{ teamId: string; userId: string; created: boolean }>("PUT", `/v1/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`),

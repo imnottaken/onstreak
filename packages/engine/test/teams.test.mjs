@@ -111,3 +111,66 @@ test("pg: concurrent joins never overfill a team or put a user in two", { skip: 
   const inB = (await engine.team("b")).members.some((m) => m.userId === "solo");
   assert.equal(Number(inA) + Number(inB), 1, "in exactly one team");
 });
+
+const goalConfig = {
+  ...config,
+  defaultTimezone: "UTC",
+  teamGoals: [
+    { id: "ten_lessons", name: "Ten lessons together", period: "weekly", goal: { event: "lesson_completed", target: 10 }, rewards: [{ currency: "coins", amount: 7 }] },
+    { id: "daily_xp", name: "50 XP today", description: "As a team", period: "daily", goal: { points: "xp", target: 50 } },
+  ],
+};
+
+for (const [name, makeStore] of Object.entries(storeFactories)) {
+  test(`${name}: team goals add up members' activity and pay contributors once`, async (t) => {
+    let now = start; // Monday 06:00 UTC
+    const engine = new Engine(goalConfig, await makeStore(t), () => now);
+    const lessons = async (u, n) => {
+      for (let i = 0; i < n; i++) await engine.track({ userId: u, event: "lesson_completed" });
+    };
+    await engine.saveTeam("owls", { name: "Owls" });
+    await lessons("asha", 2); // before joining
+    now += 1000;
+    for (const u of ["asha", "ravi", "zoe"]) await engine.addTeamMember("owls", u);
+    now += 1000;
+    await lessons("asha", 4);
+    await lessons("ravi", 3);
+
+    let list = await engine.teamGoals("owls", { userId: "asha" });
+    const weekly = list.goals[0];
+    assert.deepEqual([weekly.progress, weekly.completed, weekly.startsAt, weekly.endsAt], [7, false, "2026-11-16T00:00:00.000Z", "2026-11-23T00:00:00.000Z"]);
+    assert.deepEqual(weekly.contributions, [{ userId: "asha", amount: 4 }, { userId: "ravi", amount: 3 }]);
+    assert.deepEqual(weekly.you, { contribution: 4, rewarded: false, paidNow: [] });
+    assert.deepEqual([list.goals[1].progress, list.goals[1].completed, list.goals[1].description], [70, true, "As a team"]);
+
+    now += 24 * 3_600_000; // Tuesday: the daily goal starts over, the weekly one carries on
+    await lessons("ravi", 3);
+    list = await engine.teamGoals("owls", { userId: "asha" });
+    assert.deepEqual([list.goals[0].progress, list.goals[0].completed, list.goals[1].progress], [10, true, 30]);
+    assert.deepEqual(list.goals[0].you.paidNow, [{ currency: "coins", amount: 7 }]);
+    assert.deepEqual((await engine.teamGoals("owls", { userId: "asha" })).goals[0].you.paidNow, [], "paid once");
+    assert.deepEqual((await engine.teamGoals("owls", { userId: "ravi" })).goals[0].you.paidNow.length, 1);
+    const zoe = (await engine.teamGoals("owls", { userId: "zoe" })).goals[0].you;
+    assert.deepEqual(zoe, { contribution: 0, rewarded: false, paidNow: [] }, "members who did nothing get nothing");
+    const outsider = (await engine.teamGoals("owls", { userId: "maya" })).goals[0].you;
+    assert.deepEqual(outsider, { contribution: 0, rewarded: false, paidNow: [] });
+    assert.equal((await engine.teamGoals("owls")).goals[0].you, null);
+
+    // Next week everything starts again.
+    now += 7 * 24 * 3_600_000;
+    list = await engine.teamGoals("owls", { userId: "asha" });
+    assert.deepEqual([list.goals[0].progress, list.goals[0].you.rewarded], [0, false]);
+    await assert.rejects(engine.teamGoals("nope"), (e) => e.status === 404);
+  });
+}
+
+test("team goal config is validated", () => {
+  const g = { id: "g", name: "G", period: "daily", goal: { event: "x", target: 1 } };
+  const bad = (extra) => assert.throws(() => resolveConfig({ ...base, teamGoals: [{ ...g, ...extra }] }), /team goal "g"/);
+  bad({ name: "" });
+  bad({ period: "monthly" });
+  bad({ goal: { event: "x", target: 0 } });
+  bad({ goal: { points: "gems", target: 1 } });
+  bad({ rewards: [{ currency: "coins", amount: 0 }] });
+  bad({ timezone: "Nope/Zone" });
+});
