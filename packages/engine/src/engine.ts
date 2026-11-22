@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, type StreakRule, boostSpecProblem, questGoals, questRunsAt, type QuestGoal } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
-import { breakPeriod, initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
+import { breakPeriod, shiftPeriod, streakPeriodKey, streakPeriodsBetween, initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
 import { AlreadyInTeamError, FriendLimitError, RivalLimitError, TeamFullError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type ReferralRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
 import { addDays, isValidTimeZone, leaderboardWindow, periodKey, periodsBetween, startOfDay, type LeaderboardPeriod } from "./time.js";
 
@@ -628,12 +628,12 @@ export class Engine {
       for (const rule of config.streaks) {
         if (rule.event !== event) continue;
         let prev = (await tx.getStreak(rule.id)) ?? initialStreak(rule);
-        const period = periodKey(ts, rule.period, timezone);
+        const period = streakPeriodKey(rule, ts, timezone);
         let progress: number | undefined;
         let enough = true;
         if (rule.minimum !== undefined) {
           const filling = prev.progressPeriod ?? null;
-          if (filling !== null && periodsBetween(filling, period, rule.period) < 0) {
+          if (filling !== null && streakPeriodsBetween(rule, filling, period) < 0) {
             // A late event for a period before the one being filled changes nothing.
             enough = false;
             progress = prev.progress ?? 0;
@@ -668,7 +668,7 @@ export class Engine {
           // A streak this event did not touch may have lapsed since; count it as it stands now.
           const rule = config.streaks.find((r) => r.id === m.streak)!;
           const state = streakStates.get(m.streak) ?? (await tx.getStreak(m.streak));
-          const current = state ? streakStatus(rule, state, periodKey(ts, rule.period, timezone)).current : 0;
+          const current = state ? streakStatus(rule, state, streakPeriodKey(rule, ts, timezone)).current : 0;
           factor = [...m.steps].reverse().find((step) => current >= step.gte)?.factor ?? null;
         }
         if (factor !== null && factor !== 1) multipliers[m.id] = { factor, currency: m.currency };
@@ -862,7 +862,7 @@ export class Engine {
     const streaks: UserProfile["streaks"] = {};
     for (const rule of this.config.streaks) {
       const state = snap.streaks[rule.id] ?? initialStreak(rule);
-      const nowPeriod = periodKey(now, rule.period, timezone);
+      const nowPeriod = streakPeriodKey(rule, now, timezone);
       const status = streakStatus(rule, state, nowPeriod);
       const until = repairDeadline(rule, state, timezone);
       streaks[rule.id] = {
@@ -1630,7 +1630,7 @@ export class Engine {
         const rule = this.config.streaks.find((s) => s.id === effect.streakFreeze)!;
         const state = (await tx.getStreak(rule.id)) ?? initialStreak(rule);
         const timezone = (await tx.getProfile()).timezone ?? this.config.defaultTimezone;
-        if (streakStatus(rule, state, periodKey(usedAt, rule.period, timezone)).status === "broken") {
+        if (streakStatus(rule, state, streakPeriodKey(rule, usedAt, timezone)).status === "broken") {
           throw new EngineError(`the "${rule.id}" streak is already broken; a freeze cannot bring it back`, 409, "streak_broken");
         }
         const max = rule.freezes?.max ?? 0;
@@ -1722,7 +1722,7 @@ export class Engine {
       const now = this.now();
       const timezone = (await tx.getProfile()).timezone ?? this.config.defaultTimezone;
       const state = (await tx.getStreak(rule.id)) ?? initialStreak(rule);
-      const nowPeriod = periodKey(now, rule.period, timezone);
+      const nowPeriod = streakPeriodKey(rule, now, timezone);
       if (streakStatus(rule, state, nowPeriod).status !== "broken") {
         throw new EngineError(`the "${rule.id}" streak is not broken`, 409, "not_broken");
       }
@@ -1734,7 +1734,7 @@ export class Engine {
         if (available < cost.amount) throw new EngineError(`repairing costs ${cost.amount} ${cost.currency} and ${userId} has ${available}`, 409, "insufficient_funds");
         await tx.spend(cost.currency, cost.amount);
       }
-      const repaired: StreakState = { ...state, lastPeriod: addDays(nowPeriod, rule.period === "daily" ? -1 : -7), freezes: 0 };
+      const repaired: StreakState = { ...state, lastPeriod: shiftPeriod(rule, nowPeriod, -1), freezes: 0 };
       await tx.setStreak(rule.id, repaired);
       const wallet: Record<string, number> = {};
       for (const c of this.config.currencies) wallet[c] = round6((await tx.getBalance(c)) - (await tx.getSpent(c)));

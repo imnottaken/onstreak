@@ -109,3 +109,60 @@ test("streak rule options are validated", () => {
   bad({ period: "weekly", skipWeekends: true });
   assert.doesNotThrow(() => resolveConfig({ ...base, achievements: [], items: [], streaks: [{ ...s, minimum: 2.5, skipWeekends: true }] }));
 });
+
+const periods = {
+  ...base,
+  defaultTimezone: "UTC",
+  achievements: [],
+  items: [],
+  streaks: [
+    { id: "monthly", event: "lesson_completed", period: "monthly", repair: { withinHours: 72 } },
+    { id: "sunday_weeks", event: "lesson_completed", period: "weekly", weekStartsOn: "sunday" },
+    { id: "monday_weeks", event: "lesson_completed", period: "weekly" },
+  ],
+};
+
+for (const [name, makeStore] of Object.entries(storeFactories)) {
+  test(`${name}: monthly streaks count calendar months`, async (t) => {
+    let now = Date.parse("2026-01-31T10:00:00Z");
+    const engine = new Engine(periods, await makeStore(t), () => now);
+    const lesson = () => engine.track({ userId: "m", event: "lesson_completed" });
+    await lesson();
+    now = Date.parse("2026-02-01T10:00:00Z"); // the next day is already a new month
+    let r = await lesson();
+    assert.deepEqual([r.streaks.monthly.current, r.streaks.monthly.extended], [2, true]);
+    now = Date.parse("2026-02-28T10:00:00Z");
+    r = await lesson();
+    assert.equal(r.streaks.monthly.extended, false, "once a month");
+    now = Date.parse("2026-03-31T10:00:00Z");
+    assert.equal((await engine.getUser("m")).streaks.monthly.status, "pending");
+    now = Date.parse("2026-04-02T10:00:00Z"); // March was missed
+    const u = await engine.getUser("m");
+    assert.deepEqual([u.streaks.monthly.status, u.streaks.monthly.repairableUntil], ["broken", "2026-04-04T00:00:00.000Z"]);
+    const fixed = await engine.repairStreak("m", "monthly");
+    assert.deepEqual([fixed.current, fixed.status], [2, "pending"]);
+    r = await lesson();
+    assert.equal(r.streaks.monthly.current, 3);
+  });
+
+  test(`${name}: weeks can start on any day`, async (t) => {
+    let now = Date.parse("2026-11-21T10:00:00Z"); // Saturday
+    const engine = new Engine(periods, await makeStore(t), () => now);
+    await engine.track({ userId: "w", event: "lesson_completed" });
+    now = Date.parse("2026-11-22T10:00:00Z"); // Sunday
+    const r = await engine.track({ userId: "w", event: "lesson_completed" });
+    assert.equal(r.streaks.sunday_weeks.current, 2, "Sunday starts a new week");
+    assert.equal(r.streaks.monday_weeks.current, 1, "but not for a Monday week");
+    assert.equal((await engine.getUser("w")).streaks.sunday_weeks.lastPeriod, "2026-11-22");
+  });
+}
+
+test("streak periods are validated", () => {
+  const s = { id: "s", event: "x" };
+  const bad = (extra) => assert.throws(() => resolveConfig({ ...base, achievements: [], items: [], streaks: [{ ...s, ...extra }] }), /streak "s"/);
+  bad({ period: "yearly" });
+  bad({ period: "daily", weekStartsOn: "sunday" });
+  bad({ period: "weekly", weekStartsOn: "funday" });
+  bad({ period: "monthly", skipWeekends: true });
+  assert.doesNotThrow(() => resolveConfig({ ...base, achievements: [], items: [], streaks: [{ ...s, period: "monthly", minimum: 10 }] }));
+});

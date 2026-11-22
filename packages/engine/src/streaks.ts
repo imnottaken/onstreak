@@ -1,5 +1,5 @@
 import type { StreakRule } from "./config.js";
-import { addDays, periodsBetween } from "./time.js";
+import { addDays, addMonths, dayKey, daysBetween, monthStart } from "./time.js";
 
 export interface StreakState {
   current: number;
@@ -12,6 +12,37 @@ export interface StreakState {
   progress?: number;
 }
 
+const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
+export type Weekday = (typeof WEEKDAYS)[number];
+export const WEEKDAY_NAMES: readonly string[] = WEEKDAYS;
+
+/** The period a moment falls in for this streak: its day, its week (from weekStartsOn, default Monday) or its month. */
+export function streakPeriodKey(rule: StreakRule, ms: number, timeZone: string): string {
+  const day = dayKey(ms, timeZone);
+  if (rule.period === "daily") return day;
+  if (rule.period === "monthly") return monthStart(day);
+  const first = WEEKDAYS.indexOf(rule.weekStartsOn ?? "monday");
+  const dow = new Date(`${day}T00:00:00Z`).getUTCDay();
+  return addDays(day, -((dow - first + 7) % 7));
+}
+
+/** Whole periods from one period key to another (negative if `to` is earlier). */
+export function streakPeriodsBetween(rule: StreakRule, from: string, to: string): number {
+  if (rule.period === "monthly") {
+    const [fy, fm] = from.split("-").map(Number) as [number, number];
+    const [ty, tm] = to.split("-").map(Number) as [number, number];
+    return (ty - fy) * 12 + (tm - fm);
+  }
+  const days = daysBetween(from, to);
+  return rule.period === "daily" ? days : Math.round(days / 7);
+}
+
+/** The period key `n` periods after (or before) `key`. */
+export function shiftPeriod(rule: StreakRule, key: string, n: number): string {
+  if (rule.period === "monthly") return addMonths(key, n);
+  return addDays(key, rule.period === "daily" ? n : n * 7);
+}
+
 /** Whether a period must be done: with skipWeekends, Saturdays and Sundays never count as missed. */
 function required(rule: StreakRule, period: string): boolean {
   if (!rule.skipWeekends) return true;
@@ -21,11 +52,10 @@ function required(rule: StreakRule, period: string): boolean {
 
 /** Required periods strictly between two periods. */
 export function missedBetween(rule: StreakRule, from: string, to: string): number {
-  const gap = periodsBetween(from, to, rule.period);
+  const gap = streakPeriodsBetween(rule, from, to);
   if (!rule.skipWeekends) return Math.max(0, gap - 1);
-  const step = rule.period === "daily" ? 1 : 7;
   let missed = 0;
-  for (let i = 1; i < gap; i++) if (required(rule, addDays(from, i * step))) missed++;
+  for (let i = 1; i < gap; i++) if (required(rule, shiftPeriod(rule, from, i))) missed++;
   return missed;
 }
 
@@ -34,15 +64,14 @@ export function missedBetween(rule: StreakRule, from: string, to: string): numbe
  * (freezes + 1)th required period missed since `lastPeriod`.
  */
 export function breakPeriod(rule: StreakRule, lastPeriod: string, freezes: number): string {
-  const step = rule.period === "daily" ? 1 : 7;
   let missed = 0;
   let p = lastPeriod;
   for (let i = 0; i < 10_000; i++) {
-    p = addDays(p, step);
+    p = shiftPeriod(rule, p, 1);
     if (required(rule, p)) missed++;
-    if (missed > freezes) return addDays(p, step);
+    if (missed > freezes) return shiftPeriod(rule, p, 1);
   }
-  return addDays(p, step);
+  return shiftPeriod(rule, p, 1);
 }
 
 export interface StreakUpdate {
@@ -75,7 +104,7 @@ export function recordActivity(rule: StreakRule, prev: StreakState, period: stri
   let reset = false;
 
   if (prev.lastPeriod !== null) {
-    const gap = periodsBetween(prev.lastPeriod, period, rule.period);
+    const gap = streakPeriodsBetween(rule, prev.lastPeriod, period);
     if (gap < 0) return unchanged;
     if (prev.current > 0) {
       const missed = missedBetween(rule, prev.lastPeriod, period);
@@ -113,7 +142,7 @@ export function streakStatus(
 ): { current: number; longest: number; freezes: number; lastPeriod: string | null; status: StreakStatus } {
   const base = { longest: state.longest, freezes: state.freezes, lastPeriod: state.lastPeriod };
   if (state.lastPeriod === null || state.current === 0) return { ...base, current: 0, status: "none" };
-  const gap = periodsBetween(state.lastPeriod, nowPeriod, rule.period);
+  const gap = streakPeriodsBetween(rule, state.lastPeriod, nowPeriod);
   if (gap <= 0) return { ...base, current: state.current, status: "done" };
   if (missedBetween(rule, state.lastPeriod, nowPeriod) <= state.freezes) return { ...base, current: state.current, status: "pending" };
   return { ...base, current: 0, status: "broken" };

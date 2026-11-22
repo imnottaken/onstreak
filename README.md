@@ -81,7 +81,7 @@ Everything is declared in one JSON file. See [examples/onstreak.config.json](exa
 | `currencies` | Point types, e.g. `xp`, `coins` |
 | `points` | Which event awards how much: `{ event, currency, amount, multiplyByValue? }` |
 | `levels` | Level thresholds for one currency |
-| `streaks` | `{ id, event, period: daily \| weekly, freezes?: { start, max, earnEvery }, repair?: { withinHours, cost?: { currency, amount } }, minimum?, skipWeekends? }`. `minimum` makes a period count only once the event's values add up to it ("3 lessons a day"); users see `progress`. `skipWeekends` (daily) never counts Saturday or Sunday as missed. With `repair`, a broken streak can be repaired within `withinHours` of breaking (before a new one starts), paid from the wallet |
+| `streaks` | `{ id, event, period: daily \| weekly \| monthly, weekStartsOn?, freezes?: { start, max, earnEvery }, repair?: { withinHours, cost?: { currency, amount } }, minimum?, skipWeekends? }`. `minimum` makes a period count only once the event's values add up to it ("3 lessons a day"); users see `progress`. `skipWeekends` (daily) never counts Saturday or Sunday as missed. Monthly streaks count calendar months; `weekStartsOn` (e.g. `"sunday"`) sets where weekly streaks' weeks begin. With `repair`, a broken streak can be repaired within `withinHours` of breaking (before a new one starts), paid from the wallet |
 | `achievements` | Unlock when a metric, streak or point total reaches `gte` |
 | `leaderboards` | `{ id, currency, period: daily \| weekly \| monthly \| all, timezone? }` |
 | `leagues` | `{ id, currency, tiers, groupSize?, promote?, demote?, period?, timezone? }` (defaults: 30 per group, 7 up, 5 down, weekly) |

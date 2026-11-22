@@ -72,7 +72,7 @@ Things that would hurt early users if they were missing.
 - [x] **RewardStore React component** (S). Item grid with prices, owned counts and a buy button that calls your server.
 - [x] **Streak repair** (M). Repair a broken streak within N hours, e.g. by paying coins. (Buying freezes with coins works through items with a `streakFreeze` effect.)
 - [x] **Richer streak rules** (M). "At least 3 lessons a day" to count, weekends off.
-- [ ] **More streak periods** (S). Custom week start, monthly streaks.
+- [x] **More streak periods** (S). Custom week start, monthly streaks.
 - [x] **Daily login rewards and reward calendars** (S).
 - [x] **RewardCalendar React component** (S). A row of days with claimed, today and upcoming states.
 - [x] **Referral rewards** (S).

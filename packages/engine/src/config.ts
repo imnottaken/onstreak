@@ -12,7 +12,9 @@ export interface PointRule {
 export interface StreakRule {
   id: string;
   event: string;
-  period: StreakPeriod;
+  period: StreakPeriod | "monthly";
+  /** Weekly streaks: the day weeks start on. Default "monday". */
+  weekStartsOn?: "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday";
   freezes?: {
     /** Freezes a new user starts with. */
     start?: number;
@@ -387,7 +389,11 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
   uniqueIds("streak", streaks.map((s) => s.id));
   for (const s of streaks) {
     if (typeof s.event !== "string" || !ID.test(s.event)) throw new ConfigError(`streak "${s.id}" has bad event "${s.event}"`);
-    if (!STREAK_PERIODS.includes(s.period)) throw new ConfigError(`streak "${s.id}" period must be daily or weekly`);
+    if (!STREAK_PERIODS.includes(s.period) && s.period !== "monthly") throw new ConfigError(`streak "${s.id}" period must be daily, weekly or monthly`);
+    if (s.weekStartsOn !== undefined) {
+      if (s.period !== "weekly") throw new ConfigError(`streak "${s.id}" weekStartsOn only works with weekly streaks`);
+      if (!["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"].includes(s.weekStartsOn)) throw new ConfigError(`streak "${s.id}" weekStartsOn must be a day name like "sunday"`);
+    }
     const f = s.freezes;
     if (f) {
       for (const key of ["start", "max", "earnEvery"] as const) {
