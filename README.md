@@ -82,7 +82,7 @@ Everything is declared in one JSON file. See [examples/onstreak.config.json](exa
 | `points` | Which event awards how much: `{ event, currency, amount, multiplyByValue? }` |
 | `levels` | Level thresholds for one currency |
 | `streaks` | `{ id, event, period: daily \| weekly \| monthly, weekStartsOn?, freezes?: { start, max, earnEvery }, repair?: { withinHours, cost?: { currency, amount } }, minimum?, skipWeekends? }`. `minimum` makes a period count only once the event's values add up to it ("3 lessons a day"); users see `progress`. `skipWeekends` (daily) never counts Saturday or Sunday as missed. Monthly streaks count calendar months; `weekStartsOn` (e.g. `"sunday"`) sets where weekly streaks' weeks begin. With `repair`, a broken streak can be repaired within `withinHours` of breaking (before a new one starts), paid from the wallet |
-| `achievements` | Unlock when a metric, streak or point total reaches `gte` |
+| `achievements` | `{ id, name, description?, when: { metric \| streak \| points, gte }, rewards?, hidden? }`: unlock when the value reaches `gte`. `tiers: [{ name, gte, rewards? }]` (instead of `gte`) makes a tiered badge (bronze, silver, gold) unlocked tier by tier. `hidden` keeps it secret until unlocked; `rewards` are paid on unlock |
 | `leaderboards` | `{ id, currency, period: daily \| weekly \| monthly \| all, timezone? }` |
 | `leagues` | `{ id, currency, tiers, groupSize?, promote?, demote?, period?, timezone? }` (defaults: 30 per group, 7 up, 5 down, weekly). `seasonReset: true` (or `{ dropTiers }`) moves everyone back to the first tier (or down that many) when a season starts |
 | `rivalries` | `{ id, currency, period?, timezone?, max? }` (defaults: weekly, UTC, 10 rivals each) |
@@ -133,6 +133,7 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 | `PUT /v1/teams/:teamId/members/:userId` | Put a user in a team. 409 `already_in_team` (one team at a time) or `team_full`. Points count for the team from when they join |
 | `DELETE /v1/teams/:teamId/members/:userId` | Take a user out; their points stop counting for the team |
 | `GET /v1/teams/:teamId/goals?userId=` | The team's goals this day or week with progress and each member's contribution. A member who contributed is paid the rewards the first time they look after a goal is reached |
+| `GET /v1/users/:id/achievements` | Every achievement with the user's progress toward the next level (`current`, `target`, `percent`) and each tier's unlock time. Hidden ones have no name or progress until unlocked |
 | `GET /v1/users/:id/team` | The team a user is in, or null |
 | `GET /v1/leaderboards/:id/teams?limit=&teamId=` | Teams ranked by their members' points in the leaderboard's window |
 | `GET /v1/seasons?userId=` | Every season with its status; with `userId`, that user's score, rank and award. After a season ends, the award is paid the first time the user looks |
@@ -149,7 +150,7 @@ Spending never lowers earned points. `points` on a user is what they earned (lev
 
 The full machine-readable description is served at `GET /openapi.json` (OpenAPI 3.1, no key needed), so you can generate a client for any language. Tests check every response against it, so it stays accurate.
 
-The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `calendars`, `communityGoals`, `seasons`, `seasonStandings`, `saveTeam`, `team`, `addTeamMember`, `removeTeamMember`, `userTeam`, `teamLeaderboard`, `teamGoals`, `addReferral`, `referrals`, `store`, `purchase`, `purchases`, `useItem`, `refundPurchase`, `repairStreak`, `grantBoost`, `leaderboard`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
+The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `calendars`, `communityGoals`, `seasons`, `seasonStandings`, `achievements`, `saveTeam`, `team`, `addTeamMember`, `removeTeamMember`, `userTeam`, `teamLeaderboard`, `teamGoals`, `addReferral`, `referrals`, `store`, `purchase`, `purchases`, `useItem`, `refundPurchase`, `repairStreak`, `grantBoost`, `leaderboard`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
 
 ## React components
 

@@ -238,6 +238,9 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         if (req.method === "PUT") return send(200, await engine.addTeamMember(id, subId));
         if (req.method === "DELETE") return send(200, await engine.removeTeamMember(id, subId));
       }
+      if (req.method === "GET" && resource === "users" && id && sub === "achievements" && parts.length === 4) {
+        return send(200, await engine.achievements(id));
+      }
       if (req.method === "GET" && resource === "users" && id && sub === "team" && parts.length === 4) {
         return send(200, await engine.userTeam(id));
       }

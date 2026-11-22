@@ -91,7 +91,7 @@ const schemas = {
           type: "object",
           required: ["id", "name"],
           additionalProperties: false,
-          properties: { id: { type: "string" }, name: { type: "string" }, description: { type: "string" } },
+          properties: { id: { type: "string" }, name: { type: "string" }, description: { type: "string" }, tier: { type: "object", required: ["level", "name"], additionalProperties: false, properties: { level: { type: "integer", minimum: 1 }, name: { type: "string" } } }, rewards: { type: "array", items: ref("QuestReward") } },
         },
       },
       leagues: map({
@@ -589,6 +589,47 @@ const schemas = {
       },
     },
   },
+  AchievementList: {
+    type: "object",
+    required: ["userId", "achievements"],
+    additionalProperties: false,
+    properties: {
+      userId: { type: "string" },
+      achievements: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id", "name", "hidden", "unlocked", "completed", "unlockedAt", "progress"],
+          additionalProperties: false,
+          properties: {
+            id: { type: "string" },
+            name: nullable({ type: "string", description: "Null for a hidden achievement not unlocked yet." }),
+            description: { type: "string" },
+            hidden: { type: "boolean" },
+            unlocked: { type: "boolean", description: "At least one level unlocked." },
+            completed: { type: "boolean", description: "Every level unlocked." },
+            unlockedAt: nullable({ type: "string", format: "date-time" }),
+            progress: nullable({
+              type: "object",
+              required: ["current", "target", "percent"],
+              additionalProperties: false,
+              properties: { current: { type: "number" }, target: { type: "number" }, percent: { type: "integer", minimum: 0, maximum: 100 } },
+            }),
+            tiers: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["level", "name", "gte", "unlockedAt"],
+                additionalProperties: false,
+                properties: { level: { type: "integer", minimum: 1 }, name: { type: "string" }, gte: { type: "number" }, unlockedAt: nullable({ type: "string", format: "date-time" }) },
+              },
+            },
+            rewards: { type: "array", items: ref("QuestReward") },
+          },
+        },
+      },
+    },
+  },
   TeamRank: {
     type: "object",
     required: ["rank", "teamId", "name", "score"],
@@ -763,7 +804,7 @@ const schemas = {
           type: "object",
           required: ["id", "name", "unlockedAt"],
           additionalProperties: false,
-          properties: { id: { type: "string" }, name: { type: "string" }, description: { type: "string" }, unlockedAt: { type: "string", format: "date-time" } },
+          properties: { id: { type: "string" }, name: { type: "string" }, description: { type: "string" }, tier: { type: "object", required: ["level", "name"], additionalProperties: false, properties: { level: { type: "integer", minimum: 1 }, name: { type: "string" } } }, unlockedAt: { type: "string", format: "date-time" } },
         },
       },
     },
@@ -1194,6 +1235,15 @@ export function openapiSpec(version: string) {
           operationId: "removeTeamMember",
           summary: "Take a user out of a team",
           responses: { "200": ok("Whether they were removed", ref("TeamMembership")), ...authErrors, "404": errorResponse("Unknown team") },
+        },
+      },
+      "/v1/users/{userId}/achievements": {
+        parameters: [userIdParam],
+        get: {
+          operationId: "achievements",
+          summary: "Every achievement with the user's progress",
+          description: "Tiered badges list each tier. Hidden achievements have no name, description or progress until unlocked.",
+          responses: { "200": ok("The user's achievements", ref("AchievementList")), ...authErrors },
         },
       },
       "/v1/users/{userId}/team": {

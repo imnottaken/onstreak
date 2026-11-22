@@ -18,7 +18,8 @@ export interface TrackResult {
   points: Record<string, { awarded: number; total: number }>;
   level: { current: number; previous: number; leveledUp: boolean } | null;
   streaks: Record<string, { current: number; longest: number; freezes: number; extended: boolean; freezesUsed: number; reset: boolean; progress?: number }>;
-  achievements: Array<{ id: string; name: string; description?: string }>;
+  /** Rewards of unlocked achievements are already in `points`. */
+  achievements: Array<{ id: string; name: string; description?: string; tier?: { level: number; name: string }; rewards?: QuestReward[] }>;
   leagues: Record<string, { tier: string; group: number; joined: boolean; previous: LeaguePrevious | null }>;
   /** Quests this event moved forward. Rewards of a quest it completed are already in `points`. */
   quests: Record<string, { progress: number; target: number; completed: boolean; rewards: QuestReward[]; goals?: Array<{ progress: number; target: number }> }>;
@@ -82,7 +83,8 @@ export interface UserProfile {
   metrics: Record<string, number>;
   /** `repairableUntil` is set while a broken streak can still be repaired. */
   streaks: Record<string, { current: number; longest: number; freezes: number; lastPeriod: string | null; status: "none" | "done" | "pending" | "broken"; repairableUntil?: string; progress?: number }>;
-  achievements: Array<{ id: string; name: string; description?: string; unlockedAt: string }>;
+  /** A tiered badge appears once per tier reached. */
+  achievements: Array<{ id: string; name: string; description?: string; tier?: { level: number; name: string }; unlockedAt: string }>;
 }
 
 export interface LeaderboardEntry {
@@ -310,6 +312,23 @@ export interface TeamLeaderboard {
   team: { rank: number; teamId: string; name: string; score: number } | null;
 }
 
+export interface AchievementList {
+  userId: string;
+  achievements: Array<{
+    id: string;
+    /** Null for a hidden achievement not unlocked yet. */
+    name: string | null;
+    description?: string;
+    hidden: boolean;
+    unlocked: boolean;
+    completed: boolean;
+    unlockedAt: string | null;
+    progress: { current: number; target: number; percent: number } | null;
+    tiers?: Array<{ level: number; name: string; gte: number; unlockedAt: string | null }>;
+    rewards?: QuestReward[];
+  }>;
+}
+
 export interface Boost {
   id: string;
   factor: number;
@@ -503,6 +522,8 @@ export function createClient(options: ClientOptions) {
     /** Take a user out of a team. */
     removeTeamMember: (teamId: string, userId: string) =>
       call<{ teamId: string; userId: string; removed: boolean }>("DELETE", `/v1/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`),
+    /** Every achievement with the user's progress; hidden ones stay secret until unlocked. */
+    achievements: (userId: string) => call<AchievementList>("GET", `${user(userId)}/achievements`),
     /** The team a user is in, or null. */
     userTeam: (userId: string) => call<{ userId: string; team: (Team & { joinedAt: string }) | null }>("GET", `${user(userId)}/team`),
     /** Teams ranked by their members' points in a leaderboard's window. */

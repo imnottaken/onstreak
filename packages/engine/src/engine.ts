@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, type StreakRule, boostSpecProblem, questGoals, questRunsAt, type QuestGoal } from "./config.js";
+import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, type StreakRule, boostSpecProblem, achievementLevels, questGoals, questRunsAt, type QuestGoal } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { breakPeriod, shiftPeriod, streakPeriodKey, streakPeriodsBetween, initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
 import { AlreadyInTeamError, FriendLimitError, RivalLimitError, TeamFullError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type ReferralRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
@@ -40,7 +40,8 @@ export interface TrackResult {
   level: { current: number; previous: number; leveledUp: boolean } | null;
   /** `progress` is this period's total so far, for streaks with a minimum. */
   streaks: Record<string, { current: number; longest: number; freezes: number; extended: boolean; freezesUsed: number; reset: boolean; progress?: number }>;
-  achievements: Array<{ id: string; name: string; description?: string }>;
+  /** Achievements (or tiers of one) this event unlocked. Their rewards are already in `points`. */
+  achievements: Array<{ id: string; name: string; description?: string; tier?: { level: number; name: string }; rewards?: QuestReward[] }>;
   /** Leagues this event counted toward. `joined` is true the first time in a round. */
   leagues: Record<string, { tier: string; group: number; joined: boolean; previous: LeaguePrevious | null }>;
   /** Quests this event moved forward. `completed` is true on the event that finished one; its rewards are already in `points`. */
@@ -96,7 +97,8 @@ export interface UserProfile {
   metrics: Record<string, number>;
   /** `repairableUntil` is set while a broken streak can still be repaired. */
   streaks: Record<string, { current: number; longest: number; freezes: number; lastPeriod: string | null; status: StreakStatus; repairableUntil?: string; progress?: number }>;
-  achievements: Array<{ id: string; name: string; description?: string; unlockedAt: string }>;
+  /** Unlocked achievements; a tiered badge appears once per tier reached. */
+  achievements: Array<{ id: string; name: string; description?: string; tier?: { level: number; name: string }; unlockedAt: string }>;
 }
 
 export type LeaderboardScope = "all" | "friends";
@@ -396,6 +398,29 @@ export interface TeamGoalStatus {
 export interface TeamGoalList {
   teamId: string;
   goals: TeamGoalStatus[];
+}
+
+export interface AchievementStatus {
+  id: string;
+  /** Null for a hidden achievement nobody has shown the user yet. */
+  name: string | null;
+  description?: string;
+  hidden: boolean;
+  /** At least one level unlocked (for a plain achievement: unlocked). */
+  unlocked: boolean;
+  /** Every level unlocked. */
+  completed: boolean;
+  /** When the most recent level unlocked. */
+  unlockedAt: string | null;
+  /** Toward the next level (or the last one once completed). Null while hidden. */
+  progress: { current: number; target: number; percent: number } | null;
+  tiers?: Array<{ level: number; name: string; gte: number; unlockedAt: string | null }>;
+  rewards?: QuestReward[];
+}
+
+export interface AchievementList {
+  userId: string;
+  achievements: AchievementStatus[];
 }
 
 export interface TeamLeaderboard {
@@ -816,7 +841,8 @@ export class Engine {
       if (config.achievements.length > 0) {
         const unlocked = await tx.unlockedAchievements();
         for (const a of config.achievements) {
-          if (unlocked.has(a.id)) continue;
+          const levels = achievementLevels(a).filter((l) => !unlocked.has(l.key));
+          if (levels.length === 0) continue;
           let progress: number;
           if ("metric" in a.when) {
             progress = metrics.get(a.when.metric) ?? (await tx.getMetric(a.when.metric));
@@ -825,9 +851,23 @@ export class Engine {
           } else {
             progress = await tx.getBalance(a.when.points);
           }
-          if (progress >= a.when.gte) {
-            await tx.unlock(a.id, ts);
-            achievements.push({ id: a.id, name: a.name, ...(a.description ? { description: a.description } : {}) });
+          for (const l of levels) {
+            if (progress < l.gte) break;
+            await tx.unlock(l.key, ts);
+            for (const r of l.rewards) {
+              const total = await tx.addPoints(r.currency, r.amount, ts, eventId, recordedAt);
+              const entry = points[r.currency] ?? { awarded: 0, total };
+              entry.awarded += r.amount;
+              entry.total = total;
+              points[r.currency] = entry;
+            }
+            achievements.push({
+              id: a.id,
+              name: a.name,
+              ...(a.description ? { description: a.description } : {}),
+              ...(l.tier ? { tier: l.tier } : {}),
+              ...(l.rewards.length ? { rewards: l.rewards } : {}),
+            });
           }
         }
       }
@@ -898,13 +938,66 @@ export class Engine {
 
     const names = new Map(this.config.achievements.map((a) => [a.id, a]));
     const achievements = snap.achievements
-      .filter((a) => names.has(a.id))
       .map((a) => {
-        const rule = names.get(a.id)!;
-        return { id: a.id, name: rule.name, ...(rule.description ? { description: rule.description } : {}), unlockedAt: a.unlockedAt };
-      });
+        const [id, level] = a.id.split("#") as [string, string | undefined];
+        const rule = names.get(id);
+        const tier = rule && level !== undefined ? rule.tiers?.[Number(level) - 1] : undefined;
+        if (!rule || (level !== undefined && !tier)) return null;
+        return {
+          id,
+          name: rule.name,
+          ...(rule.description ? { description: rule.description } : {}),
+          ...(tier ? { tier: { level: Number(level), name: tier.name } } : {}),
+          unlockedAt: a.unlockedAt,
+        };
+      })
+      .filter((a): a is NonNullable<typeof a> => a !== null);
 
     return { userId, profile: snap.profile, points, wallet, inventory: snap.inventory, boosts: boosts.map(toBoost), level, metrics: snap.metrics, streaks, achievements };
+  }
+
+  /** Every achievement with the user's progress toward it. Hidden ones stay secret until unlocked. */
+  async achievements(userId: string): Promise<AchievementList> {
+    checkUserId(userId);
+    const snap = await this.store.snapshot(userId);
+    const now = this.now();
+    const timezone = snap.profile.timezone ?? this.config.defaultTimezone;
+    const unlockedAt = new Map(snap.achievements.map((a) => [a.id, a.unlockedAt]));
+    return {
+      userId,
+      achievements: this.config.achievements.map((a): AchievementStatus => {
+        const levels = achievementLevels(a);
+        const done = levels.filter((l) => unlockedAt.has(l.key));
+        const unlocked = done.length > 0;
+        const completed = done.length === levels.length;
+        const last = done.map((l) => unlockedAt.get(l.key)!).sort().at(-1) ?? null;
+        if (a.hidden && !unlocked) {
+          return { id: a.id, name: null, hidden: true, unlocked: false, completed: false, unlockedAt: null, progress: null };
+        }
+        let current: number;
+        if ("metric" in a.when) current = snap.metrics[a.when.metric] ?? 0;
+        else if ("points" in a.when) current = snap.balances[a.when.points] ?? 0;
+        else {
+          const rule = this.config.streaks.find((s) => s.id === (a.when as { streak: string }).streak)!;
+          const state = snap.streaks[rule.id];
+          current = state ? streakStatus(rule, state, streakPeriodKey(rule, now, timezone)).current : 0;
+        }
+        const target = (levels.find((l) => !unlockedAt.has(l.key)) ?? levels[levels.length - 1]!).gte;
+        const percent = target <= 0 ? 100 : Math.min(100, Math.floor((current / target) * 100));
+        return {
+          id: a.id,
+          name: a.name,
+          ...(a.description ? { description: a.description } : {}),
+          hidden: Boolean(a.hidden),
+          unlocked,
+          completed,
+          unlockedAt: last,
+          progress: { current, target, percent: completed ? 100 : percent },
+          ...(a.tiers ? { tiers: a.tiers.map((t, i) => ({ level: i + 1, name: t.name, gte: t.gte, unlockedAt: unlockedAt.get(`${a.id}#${i + 1}`) ?? null })) } : {}),
+          ...(a.rewards ? { rewards: a.rewards.map((r) => ({ ...r })) } : {}),
+        };
+      }),
+    };
   }
 
   /**

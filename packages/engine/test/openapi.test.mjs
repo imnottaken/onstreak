@@ -244,6 +244,7 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   await call("get", "/v1/teams/owls?leaderboard=xp_all", "/v1/teams/{teamId}");
   await call("get", "/v1/teams/owls", "/v1/teams/{teamId}");
   await call("get", "/v1/teams/nope", "/v1/teams/{teamId}"); // 404
+  await call("get", "/v1/users/asha/achievements", "/v1/users/{userId}/achievements");
   await call("get", "/v1/users/asha/team", "/v1/users/{userId}/team");
   await call("get", "/v1/teams/owls/goals?userId=asha", "/v1/teams/{teamId}/goals"); // none configured here
   await call("get", "/v1/teams/nope/goals", "/v1/teams/{teamId}/goals"); // 404

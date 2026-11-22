@@ -34,16 +34,46 @@ export interface StreakRule {
   skipWeekends?: boolean;
 }
 
+/** What an achievement measures. `gte` is the target; leave it out when the achievement has `tiers`. */
 export type AchievementCondition =
-  | { metric: string; gte: number }
-  | { streak: string; gte: number }
-  | { points: string; gte: number };
+  | { metric: string; gte?: number }
+  | { streak: string; gte?: number }
+  | { points: string; gte?: number };
+
+export interface AchievementTier {
+  /** e.g. "Bronze". */
+  name: string;
+  gte: number;
+  rewards?: QuestReward[];
+}
 
 export interface AchievementRule {
   id: string;
   name: string;
   description?: string;
   when: AchievementCondition;
+  /** Levels of one badge (bronze, silver, gold), each unlocked on its own. Ascending `gte`. */
+  tiers?: AchievementTier[];
+  /** Kept secret (no name, description or progress) until unlocked. */
+  hidden?: boolean;
+  /** Points paid when it unlocks (for tiered badges, put rewards on each tier). */
+  rewards?: QuestReward[];
+}
+
+/** One unlockable step of an achievement: the whole achievement, or one of its tiers. */
+export interface AchievementLevel {
+  /** Stored unlock id: the achievement id, or "id#level" for a tier. */
+  key: string;
+  gte: number;
+  rewards: QuestReward[];
+  tier: { level: number; name: string } | null;
+}
+
+export function achievementLevels(a: AchievementRule): AchievementLevel[] {
+  if (a.tiers) {
+    return a.tiers.map((t, i) => ({ key: `${a.id}#${i + 1}`, gte: t.gte, rewards: (t.rewards ?? []).map((r) => ({ ...r })), tier: { level: i + 1, name: t.name } }));
+  }
+  return [{ key: a.id, gte: a.when.gte!, rewards: (a.rewards ?? []).map((r) => ({ ...r })), tier: null }];
 }
 
 export interface LeaderboardRule {
@@ -449,8 +479,22 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     if (typeof a.name !== "string" || a.name.length === 0) throw new ConfigError(`achievement "${a.id}" needs a name`);
     const w = a.when as Record<string, unknown> | undefined;
     const kinds = w ? ["metric", "streak", "points"].filter((k) => k in w) : [];
-    if (kinds.length !== 1 || !isNonNegative(w?.gte)) {
-      throw new ConfigError(`achievement "${a.id}" needs when: { metric | streak | points, gte }`);
+    if (kinds.length !== 1) throw new ConfigError(`achievement "${a.id}" needs when: { metric | streak | points, gte }`);
+    if (a.tiers === undefined) {
+      if (!isNonNegative(w?.gte)) throw new ConfigError(`achievement "${a.id}" needs when: { metric | streak | points, gte }`);
+    } else {
+      if (w?.gte !== undefined) throw new ConfigError(`achievement "${a.id}" has tiers, so put gte on each tier instead of in when`);
+      if (a.rewards !== undefined) throw new ConfigError(`achievement "${a.id}" has tiers, so put rewards on each tier`);
+      if (!Array.isArray(a.tiers) || a.tiers.length < 2 || a.tiers.length > 10) throw new ConfigError(`achievement "${a.id}" tiers must list 2 to 10 tiers`);
+      a.tiers.forEach((t, i) => {
+        if (!t || typeof t.name !== "string" || t.name.length === 0) throw new ConfigError(`achievement "${a.id}" tiers need a name`);
+        if (!isNonNegative(t.gte) || (i > 0 && t.gte <= a.tiers![i - 1]!.gte)) throw new ConfigError(`achievement "${a.id}" tier gte values must be ascending`);
+      });
+    }
+    if (a.hidden !== undefined && typeof a.hidden !== "boolean") throw new ConfigError(`achievement "${a.id}" hidden must be true or false`);
+    for (const r of [...(a.rewards ?? []), ...(a.tiers ?? []).flatMap((t) => t.rewards ?? [])]) {
+      hasCurrency(r.currency, `achievement "${a.id}" reward`);
+      if (typeof r.amount !== "number" || !Number.isFinite(r.amount) || r.amount <= 0) throw new ConfigError(`achievement "${a.id}" rewards need a positive amount`);
     }
     if ("streak" in a.when && !streaks.some((s) => s.id === (a.when as { streak: string }).streak)) {
       throw new ConfigError(`achievement "${a.id}" refers to unknown streak "${a.when.streak}"`);
