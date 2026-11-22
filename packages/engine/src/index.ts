@@ -79,6 +79,8 @@ export type {
   ResolvedSeason,
   TeamGoalRule,
   AchievementTier,
+  AchievementLeaf,
+  AchievementWindow,
   AchievementLevel,
 } from "./config.js";
 export { initialStreak, recordActivity, streakStatus } from "./streaks.js";

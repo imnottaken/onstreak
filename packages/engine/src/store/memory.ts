@@ -163,6 +163,15 @@ export class MemoryStore implements Store {
         return total;
       },
       getBalance: async (currency) => d.balances.get(currency) ?? 0,
+      windowTotal: async (kind, key, from, to) => {
+        let total = 0;
+        if (kind === "points") {
+          for (const l of this.ledger) if (l.userId === userId && l.currency === key && l.ts >= from && l.ts < to) total += l.amount;
+        } else {
+          for (const e of d.events.values()) if (e.key === key && e.ts >= from && e.ts < to) total += e.value;
+        }
+        return total;
+      },
       getSpent: async (currency) => d.spent.get(currency) ?? 0,
       spend: async (currency, amount) => {
         d.spent.set(currency, (d.spent.get(currency) ?? 0) + amount);

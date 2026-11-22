@@ -211,6 +211,8 @@ export interface UserTx {
   groupStandings(query: GroupQuery): Promise<GroupMember[]>;
   getQuest(questId: string, periodKey: string): Promise<QuestProgress | null>;
   setQuest(progress: QuestProgress): Promise<void>;
+  /** This user's event values summed, or points earned, in [from, to). */
+  windowTotal(kind: "event" | "points", key: string, from: number, to: number): Promise<number>;
   /** Points spent so far in a currency. Spendable balance is getBalance minus this. */
   getSpent(currency: string): Promise<number>;
   /** Take points from the wallet for something other than an item (e.g. a streak repair). */

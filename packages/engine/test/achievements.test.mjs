@@ -104,3 +104,63 @@ test("achievements a config no longer has are left out", async () => {
   const user = await new Engine({ ...config, achievements: [] }, store, () => start).getUser("x");
   assert.deepEqual(user.achievements, []);
 });
+
+const compound = {
+  ...base,
+  achievements: [
+    { id: "speedy", name: "Speedy", when: { metric: "lesson_completed", gte: 3, within: "day" } },
+    { id: "xp_week", name: "Big week", when: { points: "xp", gte: 100, within: "week" } },
+    { id: "all_rounder", name: "All-rounder", when: { all: [{ metric: "lesson_completed", gte: 2 }, { metric: "minutes_studied", gte: 30 }] } },
+    { id: "either", name: "Either way", when: { any: [{ streak: "daily_lesson", gte: 3 }, { points: "coins", gte: 5 }] } },
+  ],
+};
+
+for (const [name, makeStore] of Object.entries(storeFactories)) {
+  test(`${name}: time-window and compound conditions`, async (t) => {
+    let now = start; // Monday, 11:30 in Kolkata
+    const engine = new Engine(compound, await makeStore(t), () => now);
+    const lesson = () => engine.track({ userId: "asha", event: "lesson_completed" });
+    const ids = (r) => r.achievements.map((a) => a.id);
+
+    await lesson();
+    await lesson();
+    let list = await engine.achievements("asha");
+    assert.deepEqual(list.achievements[0].progress, { current: 2, target: 3, percent: 66 });
+    assert.deepEqual(list.achievements[2].progress, { current: 1, target: 2, percent: 50 }, "all: one of two parts met");
+
+    now += 86_400_000; // Tuesday: the day window starts over
+    await lesson();
+    let r = await lesson();
+    assert.deepEqual(ids(r), [], "only two today, though four in total");
+    r = await lesson();
+    assert.deepEqual(ids(r), ["speedy", "either"], "three today; and five coins for either");
+
+    r = await engine.track({ userId: "asha", event: "minutes_studied", value: 30 }); // 60 xp: 110 this week
+    assert.deepEqual(ids(r), ["xp_week", "all_rounder"]);
+    list = await engine.achievements("asha");
+    assert.ok(list.achievements.every((a) => a.completed));
+  });
+
+  test(`${name}: a week window starts over each Monday`, async (t) => {
+    let now = Date.parse("2026-11-22T06:00:00Z"); // Sunday
+    const engine = new Engine(compound, await makeStore(t), () => now);
+    await engine.track({ userId: "w", event: "minutes_studied", value: 40 }); // 80 xp on Sunday
+    now += 86_400_000; // Monday
+    const r = await engine.track({ userId: "w", event: "minutes_studied", value: 15 }); // 30 xp
+    assert.equal(r.achievements.some((a) => a.id === "xp_week"), false, "110 in total but only 30 this week");
+    assert.deepEqual((await engine.achievements("w")).achievements[1].progress, { current: 30, target: 100, percent: 30 });
+  });
+}
+
+test("compound conditions are validated", () => {
+  const bad = (when, re, extra = {}) => assert.throws(() => resolveConfig({ ...base, achievements: [{ id: "a", name: "A", when, ...extra }] }), re);
+  bad({ all: [{ metric: "x", gte: 1 }] }, /2 to 10/);
+  bad({ all: [{ metric: "x", gte: 1 }, { metric: "y" }] }, /needs when/);
+  bad({ all: [{ metric: "x", gte: 1 }, { metric: "y", gte: 1 }], any: [] }, /2 to 10/);
+  bad({ metric: "x", gte: 1, within: "year" }, /day, week or month/);
+  bad({ streak: "daily_lesson", gte: 1, within: "day" }, /streaks/);
+  bad({ any: [{ streak: "nope", gte: 1 }, { metric: "x", gte: 1 }] }, /unknown streak/);
+  bad({ all: [{ all: [{ all: [{ all: [{ metric: "a", gte: 1 }, { metric: "b", gte: 1 }] }, { metric: "c", gte: 1 }] }, { metric: "d", gte: 1 }] }, { metric: "e", gte: 1 }] }, /too deep/);
+  bad({ all: [{ metric: "x", gte: 1 }, { metric: "y", gte: 1 }] }, /single value/, { tiers: [{ name: "B", gte: 1 }, { name: "S", gte: 2 }] });
+  assert.doesNotThrow(() => resolveConfig({ ...base, achievements: [{ id: "a", name: "A", when: { metric: "x", within: "week" }, tiers: [{ name: "B", gte: 1 }, { name: "S", gte: 2 }] }] }));
+});

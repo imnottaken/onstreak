@@ -306,6 +306,14 @@ export class PostgresStore implements Store {
         const { rows } = await q.query(`select spent from ${t.balances} where user_id = $1 and currency = $2`, [userId, currency]);
         return rows[0] ? num(rows[0].spent) : 0;
       },
+      async windowTotal(kind, key, from, to) {
+        const sql =
+          kind === "points"
+            ? `select coalesce(sum(amount), 0) as total from ${t.ledger} where user_id = $1 and currency = $2 and ts >= $3 and ts < $4`
+            : `select coalesce(sum(value), 0) as total from ${t.events} where user_id = $1 and key = $2 and ts >= $3 and ts < $4`;
+        const { rows } = await q.query(sql, [userId, key, new Date(from).toISOString(), new Date(to).toISOString()]);
+        return num(rows[0]?.total);
+      },
       async spend(currency, amount) {
         await q.query(
           `insert into ${t.balances} (user_id, currency, total, spent) values ($1, $2, 0, $3)

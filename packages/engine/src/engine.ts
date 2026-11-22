@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, type StreakRule, boostSpecProblem, achievementLevels, questGoals, questRunsAt, type QuestGoal } from "./config.js";
+import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, type StreakRule, boostSpecProblem, achievementLevels, isLeaf, type AchievementCondition, type AchievementLeaf, questGoals, questRunsAt, type QuestGoal } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { breakPeriod, shiftPeriod, streakPeriodKey, streakPeriodsBetween, initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
 import { AlreadyInTeamError, FriendLimitError, RivalLimitError, TeamFullError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type ReferralRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
@@ -510,6 +510,23 @@ const MAX_QUANTITY = 1000;
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 const REASON = /^[a-z0-9][a-z0-9_.:-]{0,63}$/i;
 
+const WINDOW_PERIOD = { day: "daily", week: "weekly", month: "monthly" } as const;
+
+/**
+ * How far a condition is: a value against its `gte`, or for all/any the
+ * number of parts met (all: out of every part; any: 1 once one is met).
+ */
+async function conditionProgress(c: AchievementCondition, read: (leaf: AchievementLeaf) => Promise<number>): Promise<{ current: number; target: number }> {
+  if (isLeaf(c)) return { current: await read(c), target: c.gte ?? 0 };
+  const list = "all" in c ? c.all : c.any;
+  let met = 0;
+  for (const part of list) {
+    const p = await conditionProgress(part, read);
+    if (p.current >= p.target) met++;
+  }
+  return "all" in c ? { current: met, target: list.length } : { current: met > 0 ? 1 : 0, target: 1 };
+}
+
 /** The period a quest is in at `ms`: a day or week, or the single "once" period of a one-off quest. */
 function questRound(q: QuestRule, timezone: string, ms: number): { key: string; from: number | null; to: number | null } {
   if (q.period === "once") return { key: "once", from: q.from ? Date.parse(q.from) : null, to: q.to ? Date.parse(q.to) : null };
@@ -843,14 +860,14 @@ export class Engine {
         for (const a of config.achievements) {
           const levels = achievementLevels(a).filter((l) => !unlocked.has(l.key));
           if (levels.length === 0) continue;
-          let progress: number;
-          if ("metric" in a.when) {
-            progress = metrics.get(a.when.metric) ?? (await tx.getMetric(a.when.metric));
-          } else if ("streak" in a.when) {
-            progress = (streakStates.get(a.when.streak) ?? (await tx.getStreak(a.when.streak)))?.current ?? 0;
-          } else {
-            progress = await tx.getBalance(a.when.points);
-          }
+          const { current: progress } = await conditionProgress(a.when, async (leaf) => {
+            if ("streak" in leaf) return (streakStates.get(leaf.streak) ?? (await tx.getStreak(leaf.streak)))?.current ?? 0;
+            if (leaf.within) {
+              const { from, to } = leaderboardWindow(WINDOW_PERIOD[leaf.within], ts, timezone);
+              return tx.windowTotal("metric" in leaf ? "event" : "points", "metric" in leaf ? leaf.metric : leaf.points, from!, to!);
+            }
+            return "metric" in leaf ? (metrics.get(leaf.metric) ?? (await tx.getMetric(leaf.metric))) : tx.getBalance(leaf.points);
+          });
           for (const l of levels) {
             if (progress < l.gte) break;
             await tx.unlock(l.key, ts);
@@ -963,6 +980,21 @@ export class Engine {
     const now = this.now();
     const timezone = snap.profile.timezone ?? this.config.defaultTimezone;
     const unlockedAt = new Map(snap.achievements.map((a) => [a.id, a.unlockedAt]));
+    const read = async (leaf: AchievementLeaf): Promise<number> => {
+      if ("streak" in leaf) {
+        const rule = this.config.streaks.find((r) => r.id === leaf.streak)!;
+        const state = snap.streaks[rule.id];
+        return state ? streakStatus(rule, state, streakPeriodKey(rule, now, timezone)).current : 0;
+      }
+      if (leaf.within) {
+        const { from, to } = leaderboardWindow(WINDOW_PERIOD[leaf.within], now, timezone);
+        const kind = "metric" in leaf ? "event" : "points";
+        return this.store.communityTotal({ kind, key: "metric" in leaf ? leaf.metric : leaf.points, from: from!, to: to!, userId });
+      }
+      return "metric" in leaf ? (snap.metrics[leaf.metric] ?? 0) : (snap.balances[leaf.points] ?? 0);
+    };
+    const currents = new Map<string, number>();
+    for (const a of this.config.achievements) currents.set(a.id, (await conditionProgress(a.when, read)).current);
     return {
       userId,
       achievements: this.config.achievements.map((a): AchievementStatus => {
@@ -974,14 +1006,7 @@ export class Engine {
         if (a.hidden && !unlocked) {
           return { id: a.id, name: null, hidden: true, unlocked: false, completed: false, unlockedAt: null, progress: null };
         }
-        let current: number;
-        if ("metric" in a.when) current = snap.metrics[a.when.metric] ?? 0;
-        else if ("points" in a.when) current = snap.balances[a.when.points] ?? 0;
-        else {
-          const rule = this.config.streaks.find((s) => s.id === (a.when as { streak: string }).streak)!;
-          const state = snap.streaks[rule.id];
-          current = state ? streakStatus(rule, state, streakPeriodKey(rule, now, timezone)).current : 0;
-        }
+        const current = currents.get(a.id)!;
         const target = (levels.find((l) => !unlockedAt.has(l.key)) ?? levels[levels.length - 1]!).gte;
         const percent = target <= 0 ? 100 : Math.min(100, Math.floor((current / target) * 100));
         return {

@@ -34,11 +34,24 @@ export interface StreakRule {
   skipWeekends?: boolean;
 }
 
-/** What an achievement measures. `gte` is the target; leave it out when the achievement has `tiers`. */
-export type AchievementCondition =
-  | { metric: string; gte?: number }
+/**
+ * One measured value. `gte` is the target (leave it out at the top of an
+ * achievement with `tiers`). `within` counts only the current day, week or
+ * month in the user's time zone ("5 lessons in one day", "100 XP this week").
+ */
+export type AchievementLeaf =
+  | { metric: string; gte?: number; within?: AchievementWindow }
   | { streak: string; gte?: number }
-  | { points: string; gte?: number };
+  | { points: string; gte?: number; within?: AchievementWindow };
+
+export type AchievementWindow = "day" | "week" | "month";
+
+/** A value, or several combined: `all` needs every one, `any` needs at least one. */
+export type AchievementCondition = AchievementLeaf | { all: AchievementCondition[] } | { any: AchievementCondition[] };
+
+export function isLeaf(c: AchievementCondition): c is AchievementLeaf {
+  return !("all" in c) && !("any" in c);
+}
 
 export interface AchievementTier {
   /** e.g. "Bronze". */
@@ -73,7 +86,8 @@ export function achievementLevels(a: AchievementRule): AchievementLevel[] {
   if (a.tiers) {
     return a.tiers.map((t, i) => ({ key: `${a.id}#${i + 1}`, gte: t.gte, rewards: (t.rewards ?? []).map((r) => ({ ...r })), tier: { level: i + 1, name: t.name } }));
   }
-  return [{ key: a.id, gte: a.when.gte!, rewards: (a.rewards ?? []).map((r) => ({ ...r })), tier: null }];
+  const gte = isLeaf(a.when) ? a.when.gte! : "all" in a.when ? a.when.all.length : 1;
+  return [{ key: a.id, gte, rewards: (a.rewards ?? []).map((r) => ({ ...r })), tier: null }];
 }
 
 export interface LeaderboardRule {
@@ -478,11 +492,34 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
   for (const a of achievements) {
     if (typeof a.name !== "string" || a.name.length === 0) throw new ConfigError(`achievement "${a.id}" needs a name`);
     const w = a.when as Record<string, unknown> | undefined;
-    const kinds = w ? ["metric", "streak", "points"].filter((k) => k in w) : [];
-    if (kinds.length !== 1) throw new ConfigError(`achievement "${a.id}" needs when: { metric | streak | points, gte }`);
+    const checkCondition = (c: unknown, top: boolean, depth: number): void => {
+      if (!c || typeof c !== "object" || Array.isArray(c)) throw new ConfigError(`achievement "${a.id}" needs when: { metric | streak | points, gte }`);
+      const cond = c as Record<string, unknown>;
+      if ("all" in cond || "any" in cond) {
+        const list = cond.all ?? cond.any;
+        if (depth > 3) throw new ConfigError(`achievement "${a.id}" nests all/any too deep (3 levels at most)`);
+        if (("all" in cond && "any" in cond) || !Array.isArray(list) || list.length < 2 || list.length > 10) {
+          throw new ConfigError(`achievement "${a.id}" all/any needs a list of 2 to 10 conditions`);
+        }
+        for (const x of list) checkCondition(x, false, depth + 1);
+        return;
+      }
+      const kinds = ["metric", "streak", "points"].filter((k) => k in cond);
+      if (kinds.length !== 1) throw new ConfigError(`achievement "${a.id}" needs when: { metric | streak | points, gte }`);
+      if (!(top && a.tiers !== undefined) && !isNonNegative(cond.gte)) throw new ConfigError(`achievement "${a.id}" needs when: { metric | streak | points, gte }`);
+      if (cond.within !== undefined) {
+        if ("streak" in cond) throw new ConfigError(`achievement "${a.id}" within does not apply to streaks`);
+        if (!["day", "week", "month"].includes(cond.within as string)) throw new ConfigError(`achievement "${a.id}" within must be day, week or month`);
+      }
+      if ("streak" in cond && !streaks.some((s) => s.id === cond.streak)) throw new ConfigError(`achievement "${a.id}" refers to unknown streak "${String(cond.streak)}"`);
+      if ("points" in cond) hasCurrency(cond.points as string, `achievement "${a.id}"`);
+      if ("metric" in cond && (typeof cond.metric !== "string" || !ID.test(cond.metric))) throw new ConfigError(`achievement "${a.id}" has bad metric "${String(cond.metric)}"`);
+    };
+    checkCondition(w, true, 1);
     if (a.tiers === undefined) {
-      if (!isNonNegative(w?.gte)) throw new ConfigError(`achievement "${a.id}" needs when: { metric | streak | points, gte }`);
+      // checked above
     } else {
+      if (!isLeaf(a.when)) throw new ConfigError(`achievement "${a.id}" with tiers needs a single value in when, not all/any`);
       if (w?.gte !== undefined) throw new ConfigError(`achievement "${a.id}" has tiers, so put gte on each tier instead of in when`);
       if (a.rewards !== undefined) throw new ConfigError(`achievement "${a.id}" has tiers, so put rewards on each tier`);
       if (!Array.isArray(a.tiers) || a.tiers.length < 2 || a.tiers.length > 10) throw new ConfigError(`achievement "${a.id}" tiers must list 2 to 10 tiers`);
@@ -496,10 +533,6 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
       hasCurrency(r.currency, `achievement "${a.id}" reward`);
       if (typeof r.amount !== "number" || !Number.isFinite(r.amount) || r.amount <= 0) throw new ConfigError(`achievement "${a.id}" rewards need a positive amount`);
     }
-    if ("streak" in a.when && !streaks.some((s) => s.id === (a.when as { streak: string }).streak)) {
-      throw new ConfigError(`achievement "${a.id}" refers to unknown streak "${a.when.streak}"`);
-    }
-    if ("points" in a.when) hasCurrency(a.when.points, `achievement "${a.id}"`);
   }
 
   const leaderboards = input.leaderboards ?? [];
