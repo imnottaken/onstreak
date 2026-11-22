@@ -223,6 +223,16 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         );
       }
 
+      if (req.method === "GET" && resource === "seasons" && parts.length === 2) {
+        const userId = url.searchParams.get("userId") ?? undefined;
+        return send(200, await engine.seasons(userId ? { userId } : {}));
+      }
+      if (req.method === "GET" && resource === "seasons" && id && sub === "standings" && parts.length === 4) {
+        const limit = intParam(url, "limit");
+        const userId = url.searchParams.get("userId") ?? undefined;
+        return send(200, await engine.seasonStandings(id, { ...(limit !== undefined ? { limit } : {}), ...(userId ? { userId } : {}) }));
+      }
+
       if (req.method === "GET" && resource === "community-goals" && parts.length === 2) {
         const userId = url.searchParams.get("userId") ?? undefined;
         return send(200, await engine.communityGoals(userId ? { userId } : {}));

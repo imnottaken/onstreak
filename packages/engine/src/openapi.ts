@@ -407,6 +407,64 @@ const schemas = {
       },
     },
   },
+  SeasonAward: {
+    type: "object",
+    required: ["top", "rewards"],
+    additionalProperties: false,
+    properties: { top: { type: "integer", minimum: 1 }, title: { type: "string" }, rewards: { type: "array", items: ref("QuestReward") } },
+  },
+  SeasonList: {
+    type: "object",
+    required: ["seasons"],
+    additionalProperties: false,
+    properties: {
+      seasons: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id", "name", "currency", "status", "startsAt", "endsAt", "rewards", "you"],
+          additionalProperties: false,
+          properties: {
+            id: { type: "string" },
+            name: { type: "string" },
+            currency: { type: "string" },
+            status: { enum: ["upcoming", "active", "ended"] },
+            startsAt: { type: "string", format: "date-time" },
+            endsAt: { type: "string", format: "date-time" },
+            rewards: { type: "array", items: ref("SeasonAward") },
+            you: nullable({
+              type: "object",
+              required: ["score", "rank", "award", "rewarded", "paidNow"],
+              additionalProperties: false,
+              properties: {
+                score: { type: "number" },
+                rank: nullable({ type: "integer", minimum: 1 }),
+                award: nullable(ref("SeasonAward")),
+                rewarded: { type: "boolean" },
+                paidNow: { type: "array", items: ref("QuestReward") },
+              },
+            }),
+          },
+        },
+      },
+    },
+  },
+  SeasonStandings: {
+    type: "object",
+    required: ["id", "name", "currency", "status", "startsAt", "endsAt", "final", "entries", "user"],
+    additionalProperties: false,
+    properties: {
+      id: { type: "string" },
+      name: { type: "string" },
+      currency: { type: "string" },
+      status: { enum: ["upcoming", "active", "ended"] },
+      startsAt: { type: "string", format: "date-time" },
+      endsAt: { type: "string", format: "date-time" },
+      final: { type: "boolean", description: "True once the season has ended: the standings will not change." },
+      entries: { type: "array", items: ref("RankedUser") },
+      user: nullable(ref("RankedUser")),
+    },
+  },
   Boost: {
     type: "object",
     required: ["id", "factor", "currency", "startsAt", "endsAt", "reason"],
@@ -948,6 +1006,24 @@ export function openapiSpec(version: string) {
           operationId: "referrals",
           summary: "Who referred a user and whom they referred",
           responses: { "200": ok("The user's referrals", ref("ReferralList")), ...authErrors, "404": errorResponse("Referrals are not configured") },
+        },
+      },
+      "/v1/seasons": {
+        get: {
+          operationId: "seasons",
+          summary: "Every season, with a user's score, rank and award",
+          description: "After a season ends, a user's award is paid the first time they look.",
+          parameters: [{ name: "userId", in: "query", schema: { type: "string", maxLength: 128 } }],
+          responses: { "200": ok("Every season", ref("SeasonList")), ...authErrors },
+        },
+      },
+      "/v1/seasons/{seasonId}/standings": {
+        parameters: [{ name: "seasonId", in: "path", required: true, schema: { type: "string" } }],
+        get: {
+          operationId: "seasonStandings",
+          summary: "A season's standings: live while it runs, fixed once it ends",
+          parameters: [limitParam(), { name: "userId", in: "query", schema: { type: "string", maxLength: 128 } }],
+          responses: { "200": ok("The standings", ref("SeasonStandings")), ...authErrors, "404": errorResponse("Unknown season") },
         },
       },
       "/v1/community-goals": {

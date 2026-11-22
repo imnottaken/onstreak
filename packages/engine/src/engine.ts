@@ -311,6 +311,51 @@ export interface StreakRepairResult {
   wallet: Record<string, number>;
 }
 
+export interface SeasonAward {
+  top: number;
+  title?: string;
+  rewards: QuestReward[];
+}
+
+export interface SeasonStatus {
+  id: string;
+  name: string;
+  currency: string;
+  status: "upcoming" | "active" | "ended";
+  startsAt: string;
+  endsAt: string;
+  /** Reward tiers, best first. */
+  rewards: SeasonAward[];
+  /** The asking user's place, when a userId was given. */
+  you: {
+    score: number;
+    /** Null until they score in the season. */
+    rank: number | null;
+    /** The best tier their rank reaches: final once the season has ended. */
+    award: SeasonAward | null;
+    /** Whether the award was paid (now or before). Awards are paid the first time the user looks after the season ends. */
+    rewarded: boolean;
+    paidNow: QuestReward[];
+  } | null;
+}
+
+export interface SeasonList {
+  seasons: SeasonStatus[];
+}
+
+export interface SeasonStandings {
+  id: string;
+  name: string;
+  currency: string;
+  status: "upcoming" | "active" | "ended";
+  startsAt: string;
+  endsAt: string;
+  /** True once the season has ended: these standings will not change. */
+  final: boolean;
+  entries: RankedUser[];
+  user: RankedUser | null;
+}
+
 export interface ItemUseInput {
   /** How many to use at once. Default 1. */
   quantity?: number;
@@ -1043,6 +1088,82 @@ export class Engine {
     return { goals };
   }
 
+  /**
+   * Every season with its status. With a userId, that user's score, rank and
+   * award; after a season ends, their award is paid the first time they look.
+   */
+  async seasons(options: { userId?: string } = {}): Promise<SeasonList> {
+    const userId = options.userId;
+    if (userId !== undefined) checkUserId(userId);
+    const now = this.now();
+    const awards = userId ? await this.store.seasonAwards(userId) : {};
+    const seasons: SeasonStatus[] = [];
+    for (const s of this.config.seasons) {
+      const status = now < s.from ? "upcoming" : now < s.to ? "active" : "ended";
+      let you: SeasonStatus["you"] = null;
+      if (userId) {
+        const { user } = await this.store.leaderboard({ currency: s.currency, from: s.from, to: s.to, limit: 1, userId, recordedBefore: status === "ended" ? s.to : null });
+        const rank = user?.rank ?? null;
+        const award = rank === null ? null : (s.rewards.find((tier) => rank <= tier.top) ?? null);
+        let rewarded = awards[s.id] !== undefined;
+        let paidNow: QuestReward[] = [];
+        if (status === "ended" && award && !rewarded) {
+          const won = await this.store.withUser(userId, async (tx) => {
+            if (!(await tx.claimSeasonAward(s.id, rank!, now))) return false;
+            const eventId = randomUUID();
+            for (const r of award.rewards) await tx.addPoints(r.currency, r.amount, now, eventId, now);
+            return true;
+          });
+          rewarded = true;
+          if (won) paidNow = award.rewards.map((r) => ({ ...r }));
+        }
+        you = { score: user?.score ?? 0, rank, award: award ? cloneTier(award) : null, rewarded, paidNow };
+      }
+      seasons.push({
+        id: s.id,
+        name: s.name,
+        currency: s.currency,
+        status,
+        startsAt: new Date(s.from).toISOString(),
+        endsAt: new Date(s.to).toISOString(),
+        rewards: s.rewards.map(cloneTier),
+        you,
+      });
+    }
+    return { seasons };
+  }
+
+  /** A season's standings: live while it runs, fixed once it ends. */
+  async seasonStandings(id: string, options: { limit?: number; userId?: string } = {}): Promise<SeasonStandings> {
+    const s = this.config.seasons.find((x) => x.id === id);
+    if (!s) throw new EngineError(`unknown season "${String(id)}"`, 404);
+    const limit = options.limit ?? 10;
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) throw new EngineError(`limit must be a whole number from 1 to ${MAX_LIMIT}`);
+    if (options.userId !== undefined) checkUserId(options.userId);
+    const now = this.now();
+    const status = now < s.from ? "upcoming" : now < s.to ? "active" : "ended";
+    const { entries, user } = await this.store.leaderboard({
+      currency: s.currency,
+      from: s.from,
+      to: s.to,
+      limit,
+      ...(options.userId ? { userId: options.userId } : {}),
+      recordedBefore: status === "ended" ? s.to : null,
+    });
+    const names = await this.store.profiles([...new Set([...entries, ...(user ? [user] : [])].map((e) => e.userId))]);
+    return {
+      id: s.id,
+      name: s.name,
+      currency: s.currency,
+      status,
+      startsAt: new Date(s.from).toISOString(),
+      endsAt: new Date(s.to).toISOString(),
+      final: status === "ended",
+      entries: entries.map((e) => withProfile(e, names)),
+      user: user ? withProfile(user, names) : null,
+    };
+  }
+
   async friends(userId: string): Promise<FriendList> {
     if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces");
     const friends = await this.store.friends(userId);
@@ -1574,6 +1695,10 @@ export class Engine {
     await tx.settleMembership(league.id, m.roundKey, { outcome, finalRank: rank, nextTier: next });
     return { round: m.roundKey, tier: m.tier, rank, outcome, nextTier: next };
   }
+}
+
+function cloneTier(t: SeasonAward): SeasonAward {
+  return { top: t.top, ...(t.title ? { title: t.title } : {}), rewards: t.rewards.map((r) => ({ ...r })) };
 }
 
 function withProfile<T extends LeaderboardEntry>(entry: T, names: Record<string, PublicProfile>): T & RankedUser {

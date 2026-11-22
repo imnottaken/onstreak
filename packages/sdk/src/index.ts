@@ -230,6 +230,38 @@ export interface CommunityGoalList {
   }>;
 }
 
+export interface SeasonAward {
+  top: number;
+  title?: string;
+  rewards: QuestReward[];
+}
+
+export interface SeasonList {
+  seasons: Array<{
+    id: string;
+    name: string;
+    currency: string;
+    status: "upcoming" | "active" | "ended";
+    startsAt: string;
+    endsAt: string;
+    rewards: SeasonAward[];
+    you: { score: number; rank: number | null; award: SeasonAward | null; rewarded: boolean; paidNow: QuestReward[] } | null;
+  }>;
+}
+
+export interface SeasonStandings {
+  id: string;
+  name: string;
+  currency: string;
+  status: "upcoming" | "active" | "ended";
+  startsAt: string;
+  endsAt: string;
+  /** True once the season has ended. */
+  final: boolean;
+  entries: LeaderboardEntry[];
+  user: LeaderboardEntry | null;
+}
+
 export interface Boost {
   id: string;
   factor: number;
@@ -409,6 +441,16 @@ export function createClient(options: ClientOptions) {
     addReferral: (userId: string, referrerId: string) => call<ReferralResult>("PUT", `${user(userId)}/referred-by/${encodeURIComponent(referrerId)}`),
     /** Who referred a user and whom they referred. */
     referrals: (userId: string) => call<ReferralList>("GET", `${user(userId)}/referrals`),
+    /** Every season; with userId, that user's score, rank and award (paid on the first look after the season ends). */
+    seasons: (opts: { userId?: string } = {}) => call<SeasonList>("GET", `/v1/seasons${opts.userId ? `?userId=${encodeURIComponent(opts.userId)}` : ""}`),
+    /** A season's standings: live while it runs, fixed once it ends. */
+    seasonStandings: (id: string, opts: { limit?: number; userId?: string } = {}) => {
+      const params = new URLSearchParams();
+      if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+      if (opts.userId) params.set("userId", opts.userId);
+      const qs = params.toString();
+      return call<SeasonStandings>("GET", `/v1/seasons/${encodeURIComponent(id)}/standings${qs ? `?${qs}` : ""}`);
+    },
     /** Community goals with everyone's progress; with userId, that user's part (and their rewards, once reached). */
     communityGoals: (opts: { userId?: string } = {}) =>
       call<CommunityGoalList>("GET", `/v1/community-goals${opts.userId ? `?userId=${encodeURIComponent(opts.userId)}` : ""}`),

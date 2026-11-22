@@ -35,6 +35,10 @@ export type {
   ReferralList,
   CommunityGoalStatus,
   CommunityGoalList,
+  SeasonAward,
+  SeasonStatus,
+  SeasonList,
+  SeasonStandings,
 } from "./engine.js";
 export { FriendLimitError, RivalLimitError } from "./store/types.js";
 export { zoneFor, outcomeFor, nextTier, currentRound, roundFromKey, nextRoundKey } from "./leagues.js";
@@ -63,6 +67,8 @@ export type {
   ReferralConfig,
   CommunityGoalRule,
   ResolvedCommunityGoal,
+  SeasonRule,
+  ResolvedSeason,
 } from "./config.js";
 export { initialStreak, recordActivity, streakStatus } from "./streaks.js";
 export type { StreakState, StreakStatus, StreakUpdate } from "./streaks.js";

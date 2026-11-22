@@ -191,6 +191,29 @@ export interface ResolvedCommunityGoal extends Omit<CommunityGoalRule, "from" | 
   to: number;
 }
 
+/**
+ * A named stretch of time with its own standings in one currency. When it
+ * ends the standings are fixed, and users who placed in a reward tier get
+ * that tier's rewards (only the best tier they reached).
+ */
+export interface SeasonRule {
+  id: string;
+  name: string;
+  currency: string;
+  /** ISO dates: points from `from` up to (not including) `to` count. */
+  from: string;
+  to: string;
+  /** e.g. [{ top: 1, title: "Champion", rewards }, { top: 10, rewards }]. */
+  rewards?: Array<{ top: number; title?: string; rewards: QuestReward[] }>;
+}
+
+export interface ResolvedSeason extends Omit<SeasonRule, "from" | "to" | "rewards"> {
+  from: number;
+  to: number;
+  /** Best tier first (smallest `top`). */
+  rewards: Array<{ top: number; title?: string; rewards: QuestReward[] }>;
+}
+
 /** A personal multiplier: `factor` on points from point rules for `minutes`. No currency means every currency. */
 export interface BoostSpec {
   factor: number;
@@ -249,6 +272,7 @@ export interface OnstreakConfig {
   calendars?: CalendarRule[];
   referrals?: ReferralConfig;
   communityGoals?: CommunityGoalRule[];
+  seasons?: SeasonRule[];
   friends?: {
     /** Most friends one user can have. Default 1000. */
     max?: number;
@@ -285,6 +309,7 @@ export interface ResolvedConfig {
   /** Null when referrals are not configured. */
   referrals: ReferralConfig | null;
   communityGoals: ResolvedCommunityGoal[];
+  seasons: ResolvedSeason[];
   friends: { max: number };
 }
 
@@ -571,6 +596,38 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     communityGoals.push({ ...g, goal: { ...g.goal }, rewards: (g.rewards ?? []).map((r) => ({ ...r })), from, to });
   }
 
+  const seasons: ResolvedSeason[] = [];
+  uniqueIds("season", (input.seasons ?? []).map((s) => s.id));
+  for (const s of input.seasons ?? []) {
+    if (typeof s.name !== "string" || s.name.length === 0) throw new ConfigError(`season "${s.id}" needs a name`);
+    hasCurrency(s.currency, `season "${s.id}"`);
+    const from = Date.parse(s.from);
+    const to = Date.parse(s.to);
+    if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) throw new ConfigError(`season "${s.id}" needs ISO dates with from before to`);
+    const tiers = s.rewards ?? [];
+    if (!Array.isArray(tiers)) throw new ConfigError(`season "${s.id}" rewards must be a list of { top, rewards }`);
+    const tops = new Set<number>();
+    for (const tier of tiers) {
+      if (!tier || !Number.isInteger(tier.top) || tier.top < 1) throw new ConfigError(`season "${s.id}" reward tiers need top: a whole number of at least 1`);
+      if (tops.has(tier.top)) throw new ConfigError(`season "${s.id}" has two tiers with top ${tier.top}`);
+      tops.add(tier.top);
+      if (tier.title !== undefined && (typeof tier.title !== "string" || tier.title.length === 0)) throw new ConfigError(`season "${s.id}" tier titles must be non-empty`);
+      if (!Array.isArray(tier.rewards)) throw new ConfigError(`season "${s.id}" tiers need rewards: [{ currency, amount }]`);
+      for (const r of tier.rewards) {
+        hasCurrency(r.currency, `season "${s.id}" reward`);
+        if (typeof r.amount !== "number" || !Number.isFinite(r.amount) || r.amount <= 0) throw new ConfigError(`season "${s.id}" rewards need a positive amount`);
+      }
+    }
+    seasons.push({
+      id: s.id,
+      name: s.name,
+      currency: s.currency,
+      from,
+      to,
+      rewards: [...tiers].sort((a, b) => a.top - b.top).map((tier) => ({ top: tier.top, ...(tier.title ? { title: tier.title } : {}), rewards: tier.rewards.map((r) => ({ ...r })) })),
+    });
+  }
+
   const maxFriends = input.friends?.max ?? 1000;
   if (!Number.isInteger(maxFriends) || maxFriends < 1 || maxFriends > 100_000) {
     throw new ConfigError("friends.max must be a whole number from 1 to 100000");
@@ -592,6 +649,7 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     calendars,
     referrals,
     communityGoals,
+    seasons,
     friends: { max: maxFriends },
   };
 }

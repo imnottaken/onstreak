@@ -60,7 +60,8 @@ Things that would hurt early users if they were missing.
 - [ ] **Multi-step quests** (M). Quest chains and missions with several goals, one-off (non-repeating) quests.
 - [x] **Time-limited events** (M). "Double XP weekend" (multiplier windows), global community goals ("everyone together: 1M minutes").
 - [x] **Limited-time quests** (S). Quests that only run between two dates, for seasonal challenges.
-- [ ] **Seasons** (M). Reset or soft-reset points and leagues each season, keep an archive and award season badges.
+- [x] **Seasons** (M). Seasonal standings with a fixed archive and rank awards (titles and points).
+- [ ] **Season resets for leagues** (S). Start every league tier over when a season begins.
 - [x] **Multipliers and boosts** (M). Streak-based XP multiplier, event-wide boosts.
 - [x] **Personal boosts** (S). A boost given to one user with an expiry ("2x XP for 1 hour"), e.g. bought in the reward store.
 - [x] **Spendable currencies and a reward store** (L). Spend coins on items, inventory, purchase history, balance checks.

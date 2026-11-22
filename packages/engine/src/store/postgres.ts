@@ -382,6 +382,13 @@ export class PostgresStore implements Store {
         }
         return settled;
       },
+      async claimSeasonAward(seasonId, rank, at) {
+        const { rows } = await q.query(
+          `insert into ${t.seasonAwards} (user_id, season_id, rank, claimed_at) values ($1, $2, $3, $4) on conflict do nothing returning season_id`,
+          [userId, seasonId, rank, new Date(at).toISOString()],
+        );
+        return rows.length > 0;
+      },
       async claimCommunityReward(goalId, at) {
         const { rows } = await q.query(
           `insert into ${t.communityRewards} (user_id, goal_id, claimed_at) values ($1, $2, $3) on conflict do nothing returning goal_id`,
@@ -566,6 +573,7 @@ export class PostgresStore implements Store {
            and ($2::timestamptz is null or ts >= $2::timestamptz)
            and ($3::timestamptz is null or ts < $3::timestamptz)
            and ($6::jsonb is null or user_id in (select jsonb_array_elements_text($6::jsonb)))
+           and ($7::timestamptz is null or recorded_at < $7::timestamptz)
          group by user_id
        ), ranked as (
          select user_id, score, rank() over (order by score desc) as rank
@@ -584,6 +592,7 @@ export class PostgresStore implements Store {
         q.limit,
         q.userId ?? null,
         q.userIds ? JSON.stringify(q.userIds) : null,
+        q.recordedBefore == null ? null : new Date(q.recordedBefore).toISOString(),
       ],
     );
     const toEntry = (r: Record<string, unknown>): LeaderboardEntry => ({ rank: num(r.rank), userId: String(r.user_id), score: num(r.score) });
@@ -631,6 +640,11 @@ export class PostgresStore implements Store {
         : `select coalesce(sum(value), 0) as total from ${this.t.events} where key = $1 and ts >= $2 and ts < $3 and ($4::text is null or user_id = $4)`;
     const { rows } = await this.db.query(sql, [q.key, new Date(q.from).toISOString(), new Date(q.to).toISOString(), q.userId ?? null]);
     return num(rows[0]?.total);
+  }
+
+  async seasonAwards(userId: string): Promise<Record<string, { rank: number; claimedAt: number }>> {
+    const { rows } = await this.db.query(`select season_id, rank, claimed_at from ${this.t.seasonAwards} where user_id = $1`, [userId]);
+    return Object.fromEntries(rows.map((r) => [String(r.season_id), { rank: num(r.rank), claimedAt: ms(r.claimed_at) }]));
   }
 
   async communityClaims(userId: string): Promise<Set<string>> {

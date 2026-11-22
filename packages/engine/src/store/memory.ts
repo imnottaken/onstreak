@@ -77,6 +77,8 @@ export class MemoryStore implements Store {
   private referralRows = new Map<string, ReferralRecord>();
   /** Keyed by "userId|goalId". */
   private communityClaimRows = new Set<string>();
+  /** Keyed by "userId|seasonId". */
+  private seasonAwardRows = new Map<string, { rank: number; claimedAt: number }>();
 
   async migrate(): Promise<MigrationReport> {
     return { applied: [], version: 0 };
@@ -204,6 +206,12 @@ export class MemoryStore implements Store {
         }
         return due.map((r) => ({ ...r }));
       },
+      claimSeasonAward: async (seasonId, rank, at) => {
+        const key = `${userId}|${seasonId}`;
+        if (this.seasonAwardRows.has(key)) return false;
+        this.seasonAwardRows.set(key, { rank, claimedAt: at });
+        return true;
+      },
       claimCommunityReward: async (goalId) => {
         const key = `${userId}|${goalId}`;
         if (this.communityClaimRows.has(key)) return false;
@@ -319,6 +327,7 @@ export class MemoryStore implements Store {
       if (q.userIds && !q.userIds.includes(row.userId)) continue;
       if (q.from !== null && row.ts < q.from) continue;
       if (q.to !== null && row.ts >= q.to) continue;
+      if (q.recordedBefore != null && row.recordedAt >= q.recordedBefore) continue;
       scores.set(row.userId, (scores.get(row.userId) ?? 0) + row.amount);
     }
     const sorted = [...scores].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
@@ -365,6 +374,12 @@ export class MemoryStore implements Store {
     const users = q.userId ? [this.users.get(q.userId)].filter((d): d is UserData => !!d) : [...this.users.values()];
     for (const d of users) for (const e of d.events.values()) if (e.key === q.key && e.ts >= q.from && e.ts < q.to) total += e.value;
     return total;
+  }
+
+  async seasonAwards(userId: string): Promise<Record<string, { rank: number; claimedAt: number }>> {
+    const out: Record<string, { rank: number; claimedAt: number }> = {};
+    for (const [k, v] of this.seasonAwardRows) if (k.startsWith(`${userId}|`)) out[k.slice(userId.length + 1)] = { ...v };
+    return out;
   }
 
   async communityClaims(userId: string): Promise<Set<string>> {

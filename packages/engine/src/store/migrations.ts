@@ -33,6 +33,7 @@ export interface Tables {
   calendars: string;
   referrals: string;
   communityRewards: string;
+  seasonAwards: string;
 }
 
 export function tableNames(prefix: string): Tables {
@@ -58,6 +59,7 @@ export function tableNames(prefix: string): Tables {
     calendars: `${prefix}calendar_progress`,
     referrals: `${prefix}referrals`,
     communityRewards: `${prefix}community_rewards`,
+    seasonAwards: `${prefix}season_awards`,
   };
 }
 
@@ -341,6 +343,19 @@ export const MIGRATIONS: readonly Migration[] = [
     statements: (t) => [
       `alter table ${t.streaks} add column if not exists progress_period text`,
       `alter table ${t.streaks} add column if not exists progress double precision not null default 0`,
+    ],
+  },
+  {
+    version: 16,
+    name: "seasons",
+    statements: (t) => [
+      `create table if not exists ${t.seasonAwards} (
+         user_id text not null references ${t.users}(id),
+         season_id text not null,
+         rank integer not null,
+         claimed_at timestamptz not null,
+         primary key (user_id, season_id)
+       )`,
     ],
   },
 ];

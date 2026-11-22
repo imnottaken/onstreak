@@ -245,6 +245,8 @@ export interface UserTx {
   settleReferrals(max: number | null, at: number): Promise<ReferralRecord[]>;
   /** Record that the user took a community goal's rewards. Returns false if they already had. */
   claimCommunityReward(goalId: string, at: number): Promise<boolean>;
+  /** Record that the user took a season's rank award. Returns false if they already had. */
+  claimSeasonAward(seasonId: string, rank: number, at: number): Promise<boolean>;
 }
 
 export interface UserSnapshot {
@@ -277,6 +279,8 @@ export interface LeaderboardQuery {
   userId?: string;
   /** Only rank these users. */
   userIds?: string[];
+  /** Only count points recorded before this instant (so a finished window stays fixed). */
+  recordedBefore?: number | null;
 }
 
 export interface MigrationReport {
@@ -322,6 +326,8 @@ export interface Store {
   communityTotal(query: CommunityTotalQuery): Promise<number>;
   /** Community goals whose rewards this user has claimed. */
   communityClaims(userId: string): Promise<Set<string>>;
+  /** Season awards this user has taken, by season id. */
+  seasonAwards(userId: string): Promise<Record<string, { rank: number; claimedAt: number }>>;
   /** Who referred this user, and everyone they referred (newest first). */
   referrals(userId: string): Promise<{ referredBy: ReferralRecord | null; referred: ReferralRecord[] }>;
   /** A user's boosts that end after `after`, soonest start first. */

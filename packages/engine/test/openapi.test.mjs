@@ -234,6 +234,27 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   await refCall("get", "/v1/users/new1/referrals", "/v1/users/{userId}/referrals");
 
   await call("get", "/v1/community-goals", "/v1/community-goals"); // none configured
+  const seasonal = await serve(t, new MemoryStore(), {
+    ...config,
+    seasons: [
+      { id: "forever", name: "Forever", currency: "xp", from: "2020-01-01T00:00:00Z", to: "2099-01-01T00:00:00Z", rewards: [{ top: 1, title: "Champion", rewards: [{ currency: "coins", amount: 5 }] }] },
+      { id: "old", name: "Old", currency: "xp", from: "2020-01-01T00:00:00Z", to: "2021-01-01T00:00:00Z" },
+    ],
+  });
+  const seasonCall = async (path, template) => {
+    const res = await fetch(`${seasonal.base}${path}`, { headers: { authorization: `Bearer ${API_KEY}` } });
+    const json = await res.json();
+    c.check("get", template, res.status, json);
+    return json;
+  };
+  await fetch(`${seasonal.base}/v1/events`, { method: "POST", headers: { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" }, body: JSON.stringify({ userId: "s", event: "lesson_completed" }) });
+  const seasonsList = await seasonCall("/v1/seasons?userId=s", "/v1/seasons");
+  assert.deepEqual([seasonsList.seasons[0].you.rank, seasonsList.seasons[0].you.award.title, seasonsList.seasons[1].status], [1, "Champion", "ended"]);
+  await seasonCall("/v1/seasons", "/v1/seasons");
+  const standings = await seasonCall("/v1/seasons/forever/standings?userId=s&limit=5", "/v1/seasons/{seasonId}/standings");
+  assert.deepEqual([standings.final, standings.user.score], [false, 10]);
+  await seasonCall("/v1/seasons/old/standings", "/v1/seasons/{seasonId}/standings");
+  await seasonCall("/v1/seasons/nope/standings", "/v1/seasons/{seasonId}/standings"); // 404
   const together = await serve(t, new MemoryStore(), { ...config, communityGoals: [{ id: "minutes", name: "A thousand minutes", description: "Together", goal: { event: "minutes_studied", target: 50 }, from: "2020-01-01T00:00:00Z", to: "2099-01-01T00:00:00Z", rewards: [{ currency: "coins", amount: 3 }] }] });
   const goalCall = async (path, body) => {
     const res = await fetch(`${together.base}${path}`, { method: body ? "POST" : "GET", headers: { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
