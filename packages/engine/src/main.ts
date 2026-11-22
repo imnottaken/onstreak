@@ -56,6 +56,7 @@ async function serve(env: NodeJS.ProcessEnv): Promise<void> {
     logger,
     ...(perMinute !== null ? { rateLimit: { perMinute, trustProxy: env.ONSTREAK_TRUST_PROXY === "true" } } : {}),
     ...(corsOrigins.length ? { corsOrigins } : {}),
+    ...(env.ONSTREAK_TOKEN_SECRET ? { tokenSecret: env.ONSTREAK_TOKEN_SECRET } : {}),
   });
   server.listen(port, () => {
     const address = server.address();

@@ -72,6 +72,7 @@ The server migrates the schema on start. Set `ONSTREAK_AUTO_MIGRATE=false` to ma
 | `ONSTREAK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `ONSTREAK_LOG_FORMAT` | `json` | `pretty` for readable local logs |
 | `ONSTREAK_SHUTDOWN_TIMEOUT_MS` | `10000` | How long requests may finish on SIGTERM |
+| `ONSTREAK_TOKEN_SECRET` | derived from the first key | Secret (32+ characters) that signs user tokens. Set it so rotating keys does not end every token |
 | `ONSTREAK_RATE_LIMIT_PER_MINUTE` | off | Limit each client (by IP) to this many API requests a minute; over it, 429 with `retry-after`. Health checks are never limited |
 | `ONSTREAK_TRUST_PROXY` | `false` | With `true`, tell clients apart by the first `x-forwarded-for` address (only behind a proxy you control) |
 | `ONSTREAK_CORS_ORIGINS` | none | Comma-separated origins allowed to call the API from a browser, or `*` |
@@ -112,6 +113,7 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 | Route | |
 | --- | --- |
 | `POST /v1/events` | Track an event: `{ userId, event, value?, timestamp?, timezone?, idempotencyKey?, properties? }`. `properties` are up to 20 strings, numbers or booleans that rules can filter on |
+| `POST /v1/tokens` | Issue a user token: `{ userId, ttlSeconds? }` (60 to 86400, default 3600). Needs a write or admin key |
 | `POST /v1/config/preview` | Send a candidate config: see how many users' levels would go up or down, and per achievement who would unlock it on their next event or no longer qualify. Changes nothing |
 | `GET /v1/webhooks/deliveries?status=&limit=&cursor=` | Webhook deliveries, newest first, with attempts, the last error and the payload |
 | `POST /v1/events/batch` | Track up to 100 events in order: `{ events: [...] }`. Bad items are reported in place |
@@ -167,7 +169,22 @@ Spending never lowers earned points. `points` on a user is what they earned (lev
 
 The full machine-readable description is served at `GET /openapi.json` (OpenAPI 3.1, no key needed), so you can generate a client for any language. Tests check every response against it, so it stays accurate.
 
-The SDK mirrors these: `track`, `previewConfig`, `webhookDeliveries`, `exportUser`, `deleteUser`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `calendars`, `communityGoals`, `seasons`, `seasonStandings`, `achievements`, `reverseEvent`, `revokeAchievement`, `prestige`, `saveTeam`, `team`, `addTeamMember`, `removeTeamMember`, `userTeam`, `teamLeaderboard`, `teamGoals`, `addReferral`, `referrals`, `store`, `purchase`, `purchases`, `useItem`, `refundPurchase`, `repairStreak`, `grantBoost`, `leaderboard`, `leaderboardHistory`, `streaksAtRisk`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
+The SDK mirrors these: `track`, `createToken`, `previewConfig`, `webhookDeliveries`, `exportUser`, `deleteUser`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `calendars`, `communityGoals`, `seasons`, `seasonStandings`, `achievements`, `reverseEvent`, `revokeAchievement`, `prestige`, `saveTeam`, `team`, `addTeamMember`, `removeTeamMember`, `userTeam`, `teamLeaderboard`, `teamGoals`, `addReferral`, `referrals`, `store`, `purchase`, `purchases`, `useItem`, `refundPurchase`, `repairStreak`, `grantBoost`, `leaderboard`, `leaderboardHistory`, `streaksAtRisk`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
+
+## Tokens for browsers and apps
+
+Never put an API key in a browser or a mobile app. Instead, have your server issue a short-lived user token and hand that to the client:
+
+```ts
+// on your server
+const { token } = await onstreak.createToken(userId, { ttlSeconds: 3600 });
+
+// in the browser or app
+const me = createClient({ baseUrl, token });
+await me.getUser(userId);
+```
+
+A token can only make GET requests about its own user (profile, quests, achievements, store, calendars, its league and rivalries) and shared views (leaderboards, seasons, community goals, teams) that do not name another user. Anything else answers 403; expired or forged tokens answer 401. Set `ONSTREAK_CORS_ORIGINS` so browsers may call the API.
 
 ## Webhooks
 

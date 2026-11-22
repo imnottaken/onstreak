@@ -4,6 +4,7 @@ import { Engine, EngineError } from "./engine.js";
 import { silentLogger, type Logger } from "./logger.js";
 import { openapiSpec } from "./openapi.js";
 import { packageVersion } from "./version.js";
+import { deriveTokenSecret, isUserToken, signUserToken, verifyUserToken } from "./tokens.js";
 
 const MAX_BODY = 256 * 1024;
 const REQUEST_ID = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -32,6 +33,24 @@ export interface ServerOptions {
   rateLimit?: { perMinute: number; burst?: number; trustProxy?: boolean };
   /** Origins allowed to call the API from a browser ("*" for any). Default: none (no CORS headers). */
   corsOrigins?: string[];
+  /** Secret that signs user tokens (POST /v1/tokens). Default: derived from the first key, so rotating that key ends all tokens. */
+  tokenSecret?: string;
+}
+
+/**
+ * Whether a user token for `userId` may make this call: GETs about that
+ * user, and shared views (leaderboards, seasons, community goals, teams)
+ * that do not name another user.
+ */
+function userTokenAllows(method: string | undefined, parts: string[], url: URL, userId: string): boolean {
+  if (method !== "GET") return false;
+  const [, resource, id, sub, subId] = parts;
+  const named = url.searchParams.get("userId");
+  if (named !== null && named !== userId) return false;
+  if (resource === "users") return id === userId && sub !== "export";
+  if (resource === "leagues" || resource === "rivalries") return sub === "users" && subId === userId && parts.length === 5;
+  if (resource === "streaks") return false;
+  return ["leaderboards", "seasons", "community-goals", "teams"].includes(resource ?? "");
 }
 
 /** A token bucket per client key. Old idle buckets are dropped as it grows. */
@@ -141,6 +160,8 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
   }
   if (keys.length === 0) throw new Error("set apiKey or apiKeys");
   if (keys.some((k) => k.key.length < 16)) throw new Error("apiKey must be at least 16 characters");
+  if (options.tokenSecret !== undefined && options.tokenSecret.length < 32) throw new Error("tokenSecret must be at least 32 characters");
+  const tokenSecret = options.tokenSecret ?? deriveTokenSecret(keys[0]!.key.toString());
   const logger = options.logger ?? silentLogger;
   const healthTimeoutMs = options.healthTimeoutMs ?? 2000;
   const spec = openapiSpec(packageVersion());
@@ -223,9 +244,26 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
           throw new HttpError(429, "too many requests, slow down");
         }
       }
-      const scope = scopeOf(req, keys);
+      const bearer = (req.headers.authorization ?? "").startsWith("Bearer ") ? (req.headers.authorization as string).slice(7) : "";
+      if (isUserToken(bearer)) {
+        const tokenUser = verifyUserToken(tokenSecret, bearer, engine.clock());
+        if (tokenUser === null) throw new HttpError(401, "user token is invalid or expired");
+        if (parts[0] !== "v1") throw new HttpError(404, "not found");
+        if (!userTokenAllows(req.method, parts, url, tokenUser)) throw new HttpError(403, "a user token can only read its own user");
+      }
+      const scope = isUserToken(bearer) ? "read" : scopeOf(req, keys);
       if (scope === null) throw new HttpError(401, "missing or wrong API key");
       if (parts[0] !== "v1") throw new HttpError(404, "not found");
+      if (req.method === "POST" && parts[1] === "tokens" && parts.length === 2) {
+        if (scope === "read") throw new HttpError(403, "this key can only read (GET)");
+        const body = (await readJson(req)) as { userId?: unknown; ttlSeconds?: unknown } | null;
+        const userId = body?.userId;
+        if (typeof userId !== "string" || !/^[^\s]{1,128}$/.test(userId)) throw new HttpError(400, "userId must be a non-empty string without spaces");
+        const ttl = body?.ttlSeconds ?? 3600;
+        if (typeof ttl !== "number" || !Number.isInteger(ttl) || ttl < 60 || ttl > 86_400) throw new HttpError(400, "ttlSeconds must be a whole number from 60 to 86400");
+        const expiresAt = Math.floor((engine.clock() + ttl * 1000) / 1000) * 1000;
+        return send(200, { token: signUserToken(tokenSecret, userId, expiresAt), userId, expiresAt: new Date(expiresAt).toISOString() });
+      }
       if (scope === "read" && req.method !== "GET") throw new HttpError(403, "this key can only read (GET)");
       if (scope !== "admin" && isAdminRoute(req.method, parts)) throw new HttpError(403, "this needs an admin key");
       const [, resource, id, sub, subId, subSub, subSubId] = parts;

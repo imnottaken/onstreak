@@ -435,7 +435,10 @@ export interface LeaderboardResult {
 export interface ClientOptions {
   /** e.g. "http://localhost:8787" */
   baseUrl: string;
-  apiKey: string;
+  /** An API key. Server-side only: never ship it to a browser. */
+  apiKey?: string;
+  /** Or a user token from createToken (safe for browsers and apps): it can only read that user's own data. */
+  token?: string;
   fetch?: typeof fetch;
 }
 
@@ -454,6 +457,7 @@ export class OnstreakError extends Error {
 }
 
 export function createClient(options: ClientOptions) {
+  if (!options.apiKey === !options.token) throw new Error("pass apiKey or token, not both");
   const base = options.baseUrl.replace(/\/+$/, "");
   const doFetch = options.fetch ?? fetch;
 
@@ -461,7 +465,7 @@ export function createClient(options: ClientOptions) {
     const res = await doFetch(`${base}${path}`, {
       method,
       headers: {
-        authorization: `Bearer ${options.apiKey}`,
+        authorization: `Bearer ${options.apiKey ?? options.token}`,
         ...(body === undefined ? {} : { "content-type": "application/json" }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -583,6 +587,13 @@ export function createClient(options: ClientOptions) {
         "/v1/config/preview",
         config,
       ),
+    /**
+     * A short-lived token that lets a browser or app read one user's own data
+     * (their profile, streaks, quests, leagues, and shared boards). Call this
+     * on your server, then hand the token to the client.
+     */
+    createToken: (userId: string, opts: { ttlSeconds?: number } = {}) =>
+      call<{ token: string; userId: string; expiresAt: string }>("POST", "/v1/tokens", { userId, ...opts }),
     /** Everything stored about a user, in one document (for data access requests). */
     exportUser: (userId: string) =>
       call<{

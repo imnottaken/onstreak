@@ -2,7 +2,7 @@
 
 Accessible React components for [onstreak](https://github.com/imnottaken/onstreak): `StreakFlame`, `LevelBar`, `BadgeGrid`, `Leaderboard`, `LeagueTable`, `AchievementToast`, `FriendsList`, `RivalCard`, `RivalList`, `QuestList`, `RewardStore` and `RewardCalendar`.
 
-They render data from `@onstreak/sdk`. Fetch it on your server (the API key must never reach a browser) and pass it as props.
+They render data from `@onstreak/sdk`. Fetch it on your server (the API key must never reach a browser) and pass it as props, or fetch in the browser with a user token from `createToken`, which can only read that user's own data.
 
 ```tsx
 import { LevelBar, Leaderboard } from "@onstreak/react";

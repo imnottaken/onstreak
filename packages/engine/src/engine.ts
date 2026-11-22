@@ -763,6 +763,11 @@ export class Engine {
     this.config = resolveConfig(config);
   }
 
+  /** The engine's clock (Date.now unless a test clock was given). */
+  clock(): number {
+    return this.now();
+  }
+
   async track(input: TrackInput): Promise<TrackResult> {
     const { userId, event } = input ?? ({} as TrackInput);
     if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces (max 128 chars)");

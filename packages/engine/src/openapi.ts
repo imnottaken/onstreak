@@ -936,6 +936,12 @@ const schemas = {
     additionalProperties: false,
     properties: { userId: { type: "string" }, deleted: { type: "boolean", description: "False if the user did not exist." } },
   },
+  UserToken: {
+    type: "object",
+    required: ["token", "userId", "expiresAt"],
+    additionalProperties: false,
+    properties: { token: { type: "string" }, userId: { type: "string" }, expiresAt: { type: "string", format: "date-time" } },
+  },
   ConfigPreview: {
     type: "object",
     required: ["users", "truncated", "levels", "achievements"],
@@ -1249,6 +1255,23 @@ export function openapiSpec(version: string) {
             { name: "cursor", in: "query", schema: { type: "string" }, description: "nextCursor from the previous page." },
           ],
           responses: { "200": ok("A page of deliveries", ref("WebhookDeliveryList")), ...authErrors },
+        },
+      },
+      "/v1/tokens": {
+        post: {
+          operationId: "createToken",
+          summary: "Issue a short-lived token that reads one user's own data",
+          description: "For browsers and apps. A token can only GET routes about its user and shared views (leaderboards, seasons, community goals, teams). Needs a write or admin key.",
+          requestBody: {
+            required: true,
+            content: json({
+              type: "object",
+              required: ["userId"],
+              additionalProperties: false,
+              properties: { userId: { type: "string", maxLength: 128 }, ttlSeconds: { type: "integer", minimum: 60, maximum: 86400, default: 3600 } },
+            }),
+          },
+          responses: { "200": ok("The token", ref("UserToken")), ...authErrors },
         },
       },
       "/v1/config/preview": {

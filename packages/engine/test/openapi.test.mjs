@@ -270,6 +270,11 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   await call("get", "/v1/teams/nope", "/v1/teams/{teamId}"); // 404
   await call("get", "/v1/users/asha/achievements", "/v1/users/{userId}/achievements");
   await call("get", "/v1/users/asha/export", "/v1/users/{userId}/export");
+  const tok = await call("post", "/v1/tokens", "/v1/tokens", { userId: "asha" });
+  assert.match(tok.json.token, /^ust_/);
+  await call("post", "/v1/tokens", "/v1/tokens", { userId: "asha", ttlSeconds: 1 }); // 400
+  await call("get", "/v1/users/asha", "/v1/users/{userId}", undefined, { key: tok.json.token });
+  await call("get", "/v1/users/ravi", "/v1/users/{userId}", undefined, { key: tok.json.token }); // 403
   await call("post", "/v1/events", "/v1/events", { userId: "eraseme", event: "lesson_completed" });
   const erased = await call("delete", "/v1/users/eraseme", "/v1/users/{userId}");
   assert.equal(erased.json.deleted, true);

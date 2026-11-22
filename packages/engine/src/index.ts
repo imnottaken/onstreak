@@ -53,6 +53,7 @@ export type {
   WebhookDeliveryList,
   UserExport,
 } from "./engine.js";
+export { signUserToken, verifyUserToken } from "./tokens.js";
 export { signWebhook, verifyWebhookSignature, webhookBackoffMs, MAX_WEBHOOK_ATTEMPTS } from "./webhooks.js";
 export { FriendLimitError, RivalLimitError, TeamFullError, AlreadyInTeamError } from "./store/types.js";
 export { zoneFor, outcomeFor, nextTier, currentRound, roundFromKey, nextRoundKey } from "./leagues.js";
