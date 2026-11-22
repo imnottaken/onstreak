@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, type StreakRule, boostSpecProblem, achievementLevels, isLeaf, type AchievementCondition, type AchievementLeaf, questGoals, questRunsAt, type QuestGoal } from "./config.js";
+import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, type StreakRule, matchesWhere, boostSpecProblem, achievementLevels, isLeaf, type AchievementCondition, type AchievementLeaf, questGoals, questRunsAt, type QuestGoal } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { breakPeriod, shiftPeriod, streakPeriodKey, streakPeriodsBetween, initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
 import { AlreadyInTeamError, FriendLimitError, RivalLimitError, TeamFullError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type ReferralRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
@@ -28,6 +28,24 @@ export interface TrackInput {
   timezone?: string;
   /** Retries with the same key return the first result instead of counting twice. */
   idempotencyKey?: string;
+  /** Extra facts rules can filter on, e.g. { difficulty: "hard", score: 92 }. Up to 20 keys, 2 KB. */
+  properties?: Record<string, string | number | boolean>;
+}
+
+const PROPERTY_KEY = /^[a-z0-9_]{1,40}$/i;
+
+function validateProperties(input: unknown): Record<string, string | number | boolean> | null {
+  if (input === undefined) return null;
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new EngineError("properties must be an object");
+  const entries = Object.entries(input);
+  if (entries.length > 20) throw new EngineError("properties can have at most 20 keys");
+  for (const [k, v] of entries) {
+    if (!PROPERTY_KEY.test(k)) throw new EngineError(`property name "${k}" must be 1-40 letters, digits or _`);
+    const ok = (typeof v === "string" && v.length <= 200) || (typeof v === "number" && Number.isFinite(v)) || typeof v === "boolean";
+    if (!ok) throw new EngineError(`property "${k}" must be a string (at most 200 characters), a number or true/false`);
+  }
+  if (Buffer.byteLength(JSON.stringify(input)) > 2048) throw new EngineError("properties must be at most 2 KB of JSON");
+  return { ...(input as Record<string, string | number | boolean>) };
 }
 
 export interface TrackResult {
@@ -121,6 +139,7 @@ export interface EventHistory {
     value: number;
     timestamp: string;
     recordedAt: string;
+    properties: Record<string, string | number | boolean>;
     /** What the event awarded, as returned by track(). */
     result: TrackResult | null;
   }>;
@@ -668,6 +687,7 @@ export class Engine {
     if (idempotencyKey !== null && (typeof idempotencyKey !== "string" || idempotencyKey.length === 0 || idempotencyKey.length > 200)) {
       throw new EngineError("idempotencyKey must be a string of 1-200 characters");
     }
+    const properties = validateProperties(input.properties);
 
     const { config } = this;
     const tracked = await this.store.withUser(userId, async (tx) => {
@@ -684,7 +704,7 @@ export class Engine {
 
       const recordedAt = this.now();
       const eventId = randomUUID();
-      await tx.insertEvent({ id: eventId, userId, key: event, value, ts, recordedAt, idempotencyKey });
+      await tx.insertEvent({ id: eventId, userId, key: event, value, ts, recordedAt, idempotencyKey, properties });
       const metrics = new Map<string, number>([[event, await tx.addMetric(event, value)]]);
 
       const levelBefore = config.levels ? levelFor(config.levels, await tx.getBalance(config.levels.currency)) : null;
@@ -692,7 +712,7 @@ export class Engine {
       const streaks: TrackResult["streaks"] = {};
       const streakStates = new Map<string, StreakState>();
       for (const rule of config.streaks) {
-        if (rule.event !== event) continue;
+        if (rule.event !== event || !matchesWhere(rule.where, properties)) continue;
         let prev = (await tx.getStreak(rule.id)) ?? initialStreak(rule);
         const period = streakPeriodKey(rule, ts, timezone);
         let progress: number | undefined;
@@ -748,8 +768,12 @@ export class Engine {
 
       const points: TrackResult["points"] = {};
       for (const rule of config.points) {
-        if (rule.event !== event) continue;
-        const base = rule.multiplyByValue ? rule.amount * value : rule.amount;
+        if (rule.event !== event || !matchesWhere(rule.where, properties)) continue;
+        let base = rule.multiplyByValue ? rule.amount * value : rule.amount;
+        if (rule.multiplyBy !== undefined) {
+          const factor = properties?.[rule.multiplyBy];
+          base = typeof factor === "number" ? rule.amount * factor : 0;
+        }
         const amount = Math.round(base * factorFor(rule.currency) * 1e6) / 1e6;
         if (amount === 0) continue;
         const total = await tx.addPoints(rule.currency, amount, ts, eventId, recordedAt);
@@ -768,7 +792,7 @@ export class Engine {
       for (const quest of config.quests) {
         if (!questRunsAt(quest, ts)) continue;
         const goals = questGoals(quest);
-        const gains = goals.map((g) => ("event" in g ? (g.event === event ? value : 0) : (earned.get(g.points) ?? 0)));
+        const gains = goals.map((g) => ("event" in g ? (g.event === event && matchesWhere(g.where, properties) ? value : 0) : (earned.get(g.points) ?? 0)));
         if (gains.every((gain) => gain <= 0)) continue;
         // A chained quest starts counting with the first event after the one that unlocked it.
         if (quest.after !== undefined && (completedNow.has(quest.after) || (await tx.getQuest(quest.after, "once"))?.completedAt == null)) continue;
@@ -1989,6 +2013,7 @@ export class Engine {
         value: e.value,
         timestamp: new Date(e.ts).toISOString(),
         recordedAt: new Date(e.recordedAt).toISOString(),
+        properties: e.properties ?? {},
         result: e.result,
       })),
       nextCursor: rows.length > limit && last ? encodeCursor(last) : null,

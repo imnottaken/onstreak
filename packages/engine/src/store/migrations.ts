@@ -396,6 +396,11 @@ export const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    version: 19,
+    name: "event properties",
+    statements: (t) => [`alter table ${t.events} add column if not exists properties jsonb`],
+  },
 ];
 
 export const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

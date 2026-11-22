@@ -1,5 +1,26 @@
 import { isValidTimeZone, type LeaderboardPeriod, type StreakPeriod } from "./time.js";
 
+/** A test on one event property: equal to a value, one of a list, or within a range. */
+export type PropertyMatch = string | number | boolean | { in?: Array<string | number>; gte?: number; lte?: number };
+
+/** Event properties that must match for a rule to apply, e.g. { difficulty: "hard", score: { gte: 80 } }. */
+export type Where = Record<string, PropertyMatch>;
+
+export function matchesWhere(where: Where | undefined, props: Record<string, string | number | boolean> | null | undefined): boolean {
+  if (!where) return true;
+  for (const [key, test] of Object.entries(where)) {
+    const v = props?.[key];
+    if (v === undefined) return false;
+    if (test !== null && typeof test === "object") {
+      if (test.in !== undefined && !test.in.includes(v as string | number)) return false;
+      if ((test.gte !== undefined || test.lte !== undefined) && typeof v !== "number") return false;
+      if (test.gte !== undefined && (v as number) < test.gte) return false;
+      if (test.lte !== undefined && (v as number) > test.lte) return false;
+    } else if (v !== test) return false;
+  }
+  return true;
+}
+
 export interface PointRule {
   /** Event key that earns points, e.g. "lesson_completed". */
   event: string;
@@ -7,11 +28,17 @@ export interface PointRule {
   amount: number;
   /** Multiply `amount` by the event's value (e.g. minutes studied). */
   multiplyByValue?: boolean;
+  /** Multiply `amount` by this numeric event property instead (e.g. "score"). Events without it earn nothing. */
+  multiplyBy?: string;
+  /** Only events whose properties match. */
+  where?: Where;
 }
 
 export interface StreakRule {
   id: string;
   event: string;
+  /** Only events whose properties match count. */
+  where?: Where;
   period: StreakPeriod | "monthly";
   /** Weekly streaks: the day weeks start on. Default "monday". */
   weekStartsOn?: "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday";
@@ -156,7 +183,7 @@ export interface QuestReward {
   amount: number;
 }
 
-export type QuestGoal = { event: string; target: number } | { points: string; target: number };
+export type QuestGoal = { event: string; target: number; where?: Where } | { points: string; target: number };
 
 /** A quest's goals: its single goal, or a mission's list. */
 export function questGoals(q: QuestRule): QuestGoal[] {
@@ -411,6 +438,25 @@ const ID = /^[a-z0-9][a-z0-9_.:-]{0,63}$/i;
 const STREAK_PERIODS: readonly string[] = ["daily", "weekly"];
 const BOARD_PERIODS: readonly string[] = ["daily", "weekly", "monthly", "all"];
 
+const PROP_KEY = /^[a-z0-9_]{1,40}$/i;
+
+function whereProblem(where: unknown): string | null {
+  if (where === undefined) return null;
+  if (!where || typeof where !== "object" || Array.isArray(where)) return "where must be an object of property tests";
+  const entries = Object.entries(where);
+  if (entries.length === 0 || entries.length > 10) return "where needs 1 to 10 properties";
+  for (const [k, t] of entries) {
+    if (!PROP_KEY.test(k)) return `where has bad property name "${k}"`;
+    if (["string", "number", "boolean"].includes(typeof t)) continue;
+    if (!t || typeof t !== "object" || Array.isArray(t)) return `where.${k} must be a value or { in, gte, lte }`;
+    const o = t as Record<string, unknown>;
+    if (Object.keys(o).some((x) => !["in", "gte", "lte"].includes(x)) || Object.keys(o).length === 0) return `where.${k} must be a value or { in, gte, lte }`;
+    if (o.in !== undefined && (!Array.isArray(o.in) || o.in.length === 0 || o.in.some((x) => typeof x !== "string" && typeof x !== "number"))) return `where.${k}.in must be a list of strings or numbers`;
+    for (const b of ["gte", "lte"]) if (o[b] !== undefined && (typeof o[b] !== "number" || !Number.isFinite(o[b] as number))) return `where.${k}.${b} must be a number`;
+  }
+  return null;
+}
+
 function isNonNegative(n: unknown): n is number {
   return typeof n === "number" && Number.isFinite(n) && n >= 0;
 }
@@ -441,6 +487,10 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     if (typeof rule.event !== "string" || !ID.test(rule.event)) throw new ConfigError(`point rule has bad event "${rule.event}"`);
     hasCurrency(rule.currency, `point rule for "${rule.event}"`);
     if (typeof rule.amount !== "number" || !Number.isFinite(rule.amount)) throw new ConfigError(`point rule for "${rule.event}" needs a numeric amount`);
+    const problem = whereProblem(rule.where);
+    if (problem) throw new ConfigError(`point rule for "${rule.event}": ${problem}`);
+    if (rule.multiplyBy !== undefined && (typeof rule.multiplyBy !== "string" || !PROP_KEY.test(rule.multiplyBy))) throw new ConfigError(`point rule for "${rule.event}" multiplyBy must be a property name`);
+    if (rule.multiplyBy !== undefined && rule.multiplyByValue) throw new ConfigError(`point rule for "${rule.event}" can use multiplyBy or multiplyByValue, not both`);
   }
 
   let levels: LevelConfig | null = null;
@@ -458,6 +508,8 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
   uniqueIds("streak", streaks.map((s) => s.id));
   for (const s of streaks) {
     if (typeof s.event !== "string" || !ID.test(s.event)) throw new ConfigError(`streak "${s.id}" has bad event "${s.event}"`);
+    const streakWhere = whereProblem(s.where);
+    if (streakWhere) throw new ConfigError(`streak "${s.id}": ${streakWhere}`);
     if (!STREAK_PERIODS.includes(s.period) && s.period !== "monthly") throw new ConfigError(`streak "${s.id}" period must be daily, weekly or monthly`);
     if (s.weekStartsOn !== undefined) {
       if (s.period !== "weekly") throw new ConfigError(`streak "${s.id}" weekStartsOn only works with weekly streaks`);
@@ -614,6 +666,8 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
         throw new ConfigError(`quest "${q.id}" needs goal: { event | points, target } with a positive target`);
       }
       if ("event" in goal && (typeof goal.event !== "string" || !ID.test(goal.event))) throw new ConfigError(`quest "${q.id}" has bad event "${goal.event}"`);
+      const goalWhere = "event" in goal ? whereProblem(goal.where) : (goal as Record<string, unknown>).where !== undefined ? "where only works on event goals" : null;
+      if (goalWhere) throw new ConfigError(`quest "${q.id}": ${goalWhere}`);
       if ("points" in goal) hasCurrency(goal.points, `quest "${q.id}"`);
     }
     for (const r of q.rewards ?? []) {
@@ -791,6 +845,7 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     }
     if ("event" in g.goal && (typeof g.goal.event !== "string" || !ID.test(g.goal.event))) throw new ConfigError(`team goal "${g.id}" has bad event "${g.goal.event}"`);
     if ("points" in g.goal) hasCurrency(g.goal.points, `team goal "${g.id}"`);
+    if ("where" in g.goal) throw new ConfigError(`team goal "${g.id}" does not support where yet`);
     for (const r of g.rewards ?? []) {
       hasCurrency(r.currency, `team goal "${g.id}" reward`);
       if (typeof r.amount !== "number" || !Number.isFinite(r.amount) || r.amount <= 0) throw new ConfigError(`team goal "${g.id}" rewards need a positive amount`);

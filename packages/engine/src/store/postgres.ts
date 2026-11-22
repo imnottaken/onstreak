@@ -12,6 +12,7 @@ import type {
   ItemUseRecord,
   BoostRecord,
   ReferralRecord,
+  EventProperties,
   CommunityTotalQuery,
   TeamRecord,
   TeamMemberRecord,
@@ -265,8 +266,8 @@ export class PostgresStore implements Store {
       },
       async insertEvent(e) {
         await q.query(
-          `insert into ${t.events} (id, user_id, key, value, ts, recorded_at, idempotency_key) values ($1, $2, $3, $4, $5, $6, $7)`,
-          [e.id, userId, e.key, e.value, new Date(e.ts).toISOString(), new Date(e.recordedAt).toISOString(), e.idempotencyKey],
+          `insert into ${t.events} (id, user_id, key, value, ts, recorded_at, idempotency_key, properties) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [e.id, userId, e.key, e.value, new Date(e.ts).toISOString(), new Date(e.recordedAt).toISOString(), e.idempotencyKey, e.properties ? JSON.stringify(e.properties) : null],
         );
       },
       async setEventResult(eventId, result) {
@@ -634,7 +635,7 @@ export class PostgresStore implements Store {
 
   async events(userId: string, query: EventPageQuery): Promise<EventRecord[]> {
     const { rows } = await this.db.query(
-      `select id, key, value, ts, recorded_at, result from ${this.t.events}
+      `select id, key, value, ts, recorded_at, result, properties from ${this.t.events}
        where user_id = $1
          and ($2::timestamptz is null or (ts, id) < ($2::timestamptz, $3::uuid))
        order by ts desc, id desc
@@ -648,6 +649,7 @@ export class PostgresStore implements Store {
       ts: ms(r.ts),
       recordedAt: ms(r.recorded_at),
       result: r.result ? json<TrackResult>(r.result) : null,
+      properties: r.properties ? json<EventProperties>(r.properties) : null,
     }));
   }
 

@@ -83,7 +83,7 @@ Things that would hurt early users if they were missing.
 - [x] **Achievement upgrades** (M). Tiered badges (bronze, silver, gold of one badge), hidden achievements, progress percentage, achievements that award points.
 - [x] **BadgeGrid tiers and progress** (S). Show tier levels, hidden placeholders and progress bars from the achievements list.
 - [x] **Compound and time-window conditions** (M). AND/OR conditions, "5 lessons within one day", "100 xp in a week".
-- [ ] **Event properties in rules** (M). Award points only when `difficulty = "hard"`, sum a property instead of counting.
+- [x] **Event properties in rules** (M). Award points only when `difficulty = "hard"`, sum a property instead of counting.
 - [ ] **A rules language** (L). Expression-based conditions (JSONLogic or similar) for anything the built-in rules cannot say.
 - [ ] **Level curves** (S). Formula-based thresholds (linear, exponential), level-up rewards, prestige.
 - [ ] **Leaderboard views** (M). Around-me (my rank plus or minus N), by segment (country, school, company), past winners archive.

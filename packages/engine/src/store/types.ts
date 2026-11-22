@@ -45,7 +45,11 @@ export interface StoredEvent {
   /** When onstreak received it. */
   recordedAt: number;
   idempotencyKey: string | null;
+  /** Extra facts about the event, e.g. { difficulty: "hard" }. */
+  properties?: EventProperties | null;
 }
+
+export type EventProperties = Record<string, string | number | boolean>;
 
 /** A friend, with what others may see about them. */
 export interface FriendRecord extends PublicProfile {
@@ -179,6 +183,7 @@ export interface EventRecord {
   ts: number;
   recordedAt: number;
   result: TrackResult | null;
+  properties: EventProperties | null;
 }
 
 export interface EventPageQuery {

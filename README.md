@@ -79,7 +79,7 @@ Everything is declared in one JSON file. See [examples/onstreak.config.json](exa
 | Section | What it does |
 | --- | --- |
 | `currencies` | Point types, e.g. `xp`, `coins` |
-| `points` | Which event awards how much: `{ event, currency, amount, multiplyByValue? }` |
+| `points` | Which event awards how much: `{ event, currency, amount, multiplyByValue?, multiplyBy?, where? }`. `where` filters on event properties (`{ difficulty: "hard", score: { gte: 80 }, subject: { in: ["math"] } }`); `multiplyBy` multiplies by a numeric property. Streaks and quest event goals take `where` too |
 | `levels` | Level thresholds for one currency |
 | `streaks` | `{ id, event, period: daily \| weekly \| monthly, weekStartsOn?, freezes?: { start, max, earnEvery }, repair?: { withinHours, cost?: { currency, amount } }, minimum?, skipWeekends? }`. `minimum` makes a period count only once the event's values add up to it ("3 lessons a day"); users see `progress`. `skipWeekends` (daily) never counts Saturday or Sunday as missed. Monthly streaks count calendar months; `weekStartsOn` (e.g. `"sunday"`) sets where weekly streaks' weeks begin. With `repair`, a broken streak can be repaired within `withinHours` of breaking (before a new one starts), paid from the wallet |
 | `achievements` | `{ id, name, description?, when: { metric \| streak \| points, gte }, rewards?, hidden? }`: unlock when the value reaches `gte`. `tiers: [{ name, gte, rewards? }]` (instead of `gte`) makes a tiered badge (bronze, silver, gold) unlocked tier by tier. `hidden` keeps it secret until unlocked; `rewards` are paid on unlock. A metric or points value can take `within: day \| week \| month` ("5 lessons in one day", "100 XP this week", in the user's zone), and `when: { all: [...] }` or `{ any: [...] }` combines conditions |
@@ -105,7 +105,7 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 
 | Route | |
 | --- | --- |
-| `POST /v1/events` | Track an event: `{ userId, event, value?, timestamp?, timezone?, idempotencyKey? }` |
+| `POST /v1/events` | Track an event: `{ userId, event, value?, timestamp?, timezone?, idempotencyKey?, properties? }`. `properties` are up to 20 strings, numbers or booleans that rules can filter on |
 | `POST /v1/events/batch` | Track up to 100 events in order: `{ events: [...] }`. Bad items are reported in place |
 | `GET /v1/users/:id?timezone=` | Profile, points, level, metrics, streak status (`done`, `pending`, `broken`) and achievements |
 | `PATCH /v1/users/:id` | Set `displayName`, `avatarUrl`, `metadata` (JSON, max 8 KB) or `timezone`. `null` clears a field |

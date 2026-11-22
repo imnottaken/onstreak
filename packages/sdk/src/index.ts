@@ -7,6 +7,8 @@ export interface TrackInput {
   timestamp?: string | number;
   timezone?: string;
   idempotencyKey?: string;
+  /** Extra facts rules can filter on, e.g. { difficulty: "hard" }. Up to 20 keys, 2 KB. */
+  properties?: Record<string, string | number | boolean>;
 }
 
 export interface TrackResult {
@@ -96,7 +98,7 @@ export interface LeaderboardEntry {
 }
 
 export interface EventHistory {
-  events: Array<{ id: string; event: string; value: number; timestamp: string; recordedAt: string; result: TrackResult | null }>;
+  events: Array<{ id: string; event: string; value: number; timestamp: string; recordedAt: string; properties: Record<string, string | number | boolean>; result: TrackResult | null }>;
   /** Pass as `cursor` for the next (older) page; null on the last page. */
   nextCursor: string | null;
 }

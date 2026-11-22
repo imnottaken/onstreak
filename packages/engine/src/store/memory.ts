@@ -143,7 +143,7 @@ export class MemoryStore implements Store {
         return id ? (d.events.get(id)?.result ?? null) : null;
       },
       insertEvent: async (event) => {
-        d.events.set(event.id, { ...event, result: null });
+        d.events.set(event.id, { ...event, properties: event.properties ? { ...event.properties } : null, result: null });
         if (event.idempotencyKey) d.idempotency.set(event.idempotencyKey, event.id);
       },
       setEventResult: async (eventId, result) => {
@@ -383,7 +383,7 @@ export class MemoryStore implements Store {
       .sort((a, b) => b.ts - a.ts || (a.id < b.id ? 1 : -1))
       .filter((e) => !before || e.ts < before.ts || (e.ts === before.ts && e.id < before.id))
       .slice(0, q.limit)
-      .map((e) => ({ id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result }));
+      .map((e) => ({ id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result, properties: e.properties ? { ...e.properties } : null }));
   }
 
   async communityTotal(q: CommunityTotalQuery): Promise<number> {

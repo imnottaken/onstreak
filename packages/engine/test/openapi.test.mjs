@@ -66,6 +66,8 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   assert.equal(first.status, 200);
   assert.ok(first.json.achievements.length > 0 && first.json.leagues.study_league);
   await call("post", "/v1/events", "/v1/events", { userId: "asha", event: "lesson_completed", idempotencyKey: "a1" }); // duplicate
+  await call("post", "/v1/events", "/v1/events", { userId: "asha", event: "app_opened", properties: { platform: "ios", build: 42, beta: false } });
+  await call("post", "/v1/events", "/v1/events", { userId: "asha", event: "app_opened", properties: { nested: { a: 1 } } }); // 400
   await call("post", "/v1/events", "/v1/events", { userId: "asha", event: "minutes_studied", value: 30 }); // level up
   await call("post", "/v1/events", "/v1/events", { userId: "asha", event: "bad event" }); // 400
   await call("post", "/v1/events", "/v1/events", { userId: "asha", event: "x" }, { key: "wrong-key-0000000000000" }); // 401

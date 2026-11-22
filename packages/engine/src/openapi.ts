@@ -35,6 +35,12 @@ const schemas = {
       timestamp: { anyOf: [{ type: "string", format: "date-time" }, { type: "integer" }], description: "When it happened. Default now." },
       timezone: { type: "string", description: "IANA zone for streak days. Remembered for the user." },
       idempotencyKey: { type: "string", minLength: 1, maxLength: 200, description: "Retries with the same key return the first result." },
+      properties: {
+        type: "object",
+        maxProperties: 20,
+        additionalProperties: { anyOf: [{ type: "string", maxLength: 200 }, { type: "number" }, { type: "boolean" }] },
+        description: "Extra facts rules can filter on, e.g. { difficulty: \"hard\" }. At most 2 KB.",
+      },
     },
   },
   LeaguePrevious: {
@@ -171,7 +177,7 @@ const schemas = {
             after: { type: "string", description: "The one-off quest this one unlocked after." },
             goal: {
               oneOf: [
-                { type: "object", required: ["event", "target"], additionalProperties: false, properties: { event: { type: "string" }, target: { type: "number" } } },
+                { type: "object", required: ["event", "target"], additionalProperties: false, properties: { event: { type: "string" }, target: { type: "number" }, where: { type: "object", description: "Event properties that must match." } } },
                 { type: "object", required: ["points", "target"], additionalProperties: false, properties: { points: { type: "string" }, target: { type: "number" } } },
               ],
             },
@@ -180,7 +186,7 @@ const schemas = {
               description: "A mission's goals with their progress; then progress and target count goals done.",
               items: {
                 oneOf: [
-                  { type: "object", required: ["event", "target", "progress"], additionalProperties: false, properties: { event: { type: "string" }, target: { type: "number" }, progress: { type: "number" } } },
+                  { type: "object", required: ["event", "target", "progress"], additionalProperties: false, properties: { event: { type: "string" }, target: { type: "number" }, where: { type: "object", description: "Event properties that must match." }, progress: { type: "number" } } },
                   { type: "object", required: ["points", "target", "progress"], additionalProperties: false, properties: { points: { type: "string" }, target: { type: "number" }, progress: { type: "number" } } },
                 ],
               },
@@ -395,7 +401,7 @@ const schemas = {
             description: { type: "string" },
             goal: {
               oneOf: [
-                { type: "object", required: ["event", "target"], additionalProperties: false, properties: { event: { type: "string" }, target: { type: "number" } } },
+                { type: "object", required: ["event", "target"], additionalProperties: false, properties: { event: { type: "string" }, target: { type: "number" }, where: { type: "object", description: "Event properties that must match." } } },
                 { type: "object", required: ["points", "target"], additionalProperties: false, properties: { points: { type: "string" }, target: { type: "number" } } },
               ],
             },
@@ -564,7 +570,7 @@ const schemas = {
             period: { enum: ["daily", "weekly"] },
             goal: {
               oneOf: [
-                { type: "object", required: ["event", "target"], additionalProperties: false, properties: { event: { type: "string" }, target: { type: "number" } } },
+                { type: "object", required: ["event", "target"], additionalProperties: false, properties: { event: { type: "string" }, target: { type: "number" }, where: { type: "object", description: "Event properties that must match." } } },
                 { type: "object", required: ["points", "target"], additionalProperties: false, properties: { points: { type: "string" }, target: { type: "number" } } },
               ],
             },
@@ -882,7 +888,7 @@ const schemas = {
         type: "array",
         items: {
           type: "object",
-          required: ["id", "event", "value", "timestamp", "recordedAt", "result"],
+          required: ["id", "event", "value", "timestamp", "recordedAt", "properties", "result"],
           additionalProperties: false,
           properties: {
             id: { type: "string", format: "uuid" },
@@ -890,6 +896,7 @@ const schemas = {
             value: { type: "number" },
             timestamp: { type: "string", format: "date-time" },
             recordedAt: { type: "string", format: "date-time" },
+            properties: { type: "object", additionalProperties: { anyOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }] } },
             result: nullable(ref("TrackResult")),
           },
         },
