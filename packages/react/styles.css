@@ -1,6 +1,6 @@
 /* onstreak components. Optional: import "@onstreak/react/styles.css", or style the os-* classes yourself.
    Theme with the --os-* variables. */
-:where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast, .os-friends, .os-rivals, .os-rival, .os-quests) {
+:where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast, .os-friends, .os-rivals, .os-rival, .os-quests, .os-store) {
   --os-fg: #1f2328;
   --os-muted: #656d76;
   --os-bg: #ffffff;
@@ -15,7 +15,7 @@
   font-family: inherit;
 }
 @media (prefers-color-scheme: dark) {
-  :where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast, .os-friends, .os-rivals, .os-rival, .os-quests) {
+  :where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast, .os-friends, .os-rivals, .os-rival, .os-quests, .os-store) {
     --os-fg: #e6edf3;
     --os-muted: #8d96a0;
     --os-bg: #0d1117;
@@ -123,3 +123,22 @@
 .os-quest--done .os-quest__fill { background: var(--os-up); }
 @media (prefers-reduced-motion: reduce) { .os-quest__fill { transition: none; } }
 .os-quest__meta { display: flex; justify-content: space-between; margin-top: 4px; color: var(--os-muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+
+/* RewardStore */
+.os-store__header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.os-store__title { margin: 0; font-size: 1rem; }
+.os-store__wallet { margin-left: auto; color: var(--os-accent); font-size: 0.875rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.os-store__empty { color: var(--os-muted); font-size: 0.875rem; }
+.os-store__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.os-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--os-bg); border: 1px solid var(--os-border); border-radius: var(--os-radius); }
+.os-item__icon { flex: none; width: 32px; height: 32px; display: grid; place-items: center; font-size: 1.25rem; }
+.os-item__body { flex: 1; min-width: 0; }
+.os-item__header { display: flex; justify-content: space-between; gap: 8px; }
+.os-item__name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.os-item__price { flex: none; color: var(--os-accent); font-size: 0.8125rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.os-item--blocked .os-item__price { color: var(--os-muted); }
+.os-item__description { margin: 2px 0 0; color: var(--os-muted); font-size: 0.8125rem; }
+.os-item__meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; font-size: 0.75rem; }
+.os-item__owned { color: var(--os-up); font-weight: 600; }
+.os-item__blocker { margin-left: auto; color: var(--os-muted); }
+.os-item__action { flex: none; }

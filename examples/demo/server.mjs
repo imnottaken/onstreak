@@ -1,5 +1,5 @@
 // onstreak demo: a tiny study app showing streaks, levels, badges, a
-// leaderboard, a league, quests, friends and head-to-head rivals, with simulated players and a "next day" button.
+// leaderboard, a league, quests, a reward store, friends and head-to-head rivals, with simulated players and a "next day" button.
 // Runs entirely in memory: no database, no keys.
 //
 //   npm run build && npm run demo     # then open http://localhost:3000
@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url";
 import { createElement as h, Fragment } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Engine, MemoryStore } from "@onstreak/engine";
-import { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalList, QuestList } from "@onstreak/react";
+import { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalList, QuestList, RewardStore } from "@onstreak/react";
 
 const DAY = 86_400_000;
 const START = Date.parse("2026-11-16T09:00:00Z"); // a Monday morning
@@ -43,6 +43,11 @@ export const demoConfig = {
     { id: "two_lessons", name: "Two lessons", description: "Finish 2 lessons today", period: "daily", goal: { event: "lesson_completed", target: 2 }, rewards: [{ currency: "coins", amount: 3 }] },
     { id: "daily_xp", name: "Earn 40 XP", period: "daily", goal: { points: "xp", target: 40 }, rewards: [{ currency: "xp", amount: 10 }] },
     { id: "study_hour", name: "Study for an hour", description: "Across the week", period: "weekly", goal: { event: "minutes_studied", target: 60 }, rewards: [{ currency: "coins", amount: 10 }, { currency: "xp", amount: 50 }] },
+  ],
+  items: [
+    { id: "sticker_pack", name: "Sticker pack", description: "Show off in chat", price: { currency: "coins", amount: 2 }, metadata: { icon: "🌟" } },
+    { id: "night_theme", name: "Night theme", price: { currency: "coins", amount: 5 }, limit: 1, metadata: { icon: "🌙" } },
+    { id: "gold_frame", name: "Gold frame", description: "A frame for your avatar", price: { currency: "coins", amount: 8 }, limit: 1, metadata: { icon: "🖼️" } },
   ],
 };
 
@@ -93,6 +98,7 @@ button.primary { background: #f97316; border-color: #f97316; color: #fff; font-w
 .toast-wrap { position: fixed; right: 16px; bottom: 16px; }
 .events { list-style: none; padding: 0; margin: 0; font-size: 0.875rem; }
 button.small { padding: 4px 10px; font-size: 0.8125rem; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
 .spaced { margin-top: 16px; }
 .events li { padding: 4px 0; border-top: 1px solid #d0d7de33; }
 </style>
@@ -129,7 +135,7 @@ export function createDemo({ seed = 42 } = {}) {
   }
 
   async function render(unlocked) {
-    const [user, weekly, league, history, friends, rivals, friendsBoard, quests] = await Promise.all([
+    const [user, weekly, league, history, friends, rivals, friendsBoard, quests, shop] = await Promise.all([
       engine.getUser(YOU),
       engine.leaderboard("xp_weekly", { userId: YOU, limit: 10 }),
       engine.league("weekly_league", YOU),
@@ -138,7 +144,10 @@ export function createDemo({ seed = 42 } = {}) {
       engine.rivals("weekly_duel", YOU),
       engine.leaderboard("xp_weekly", { userId: YOU, scope: "friends" }),
       engine.quests(YOU),
+      engine.rewardStore(YOU),
     ]);
+    const buyButton = (item) =>
+      h("form", { method: "post", action: `/buy/${item.id}` }, h("button", { type: "submit", className: "small", disabled: !item.canBuy }, "Buy"));
     const rivalIds = new Set(rivals.rivals.map((r) => r.rivalId));
     const rivalButton = (f) =>
       rivalIds.has(f.userId)
@@ -172,13 +181,18 @@ export function createDemo({ seed = 42 } = {}) {
             "section",
             { className: "card" },
             h("h2", null, "Your progress"),
-            h("div", { className: "stats" }, h(StreakFlame, { streak: user.streaks.daily_lesson }), h("span", { className: "muted" }, `${user.points.coins} coins`)),
+            h("div", { className: "stats" }, h(StreakFlame, { streak: user.streaks.daily_lesson }), h("span", { className: "muted" }, `${user.wallet.coins} coins`)),
             user.level && h(LevelBar, { level: user.level }),
           ),
           h(
             "section",
             { className: "card" },
             h(QuestList, { quests, title: "Quests", now: now(), unitLabel: (q) => (q.id === "study_hour" ? "min" : undefined) }),
+          ),
+          h(
+            "section",
+            { className: "card" },
+            h(RewardStore, { store: shop, title: "Shop", renderIcon: (item) => item.metadata?.icon ?? null, renderAction: buyButton }),
           ),
           h("section", { className: "card" }, h(LeagueTable, { status: league, now: now() })),
           h("section", { className: "card" }, h(Leaderboard, { board: weekly, currentUserId: YOU, title: "This week" })),
@@ -253,6 +267,12 @@ export function createDemo({ seed = 42 } = {}) {
         const [, un, id] = rival;
         if (un) await engine.removeRival("weekly_duel", YOU, id);
         else await engine.addRival("weekly_duel", YOU, id).catch((e) => { if (e.status !== 409) throw e; });
+        return back();
+      }
+      const buy = /^\/buy\/([a-z_]+)$/.exec(url.pathname);
+      if (req.method === "POST" && buy && demoConfig.items.some((i) => i.id === buy[1])) {
+        // The button is disabled when you cannot buy; a refusal from a stale page just reloads it.
+        await engine.purchase(YOU, { item: buy[1] }).catch((e) => { if (e.status !== 409) throw e; });
         return back();
       }
       if (req.method === "POST" && url.pathname === "/reset") {

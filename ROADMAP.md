@@ -39,7 +39,7 @@ Things that would hurt early users if they were missing.
 
 - [x] **Live demo app** (M). `npm run demo`: a study app with simulated rivals and a next-day button, in memory.
 - [ ] **Demo GIF** (S). Record the demo for the README and Twitter; host the demo publicly.
-- [x] **React components** (L). `StreakFlame`, `LevelBar`, `BadgeGrid`, `Leaderboard`, `LeagueTable`, `AchievementToast`, `FriendsList`, `RivalCard`, `RivalList`, `QuestList`, unstyled and themeable.
+- [x] **React components** (L). `StreakFlame`, `LevelBar`, `BadgeGrid`, `Leaderboard`, `LeagueTable`, `AchievementToast`, `FriendsList`, `RivalCard`, `RivalList`, `QuestList`, `RewardStore`, unstyled and themeable.
 - [ ] **React hooks** (M). `useUser`, `useStreak`, `useLeague`, with optimistic updates after `track()`.
 - [ ] **Docs site** (M). Concepts, config reference, API reference, recipes.
 - [x] **OpenAPI spec** (M). Generated from the routes, so other languages can generate clients.
@@ -64,7 +64,7 @@ Things that would hurt early users if they were missing.
 - [ ] **Personal boosts** (S). A boost given to one user with an expiry ("2x XP for 1 hour"), e.g. bought in the reward store.
 - [x] **Spendable currencies and a reward store** (L). Spend coins on items, inventory, purchase history, balance checks.
 - [ ] **Using items** (S). Consume an owned item (`POST /v1/users/:id/inventory/:item/use`), refunds, items that grant something on purchase (a streak freeze, a personal boost).
-- [ ] **RewardStore React component** (S). Item grid with prices, owned counts and a buy button that calls your server.
+- [x] **RewardStore React component** (S). Item grid with prices, owned counts and a buy button that calls your server.
 - [ ] **Streak shields and streak repair** (M). Buy a freeze with coins, repair a broken streak within N hours.
 - [ ] **Richer streak rules** (M). "At least 3 lessons a day" to count, weekends off, custom week start, monthly streaks.
 - [ ] **Daily login rewards and reward calendars** (S).

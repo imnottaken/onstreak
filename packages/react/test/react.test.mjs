@@ -15,7 +15,7 @@ const { act } = React;
 const { createRoot } = await import("react-dom/client");
 const { renderToStaticMarkup } = await import("react-dom/server");
 const lib = await import("../dist/index.js");
-const { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalCard, RivalList, QuestList } = lib;
+const { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalCard, RivalList, QuestList, RewardStore } = lib;
 const h = React.createElement;
 
 /** Mount into the fake DOM; returns the container and an unmount function. */
@@ -370,4 +370,64 @@ test("QuestList shows progress, rewards and reset time, open quests first", () =
   const none = fragment(renderToStaticMarkup(h(QuestList, { quests: { userId: "a", quests: [] }, title: "Quests", now: NOW })));
   assert.equal(none.querySelector(".os-quests__empty").textContent, "No quests right now.");
   assert.equal(none.querySelector(".os-quests__count"), null);
+});
+
+const storeData = {
+  userId: "asha",
+  wallet: { xp: 120, coins: 7 },
+  items: [
+    { id: "sticker", name: "Sticker", price: { currency: "coins", amount: 1 }, limit: null, owned: 3, canBuy: true, metadata: { icon: "⭐" } },
+    { id: "freeze", name: "Streak freeze", description: "Keeps your streak for a day", price: { currency: "coins", amount: 10 }, limit: 2, owned: 0, canBuy: false },
+    { id: "frame", name: "Gold frame", price: { currency: "coins", amount: 0 }, limit: 1, owned: 1, canBuy: false },
+  ],
+};
+
+test("store helpers", () => {
+  assert.equal(lib.priceText({ currency: "coins", amount: 0 }), "Free");
+  assert.equal(lib.priceText({ currency: "coins", amount: 1500 }), `${(1500).toLocaleString()} coins`);
+  assert.equal(lib.ownedText({ owned: 0, limit: null }), null);
+  assert.equal(lib.ownedText({ owned: 2, limit: null }), "Owned 2");
+  assert.equal(lib.ownedText({ owned: 1, limit: 3 }), "Owned 1 of 3");
+  const [sticker, freeze, frame] = storeData.items;
+  assert.equal(lib.storeItemBlocker(sticker, storeData.wallet), null);
+  assert.equal(lib.storeItemBlocker(freeze, storeData.wallet), "Need 3 more coins");
+  assert.equal(lib.storeItemBlocker(frame, storeData.wallet), "Limit reached");
+  assert.equal(lib.storeItemBlocker({ ...freeze, price: { currency: "gems", amount: 2 } }, {}), "Need 2 more gems", "missing wallet entries count as 0");
+});
+
+test("RewardStore shows prices, owned counts, blockers and your buttons", () => {
+  const f = fragment(
+    renderToStaticMarkup(
+      h(RewardStore, {
+        store: storeData,
+        title: "Shop",
+        renderIcon: (item) => item.metadata?.icon ?? null,
+        renderAction: (item) => h("button", { disabled: !item.canBuy, "data-item": item.id }, "Buy"),
+      }),
+    ),
+  );
+  assert.equal(f.querySelector("section").getAttribute("aria-label"), "Shop");
+  assert.equal(f.querySelector(".os-store__wallet").textContent, "7 coins", "only currencies items are priced in");
+  const items = [...f.querySelectorAll(".os-item")];
+  assert.deepEqual(items.map((i) => i.querySelector(".os-item__name").textContent), ["Sticker", "Streak freeze", "Gold frame"]);
+  const [sticker, freeze, frame] = items;
+  assert.equal(sticker.querySelector(".os-item__icon").textContent, "⭐");
+  assert.equal(freeze.querySelector(".os-item__icon"), null, "no icon box without an icon");
+  assert.equal(sticker.querySelector(".os-item__price").textContent, "1 coins");
+  assert.equal(sticker.querySelector(".os-item__owned").textContent, "Owned 3");
+  assert.equal(sticker.querySelector(".os-item__blocker"), null);
+  assert.equal(sticker.querySelector("button").disabled, false);
+  assert.ok(freeze.classList.contains("os-item--blocked"));
+  assert.equal(freeze.querySelector(".os-item__description").textContent, "Keeps your streak for a day");
+  assert.equal(freeze.querySelector(".os-item__blocker").textContent, "Need 3 more coins");
+  assert.equal(freeze.querySelector(".os-item__owned"), null);
+  assert.equal(freeze.querySelector("button").disabled, true);
+  assert.equal(frame.querySelector(".os-item__price").textContent, "Free");
+  assert.equal(frame.querySelector(".os-item__owned").textContent, "Owned 1 of 1");
+  assert.equal(frame.querySelector(".os-item__blocker").textContent, "Limit reached");
+
+  const empty = fragment(renderToStaticMarkup(h(RewardStore, { store: { userId: "a", wallet: {}, items: [] } })));
+  assert.equal(empty.querySelector(".os-store__empty").textContent, "Nothing to buy yet.");
+  assert.equal(empty.querySelector(".os-store__header"), null);
+  assert.equal(empty.querySelector("section").getAttribute("aria-label"), "Reward store");
 });

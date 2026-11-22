@@ -31,7 +31,7 @@ const result = await xp.track({ userId: "asha", event: "lesson_completed", timez
 npm install && npm run build && npm run demo   # http://localhost:3000
 ```
 
-A tiny study app with simulated players: finish lessons, press **Next day** to build a streak, **Skip a week** to see the league and your weekly duels settle, challenge friends to a duel, and complete daily quests. Runs in memory, no database or keys. The source in [examples/demo](examples/demo/server.mjs) shows the engine and the React components working together.
+A tiny study app with simulated players: finish lessons, press **Next day** to build a streak, **Skip a week** to see the league and your weekly duels settle, challenge friends to a duel, and complete daily quests, and spend coins in the shop. Runs in memory, no database or keys. The source in [examples/demo](examples/demo/server.mjs) shows the engine and the React components working together.
 
 ## Quick start
 
@@ -130,7 +130,7 @@ The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`,
 
 ## React components
 
-`@onstreak/react` has ready-made, accessible components: `StreakFlame`, `LevelBar`, `BadgeGrid`, `Leaderboard`, `LeagueTable` (with a live countdown), `AchievementToast`, `FriendsList`, `RivalCard` / `RivalList` for head-to-head duels, and `QuestList`. They take the SDK's data as props, so fetch on your server and pass it down. Never send the API key to a browser.
+`@onstreak/react` has ready-made, accessible components: `StreakFlame`, `LevelBar`, `BadgeGrid`, `Leaderboard`, `LeagueTable` (with a live countdown), `AchievementToast`, `FriendsList`, `RivalCard` / `RivalList` for head-to-head duels, `QuestList`, and `RewardStore` with prices, owned counts and your own buy buttons. They take the SDK's data as props, so fetch on your server and pass it down. Never send the API key to a browser.
 
 ```tsx
 // Next.js server component

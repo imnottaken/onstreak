@@ -91,3 +91,26 @@ export function rewardText(rewards: Array<{ currency: string; amount: number }>)
 export function questProgressText(quest: { progress: number; target: number }, format: (n: number) => string = (n) => n.toLocaleString(), unit?: string): string {
   return `${format(Math.min(quest.progress, quest.target))} / ${format(quest.target)}${unit ? ` ${unit}` : ""}`;
 }
+
+/** "5 coins", or "Free" for a zero price. */
+export function priceText(price: { currency: string; amount: number }, format: (n: number) => string = (n) => n.toLocaleString()): string {
+  return price.amount === 0 ? "Free" : `${format(price.amount)} ${price.currency}`;
+}
+
+/** "Owned 1 of 2", "Owned 3", or null when the user has none. */
+export function ownedText(item: { owned: number; limit: number | null }): string | null {
+  if (item.owned <= 0) return null;
+  return item.limit === null ? `Owned ${item.owned.toLocaleString()}` : `Owned ${item.owned.toLocaleString()} of ${item.limit.toLocaleString()}`;
+}
+
+/** Why an item cannot be bought right now ("Limit reached", "Need 3 more coins"), or null if it can. */
+export function storeItemBlocker(
+  item: { owned: number; limit: number | null; price: { currency: string; amount: number }; canBuy: boolean },
+  wallet: Record<string, number>,
+  format: (n: number) => string = (n) => n.toLocaleString(),
+): string | null {
+  if (item.canBuy) return null;
+  if (item.limit !== null && item.owned >= item.limit) return "Limit reached";
+  const short = item.price.amount - (wallet[item.price.currency] ?? 0);
+  return short > 0 ? `Need ${format(short)} more ${item.price.currency}` : "Not available";
+}

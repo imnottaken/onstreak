@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { FriendList as FriendListData, LeaderboardEntry, LeaderboardResult, LeagueStatus, QuestList as QuestListData, RivalryStatus, UserProfile } from "@onstreak/sdk";
-import { countdownTick, cx, displayNameOf, formatTimeLeft, initials, levelProgress, questProgressText, recordText, rewardText, rivalScoreText, rivalShare, rivalStreakText, streakLabel } from "./helpers.js";
+import type { FriendList as FriendListData, LeaderboardEntry, LeaderboardResult, LeagueStatus, QuestList as QuestListData, RewardStore as RewardStoreData, RivalryStatus, UserProfile } from "@onstreak/sdk";
+import { countdownTick, cx, displayNameOf, formatTimeLeft, initials, levelProgress, ownedText, priceText, questProgressText, storeItemBlocker, recordText, rewardText, rivalScoreText, rivalShare, rivalStreakText, streakLabel } from "./helpers.js";
 
 type Streak = UserProfile["streaks"][string];
 type Level = NonNullable<UserProfile["level"]>;
@@ -533,6 +533,79 @@ export function QuestList({ quests, title, period, unitLabel, formatScore = defa
           {ordered.map((q) => (
             <QuestItem key={q.id} quest={q} now={now} unitLabel={unitLabel} formatScore={formatScore} />
           ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/* ---------- RewardStore ---------- */
+
+type StoreItem = RewardStoreData["items"][number];
+
+export interface RewardStoreProps {
+  /** The result of sdk.store(userId). */
+  store: RewardStoreData;
+  title?: string;
+  /**
+   * The buy control for an item, e.g. a button that posts to your server,
+   * which calls sdk.purchase. Check `item.canBuy` to disable it.
+   */
+  renderAction?: (item: StoreItem) => ReactNode;
+  /** An image or emoji for an item, e.g. from its metadata. */
+  renderIcon?: (item: StoreItem) => ReactNode;
+  formatScore?: (n: number) => string;
+  emptyText?: string;
+  className?: string;
+}
+
+/** Items users can buy with points: price, how many they own, and why they cannot buy one yet. */
+export function RewardStore({ store, title, renderAction, renderIcon, formatScore = defaultFormat, emptyText = "Nothing to buy yet.", className }: RewardStoreProps) {
+  const currencies = [...new Set(store.items.map((i) => i.price.currency))];
+  return (
+    <section className={cx("os-store", className)} aria-label={title ?? "Reward store"}>
+      {(title || currencies.length > 0) && (
+        <header className="os-store__header">
+          {title && <h3 className="os-store__title">{title}</h3>}
+          {currencies.length > 0 && (
+            <span className="os-store__wallet" aria-label="Your balance">
+              {currencies.map((c) => `${formatScore(store.wallet[c] ?? 0)} ${c}`).join(" · ")}
+            </span>
+          )}
+        </header>
+      )}
+      {store.items.length === 0 ? (
+        <p className="os-store__empty">{emptyText}</p>
+      ) : (
+        <ul className="os-store__list">
+          {store.items.map((item) => {
+            const blocker = storeItemBlocker(item, store.wallet, formatScore);
+            const owned = ownedText(item);
+            const icon = renderIcon?.(item);
+            return (
+              <li key={item.id} className={cx("os-item", !item.canBuy && "os-item--blocked")}>
+                {icon != null && icon !== false && (
+                  <span className="os-item__icon" aria-hidden="true">
+                    {icon}
+                  </span>
+                )}
+                <div className="os-item__body">
+                  <div className="os-item__header">
+                    <span className="os-item__name">{item.name}</span>
+                    <span className="os-item__price">{priceText(item.price, formatScore)}</span>
+                  </div>
+                  {item.description && <p className="os-item__description">{item.description}</p>}
+                  {(owned || blocker) && (
+                    <div className="os-item__meta">
+                      {owned && <span className="os-item__owned">{owned}</span>}
+                      {blocker && <span className="os-item__blocker">{blocker}</span>}
+                    </div>
+                  )}
+                </div>
+                {renderAction && <span className="os-item__action">{renderAction(item)}</span>}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

@@ -129,3 +129,27 @@ test("quests fill up as you study, pay out, and the daily ones reset", async (t)
   assert.equal(doc.querySelector(".os-quests__count").textContent, "0 / 3 done", "daily quests start over");
   assert.equal(quest(doc, "Study for an hour").querySelector(".os-quest__progress").textContent, "15 / 60 min", "the weekly one carries on");
 });
+
+test("the shop spends coins, respects limits and keeps XP", async (t) => {
+  const { view, press, base } = await start(t);
+  const item = (doc, name) => [...doc.querySelectorAll(".os-item")].find((i) => i.querySelector(".os-item__name").textContent === name);
+  let doc = await view();
+  assert.equal(doc.querySelector(".os-store__wallet").textContent, "0 coins");
+  assert.ok([...doc.querySelectorAll(".os-item button")].every((b) => b.disabled), "nothing affordable yet");
+  assert.equal(item(doc, "Night theme").querySelector(".os-item__blocker").textContent, "Need 5 more coins");
+
+  await press("/do/lesson");
+  await press("/do/lesson"); // 2 coins + 3 from the quest
+  await press("/buy/night_theme");
+  doc = await view();
+  assert.equal(doc.querySelector(".os-store__wallet").textContent, "0 coins");
+  assert.equal(doc.querySelector(".stats .muted").textContent, "0 coins", "the progress card shows what is left to spend");
+  assert.equal(item(doc, "Night theme").querySelector(".os-item__owned").textContent, "Owned 1 of 1");
+  assert.equal(item(doc, "Night theme").querySelector(".os-item__blocker").textContent, "Limit reached");
+  assert.match(doc.querySelector(".os-level__number").textContent, /Level 1/, "spending coins never touches XP");
+
+  await press("/buy/night_theme"); // refused quietly, nothing changes
+  doc = await view();
+  assert.equal(item(doc, "Night theme").querySelector(".os-item__owned").textContent, "Owned 1 of 1");
+  assert.equal((await fetch(`${base}/buy/nothing`, { method: "POST" })).status, 404, "only known items");
+});
