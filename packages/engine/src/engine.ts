@@ -167,6 +167,17 @@ export interface ReversalResult {
   totals: Record<string, number>;
 }
 
+export interface ConfigPreview {
+  /** Users checked. */
+  users: number;
+  /** True when there were more users than were checked. */
+  truncated: boolean;
+  /** How many users' level would go up, down or stay, or null without levels in both configs. */
+  levels: { up: number; down: number; same: number } | null;
+  /** By achievement id (or "id#2" for a tier): users who would unlock it on their next event, and users who have it but would no longer qualify. */
+  achievements: Record<string, { wouldUnlock: number; noLongerQualify: number }>;
+}
+
 export interface LeaderboardHistory {
   id: string;
   currency: string;
@@ -1077,19 +1088,7 @@ export class Engine {
     const now = this.now();
     const timezone = snap.profile.timezone ?? this.config.defaultTimezone;
     const unlockedAt = new Map(snap.achievements.map((a) => [a.id, a.unlockedAt]));
-    const read = async (leaf: AchievementLeaf): Promise<number> => {
-      if ("streak" in leaf) {
-        const rule = this.config.streaks.find((r) => r.id === leaf.streak)!;
-        const state = snap.streaks[rule.id];
-        return state ? streakStatus(rule, state, streakPeriodKey(rule, now, timezone)).current : 0;
-      }
-      if (leaf.within) {
-        const { from, to } = leaderboardWindow(WINDOW_PERIOD[leaf.within], now, timezone);
-        const kind = "metric" in leaf ? "event" : "points";
-        return this.store.communityTotal({ kind, key: "metric" in leaf ? leaf.metric : leaf.points, from: from!, to: to!, userId });
-      }
-      return "metric" in leaf ? (snap.metrics[leaf.metric] ?? 0) : (snap.balances[leaf.points] ?? 0);
-    };
+    const read = this.snapshotReader(this.config, userId, snap, now);
     const currents = new Map<string, number>();
     for (const a of this.config.achievements) currents.set(a.id, (await conditionProgress(a.when, read)).current);
     return {
@@ -1119,6 +1118,82 @@ export class Engine {
         };
       }),
     };
+  }
+
+  /** Reads achievement condition values from a snapshot, as of `now`. */
+  private snapshotReader(config: ResolvedConfig, userId: string, snap: Awaited<ReturnType<Store["snapshot"]>>, now: number) {
+    const timezone = snap.profile.timezone ?? config.defaultTimezone;
+    return async (leaf: AchievementLeaf): Promise<number> => {
+      if ("streak" in leaf) {
+        const rule = config.streaks.find((r) => r.id === leaf.streak)!;
+        const state = snap.streaks[rule.id];
+        return state ? streakStatus(rule, state, streakPeriodKey(rule, now, timezone)).current : 0;
+      }
+      if (leaf.within) {
+        const { from, to } = leaderboardWindow(WINDOW_PERIOD[leaf.within], now, timezone);
+        const kind = "metric" in leaf ? "event" : "points";
+        return this.store.communityTotal({ kind, key: "metric" in leaf ? leaf.metric : leaf.points, from: from!, to: to!, userId });
+      }
+      return "metric" in leaf ? (snap.metrics[leaf.metric] ?? 0) : (snap.balances[leaf.points] ?? 0);
+    };
+  }
+
+  /**
+   * What a new config would change for existing users, without changing
+   * anything: who would move up or down a level, and who would newly
+   * unlock each achievement (on their next event) or no longer qualify for
+   * one they have. Scans up to `maxUsers` users (default 100000).
+   */
+  async previewConfig(input: unknown, options: { maxUsers?: number } = {}): Promise<ConfigPreview> {
+    let next: ResolvedConfig;
+    try {
+      next = resolveConfig(input as OnstreakConfig);
+    } catch (err) {
+      if (err instanceof Error && err.name === "ConfigError") throw new EngineError(err.message);
+      throw err;
+    }
+    const maxUsers = options.maxUsers ?? 100_000;
+    const now = this.now();
+    const levelOf = (cfg: ResolvedConfig, snap: Awaited<ReturnType<Store["snapshot"]>>) =>
+      cfg.levels ? levelFor(cfg.levels, (snap.balances[cfg.levels.currency] ?? 0) - (cfg.levels.prestige ? snap.prestige.base : 0)) : null;
+    const levels = { up: 0, down: 0, same: 0 };
+    const achievements: ConfigPreview["achievements"] = {};
+    for (const a of next.achievements) for (const l of achievementLevels(a)) achievements[l.key] = { wouldUnlock: 0, noLongerQualify: 0 };
+    let users = 0;
+    let after: string | null = null;
+    let truncated = false;
+    for (;;) {
+      const ids = await this.store.userIds(after, 500);
+      if (ids.length === 0) break;
+      for (const userId of ids) {
+        if (users >= maxUsers) {
+          truncated = true;
+          break;
+        }
+        users++;
+        const snap = await this.store.snapshot(userId);
+        const before = levelOf(this.config, snap);
+        const afterLevel = levelOf(next, snap);
+        if (before !== null && afterLevel !== null) {
+          if (afterLevel > before) levels.up++;
+          else if (afterLevel < before) levels.down++;
+          else levels.same++;
+        }
+        const have = new Set(snap.achievements.map((x) => x.id));
+        const read = this.snapshotReader(next, userId, snap, now);
+        for (const a of next.achievements) {
+          const { current } = await conditionProgress(a.when, read);
+          for (const l of achievementLevels(a)) {
+            const qualifies = current >= l.gte;
+            if (qualifies && !have.has(l.key)) achievements[l.key]!.wouldUnlock++;
+            if (!qualifies && have.has(l.key)) achievements[l.key]!.noLongerQualify++;
+          }
+        }
+      }
+      if (truncated) break;
+      after = ids[ids.length - 1]!;
+    }
+    return { users, truncated, levels: this.config.levels && next.levels ? levels : null, achievements };
   }
 
   /**

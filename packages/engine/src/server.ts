@@ -119,6 +119,10 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
       if (parts[0] !== "v1") throw new HttpError(404, "not found");
       const [, resource, id, sub, subId, subSub, subSubId] = parts;
 
+      if (req.method === "POST" && resource === "config" && id === "preview" && parts.length === 3) {
+        return send(200, await engine.previewConfig(await readJson(req)));
+      }
+
       if (req.method === "POST" && resource === "events" && parts.length === 2) {
         const body = await readJson(req);
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "body must be a JSON object");

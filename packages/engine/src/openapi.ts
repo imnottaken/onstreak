@@ -877,6 +877,27 @@ const schemas = {
     additionalProperties: false,
     properties: { userId: { type: "string" }, achievementId: { type: "string" }, revoked: { type: "boolean" } },
   },
+  ConfigPreview: {
+    type: "object",
+    required: ["users", "truncated", "levels", "achievements"],
+    additionalProperties: false,
+    properties: {
+      users: { type: "integer", minimum: 0 },
+      truncated: { type: "boolean" },
+      levels: nullable({
+        type: "object",
+        required: ["up", "down", "same"],
+        additionalProperties: false,
+        properties: { up: { type: "integer" }, down: { type: "integer" }, same: { type: "integer" } },
+      }),
+      achievements: map({
+        type: "object",
+        required: ["wouldUnlock", "noLongerQualify"],
+        additionalProperties: false,
+        properties: { wouldUnlock: { type: "integer" }, noLongerQualify: { type: "integer" } },
+      }),
+    },
+  },
   PrestigeResult: {
     type: "object",
     required: ["userId", "prestige", "level", "rewards"],
@@ -1152,6 +1173,15 @@ export function openapiSpec(version: string) {
           summary: "Track an event",
           requestBody: { required: true, content: json(ref("TrackInput")) },
           responses: { "200": ok("What the event awarded", ref("TrackResult")), ...authErrors },
+        },
+      },
+      "/v1/config/preview": {
+        post: {
+          operationId: "previewConfig",
+          summary: "What a new config would change for existing users",
+          description: "Changes nothing. Reports level moves and, per achievement (or tier), who would unlock it on their next event or no longer qualify.",
+          requestBody: { required: true, content: json({ type: "object", description: "A full onstreak config, as in onstreak.config.json." }) },
+          responses: { "200": ok("The preview", ref("ConfigPreview")), ...authErrors },
         },
       },
       "/v1/events/batch": {

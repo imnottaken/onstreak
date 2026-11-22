@@ -552,6 +552,13 @@ export function createClient(options: ClientOptions) {
     /** Take back an achievement, or one tier with "id#2". */
     revokeAchievement: (userId: string, achievementId: string) =>
       call<{ userId: string; achievementId: string; revoked: boolean }>("DELETE", `${user(userId)}/achievements/${encodeURIComponent(achievementId)}`),
+    /** What a new config would change for existing users (changes nothing). */
+    previewConfig: (config: Record<string, unknown>) =>
+      call<{ users: number; truncated: boolean; levels: { up: number; down: number; same: number } | null; achievements: Record<string, { wouldUnlock: number; noLongerQualify: number }> }>(
+        "POST",
+        "/v1/config/preview",
+        config,
+      ),
     /** Start levels over at the top level, with a higher prestige rank. Throws 409 "not_max_level" before then. */
     prestige: (userId: string) => call<{ userId: string; prestige: number; level: number; rewards: QuestReward[] }>("POST", `${user(userId)}/prestige`),
     /** Every achievement with the user's progress; hidden ones stay secret until unlocked. */

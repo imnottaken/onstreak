@@ -92,7 +92,7 @@ Things that would hurt early users if they were missing.
 - [ ] **League grouping upgrades** (M). Fill small groups with ghost players, skill-based grouping.
 - [x] **Corrections** (M). Reverse an event's points and counts, revoke an achievement. (Recomputing streaks and quests is part of replay.)
 - [ ] **Replay and backfill** (L). Rebuild every user's state from the event log after a config change, with a dry run showing what would change.
-- [ ] **Config preview and simulation** (M). "If I change level thresholds, how many users change level?"
+- [x] **Config preview and simulation** (M). "If I change level thresholds, how many users change level?"
 - [x] **"Streak at risk" list** (M). Users who have not done today's activity yet, for reminders.
 - [x] **Translated names** (S). Achievement and tier names in several languages.
 

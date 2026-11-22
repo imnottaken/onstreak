@@ -76,6 +76,9 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
     events: [{ userId: "ravi", event: "lesson_completed" }, { userId: "ravi", event: "bad event" }],
   });
   await call("post", "/v1/events/batch", "/v1/events/batch", { events: [] }); // 400
+  const preview = await call("post", "/v1/config/preview", "/v1/config/preview", { ...config, levels: { currency: "xp", thresholds: [5] } });
+  assert.ok(preview.json.users >= 1);
+  await call("post", "/v1/config/preview", "/v1/config/preview", { currencies: [] }); // 400
 
   await call("patch", "/v1/users/asha", "/v1/users/{userId}", { displayName: "Asha", avatarUrl: "https://example.com/a.png", metadata: { a: 1 } });
   await call("patch", "/v1/users/asha", "/v1/users/{userId}", { nickname: "x" }); // 400

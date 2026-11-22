@@ -408,6 +408,10 @@ export class MemoryStore implements Store {
       .map((e) => ({ id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result, properties: e.properties ? { ...e.properties } : null, reversedAt: (e as { reversedAt?: number | null }).reversedAt ?? null }));
   }
 
+  async userIds(afterUserId: string | null, limit: number): Promise<string[]> {
+    return [...this.users.keys()].filter((id) => afterUserId === null || id > afterUserId).sort().slice(0, limit);
+  }
+
   async activeStreaks(streakId: string, afterUserId: string | null, limit: number) {
     return [...this.users.entries()]
       .filter(([id, d]) => (afterUserId === null || id > afterUserId) && (d.streaks.get(streakId)?.current ?? 0) > 0)

@@ -106,6 +106,7 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 | Route | |
 | --- | --- |
 | `POST /v1/events` | Track an event: `{ userId, event, value?, timestamp?, timezone?, idempotencyKey?, properties? }`. `properties` are up to 20 strings, numbers or booleans that rules can filter on |
+| `POST /v1/config/preview` | Send a candidate config: see how many users' levels would go up or down, and per achievement who would unlock it on their next event or no longer qualify. Changes nothing |
 | `POST /v1/events/batch` | Track up to 100 events in order: `{ events: [...] }`. Bad items are reported in place |
 | `GET /v1/users/:id?timezone=` | Profile, points, level, metrics, streak status (`done`, `pending`, `broken`) and achievements |
 | `PATCH /v1/users/:id` | Set `displayName`, `avatarUrl`, `metadata` (JSON, max 8 KB) or `timezone`. `null` clears a field |
@@ -157,7 +158,7 @@ Spending never lowers earned points. `points` on a user is what they earned (lev
 
 The full machine-readable description is served at `GET /openapi.json` (OpenAPI 3.1, no key needed), so you can generate a client for any language. Tests check every response against it, so it stays accurate.
 
-The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `calendars`, `communityGoals`, `seasons`, `seasonStandings`, `achievements`, `reverseEvent`, `revokeAchievement`, `prestige`, `saveTeam`, `team`, `addTeamMember`, `removeTeamMember`, `userTeam`, `teamLeaderboard`, `teamGoals`, `addReferral`, `referrals`, `store`, `purchase`, `purchases`, `useItem`, `refundPurchase`, `repairStreak`, `grantBoost`, `leaderboard`, `leaderboardHistory`, `streaksAtRisk`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
+The SDK mirrors these: `track`, `previewConfig`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `calendars`, `communityGoals`, `seasons`, `seasonStandings`, `achievements`, `reverseEvent`, `revokeAchievement`, `prestige`, `saveTeam`, `team`, `addTeamMember`, `removeTeamMember`, `userTeam`, `teamLeaderboard`, `teamGoals`, `addReferral`, `referrals`, `store`, `purchase`, `purchases`, `useItem`, `refundPurchase`, `repairStreak`, `grantBoost`, `leaderboard`, `leaderboardHistory`, `streaksAtRisk`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
 
 ## React components
 

@@ -698,6 +698,11 @@ export class PostgresStore implements Store {
     }));
   }
 
+  async userIds(afterUserId: string | null, limit: number): Promise<string[]> {
+    const { rows } = await this.db.query(`select id from ${this.t.users} where ($1::text is null or id > $1) order by id limit $2`, [afterUserId, limit]);
+    return rows.map((r) => String(r.id));
+  }
+
   async activeStreaks(streakId: string, afterUserId: string | null, limit: number) {
     const { rows } = await this.db.query(
       `select s.*, u.timezone from ${this.t.streaks} s join ${this.t.users} u on u.id = s.user_id
