@@ -86,6 +86,7 @@ Everything is declared in one JSON file. See [examples/onstreak.config.json](exa
 | `leaderboards` | `{ id, currency, period: daily \| weekly \| monthly \| all, timezone? }` |
 | `leagues` | `{ id, currency, tiers, groupSize?, promote?, demote?, period?, timezone? }` (defaults: 30 per group, 7 up, 5 down, weekly) |
 | `rivalries` | `{ id, currency, period?, timezone?, max? }` (defaults: weekly, UTC, 10 rivals each) |
+| `quests` | `{ id, name, description?, period: daily \| weekly, goal: { event, target } \| { points, target }, rewards?: [{ currency, amount }], timezone? }`. Days start in each user's zone unless the quest sets one |
 | `friends` | `{ max? }` (default 1000) |
 
 Mistakes (unknown currency, duplicate ids, a typo in a time zone) fail at startup with a clear message.
@@ -101,6 +102,7 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 | `GET /v1/users/:id?timezone=` | Profile, points, level, metrics, streak status (`done`, `pending`, `broken`) and achievements |
 | `PATCH /v1/users/:id` | Set `displayName`, `avatarUrl`, `metadata` (JSON, max 8 KB) or `timezone`. `null` clears a field |
 | `GET /v1/users/:id/events?limit=&cursor=` | The user's events, newest first, with what each one awarded |
+| `GET /v1/users/:id/quests?timezone=` | Every quest for the current day or week with the user's progress, completion time and when it resets |
 | `PUT /v1/users/:id/friends/:friendId` | Make two users friends (mutual, safe to repeat). 409 past the friend limit |
 | `DELETE /v1/users/:id/friends/:friendId` | End a friendship for both users |
 | `GET /v1/users/:id/friends` | A user's friends, newest first, with names and avatars |
@@ -117,7 +119,7 @@ A time zone sent with an event is remembered for that user, so later events and 
 
 The full machine-readable description is served at `GET /openapi.json` (OpenAPI 3.1, no key needed), so you can generate a client for any language. Tests check every response against it, so it stays accurate.
 
-The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `leaderboard`, `league` and `health`. Errors are `OnstreakError` with `status` and `requestId`.
+The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `leaderboard`, `league` and `health`. Errors are `OnstreakError` with `status` and `requestId`.
 
 ## React components
 
@@ -183,7 +185,7 @@ The release workflow runs every test against real Postgres, checks the packages 
 
 ## Roadmap
 
-- Quests and time-limited challenges
+- Time-limited events and seasons
 - Webhooks for level-ups and unlocks
 - Admin dashboard
 - Spending currencies (reward store)

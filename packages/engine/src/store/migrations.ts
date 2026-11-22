@@ -25,6 +25,7 @@ export interface Tables {
   friends: string;
   rivalries: string;
   rivalryRounds: string;
+  quests: string;
 }
 
 export function tableNames(prefix: string): Tables {
@@ -42,6 +43,7 @@ export function tableNames(prefix: string): Tables {
     friends: `${prefix}friends`,
     rivalries: `${prefix}rivalries`,
     rivalryRounds: `${prefix}rivalry_rounds`,
+    quests: `${prefix}quest_progress`,
   };
 }
 
@@ -191,6 +193,21 @@ export const MIGRATIONS: readonly Migration[] = [
          score_b double precision not null,
          primary key (rivalry_id, user_a, user_b, round_key),
          foreign key (rivalry_id, user_a, user_b) references ${t.rivalries} (rivalry_id, user_a, user_b) on delete cascade
+       )`,
+    ],
+  },
+  {
+    version: 7,
+    name: "quests",
+    statements: (t) => [
+      // One row per user, quest and period. Old periods stay as history.
+      `create table if not exists ${t.quests} (
+         user_id text not null references ${t.users}(id),
+         quest_id text not null,
+         period_key text not null,
+         progress double precision not null,
+         completed_at timestamptz,
+         primary key (user_id, quest_id, period_key)
        )`,
     ],
   },

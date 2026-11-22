@@ -50,7 +50,7 @@ const schemas = {
   },
   TrackResult: {
     type: "object",
-    required: ["eventId", "userId", "event", "value", "duplicate", "points", "level", "streaks", "achievements", "leagues"],
+    required: ["eventId", "userId", "event", "value", "duplicate", "points", "level", "streaks", "achievements", "leagues", "quests"],
     additionalProperties: false,
     properties: {
       eventId: { type: "string", format: "uuid" },
@@ -103,6 +103,59 @@ const schemas = {
           previous: nullable(ref("LeaguePrevious")),
         },
       }),
+      quests: map({
+        type: "object",
+        description: "Quests this event moved forward. Rewards of a quest it completed are already in points.",
+        required: ["progress", "target", "completed", "rewards"],
+        additionalProperties: false,
+        properties: {
+          progress: { type: "number" },
+          target: { type: "number" },
+          completed: { type: "boolean", description: "True only on the event that completed the quest." },
+          rewards: { type: "array", items: ref("QuestReward") },
+        },
+      }),
+    },
+  },
+  QuestReward: {
+    type: "object",
+    required: ["currency", "amount"],
+    additionalProperties: false,
+    properties: { currency: { type: "string" }, amount: { type: "number" } },
+  },
+  QuestList: {
+    type: "object",
+    required: ["userId", "quests"],
+    additionalProperties: false,
+    properties: {
+      userId: { type: "string" },
+      quests: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id", "name", "period", "goal", "progress", "target", "completed", "completedAt", "rewards", "startsAt", "endsAt"],
+          additionalProperties: false,
+          properties: {
+            id: { type: "string" },
+            name: { type: "string" },
+            description: { type: "string" },
+            period: { enum: ["daily", "weekly"] },
+            goal: {
+              oneOf: [
+                { type: "object", required: ["event", "target"], additionalProperties: false, properties: { event: { type: "string" }, target: { type: "number" } } },
+                { type: "object", required: ["points", "target"], additionalProperties: false, properties: { points: { type: "string" }, target: { type: "number" } } },
+              ],
+            },
+            progress: { type: "number" },
+            target: { type: "number" },
+            completed: { type: "boolean" },
+            completedAt: nullable({ type: "string", format: "date-time" }),
+            rewards: { type: "array", items: ref("QuestReward") },
+            startsAt: { type: "string", format: "date-time" },
+            endsAt: { type: "string", format: "date-time" },
+          },
+        },
+      },
     },
   },
   Profile: {
@@ -455,6 +508,15 @@ export function openapiSpec(version: string) {
           summary: "A user's events, newest first",
           parameters: [limitParam(), { name: "cursor", in: "query", schema: { type: "string" }, description: "nextCursor from the previous page." }],
           responses: { "200": ok("A page of events", ref("EventHistory")), ...authErrors },
+        },
+      },
+      "/v1/users/{userId}/quests": {
+        parameters: [userIdParam],
+        get: {
+          operationId: "quests",
+          summary: "Every quest for the current day or week, with the user's progress",
+          parameters: [{ name: "timezone", in: "query", schema: { type: "string" }, description: "Override the zone that decides when days start." }],
+          responses: { "200": ok("The user's quests", ref("QuestList")), ...authErrors },
         },
       },
       "/v1/users/{userId}/friends": {

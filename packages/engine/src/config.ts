@@ -87,6 +87,28 @@ export interface ResolvedRivalry {
   max: number;
 }
 
+export interface QuestReward {
+  currency: string;
+  amount: number;
+}
+
+export interface QuestRule {
+  id: string;
+  name: string;
+  description?: string;
+  /** A new quest every day or week. */
+  period: StreakPeriod;
+  /**
+   * Done when `event` adds up to `target` (event values are summed, so a plain
+   * event counts 1), or when `target` points in a currency are earned.
+   */
+  goal: { event: string; target: number } | { points: string; target: number };
+  /** Points paid once on completion. */
+  rewards?: QuestReward[];
+  /** Fix where days start for everyone. Default: each user's own time zone. */
+  timezone?: string;
+}
+
 export interface OnstreakConfig {
   /** Time zone used for streaks when an event does not say. Default UTC. */
   defaultTimezone?: string;
@@ -98,6 +120,7 @@ export interface OnstreakConfig {
   leaderboards?: LeaderboardRule[];
   leagues?: LeagueRule[];
   rivalries?: RivalryRule[];
+  quests?: QuestRule[];
   friends?: {
     /** Most friends one user can have. Default 1000. */
     max?: number;
@@ -127,6 +150,7 @@ export interface ResolvedConfig {
   leaderboards: LeaderboardRule[];
   leagues: ResolvedLeague[];
   rivalries: ResolvedRivalry[];
+  quests: QuestRule[];
   friends: { max: number };
 }
 
@@ -268,6 +292,25 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     rivalries.push(resolved);
   }
 
+  const quests = input.quests ?? [];
+  uniqueIds("quest", quests.map((q) => q.id));
+  for (const q of quests) {
+    if (typeof q.name !== "string" || q.name.length === 0) throw new ConfigError(`quest "${q.id}" needs a name`);
+    if (!STREAK_PERIODS.includes(q.period)) throw new ConfigError(`quest "${q.id}" period must be daily or weekly`);
+    const g = q.goal as Record<string, unknown> | undefined;
+    const kinds = g ? ["event", "points"].filter((k) => k in g) : [];
+    if (kinds.length !== 1 || typeof g?.target !== "number" || !Number.isFinite(g.target) || g.target <= 0) {
+      throw new ConfigError(`quest "${q.id}" needs goal: { event | points, target } with a positive target`);
+    }
+    if ("event" in q.goal && (typeof q.goal.event !== "string" || !ID.test(q.goal.event))) throw new ConfigError(`quest "${q.id}" has bad event "${q.goal.event}"`);
+    if ("points" in q.goal) hasCurrency(q.goal.points, `quest "${q.id}"`);
+    for (const r of q.rewards ?? []) {
+      hasCurrency(r.currency, `quest "${q.id}" reward`);
+      if (typeof r.amount !== "number" || !Number.isFinite(r.amount) || r.amount <= 0) throw new ConfigError(`quest "${q.id}" rewards need a positive amount`);
+    }
+    if (q.timezone !== undefined && !isValidTimeZone(q.timezone)) throw new ConfigError(`quest "${q.id}" has unknown timezone "${q.timezone}"`);
+  }
+
   const maxFriends = input.friends?.max ?? 1000;
   if (!Number.isInteger(maxFriends) || maxFriends < 1 || maxFriends > 100_000) {
     throw new ConfigError("friends.max must be a whole number from 1 to 100000");
@@ -283,6 +326,7 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     leaderboards,
     leagues,
     rivalries,
+    quests,
     friends: { max: maxFriends },
   };
 }

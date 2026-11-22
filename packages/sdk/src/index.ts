@@ -20,6 +20,8 @@ export interface TrackResult {
   streaks: Record<string, { current: number; longest: number; freezes: number; extended: boolean; freezesUsed: number; reset: boolean }>;
   achievements: Array<{ id: string; name: string; description?: string }>;
   leagues: Record<string, { tier: string; group: number; joined: boolean; previous: LeaguePrevious | null }>;
+  /** Quests this event moved forward. Rewards of a quest it completed are already in `points`. */
+  quests: Record<string, { progress: number; target: number; completed: boolean; rewards: QuestReward[] }>;
 }
 
 export interface LeaguePrevious {
@@ -86,6 +88,29 @@ export interface EventHistory {
 export interface FriendList {
   userId: string;
   friends: Array<{ userId: string; displayName: string | null; avatarUrl: string | null; since: string }>;
+}
+
+export interface QuestReward {
+  currency: string;
+  amount: number;
+}
+
+export interface QuestList {
+  userId: string;
+  quests: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    period: "daily" | "weekly";
+    goal: { event: string; target: number } | { points: string; target: number };
+    progress: number;
+    target: number;
+    completed: boolean;
+    completedAt: string | null;
+    rewards: QuestReward[];
+    startsAt: string;
+    endsAt: string;
+  }>;
 }
 
 export type RivalOutcome = "won" | "lost" | "draw";
@@ -196,6 +221,9 @@ export function createClient(options: ClientOptions) {
       call<{ userId: string; friendId: string; removed: boolean }>("DELETE", `${user(userId)}/friends/${encodeURIComponent(friendId)}`),
     /** A user's friends, newest first. */
     friends: (userId: string) => call<FriendList>("GET", `${user(userId)}/friends`),
+    /** Every quest for the current day or week, with the user's progress. */
+    quests: (userId: string, options: { timezone?: string } = {}) =>
+      call<QuestList>("GET", `${user(userId)}/quests${options.timezone ? `?timezone=${encodeURIComponent(options.timezone)}` : ""}`),
     /** A user's rivals: this round's live score, record, streak and last result. */
     rivals: (rivalryId: string, userId: string) =>
       call<RivalryStatus>("GET", `/v1/rivalries/${encodeURIComponent(rivalryId)}/users/${encodeURIComponent(userId)}`),

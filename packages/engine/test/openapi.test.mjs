@@ -126,6 +126,21 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   c.check("put", "/v1/rivalries/{rivalryId}/users/{userId}/rivals/{rivalId}", tooMany.status, await tooMany.json());
   assert.equal(tooMany.status, 409);
 
+  const questy = await serve(t, new MemoryStore(), { ...config, quests: [{ id: "two_lessons", name: "Two lessons", period: "daily", goal: { event: "lesson_completed", target: 2 }, rewards: [{ currency: "coins", amount: 3 }] }, { id: "xp_goal", name: "Earn XP", period: "weekly", goal: { points: "xp", target: 1000 } }] });
+  const questCall = async (method, path, template, body) => {
+    const res = await fetch(`${questy.base}${path}`, { method: method.toUpperCase(), headers: { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const json = await res.json();
+    c.check(method, template, res.status, json);
+    return json;
+  };
+  await questCall("post", "/v1/events", "/v1/events", { userId: "q", event: "lesson_completed" });
+  const finished = await questCall("post", "/v1/events", "/v1/events", { userId: "q", event: "lesson_completed" });
+  assert.equal(finished.quests.two_lessons.completed, true);
+  const questList = await questCall("get", "/v1/users/q/quests", "/v1/users/{userId}/quests");
+  assert.equal(questList.quests[0].completed, true);
+  await questCall("get", "/v1/users/q/quests?timezone=UTC", "/v1/users/{userId}/quests");
+  await questCall("get", "/v1/users/q/quests?timezone=Nope", "/v1/users/{userId}/quests"); // 400
+
   await call("get", "/health", "/health", undefined, { key: null });
   store.ping = async () => {
     throw new Error("down");

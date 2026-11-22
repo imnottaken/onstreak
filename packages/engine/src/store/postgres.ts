@@ -6,6 +6,7 @@ import { FriendLimitError, RivalLimitError } from "./types.js";
 import type {
   EventPageQuery,
   FriendRecord,
+  QuestProgress,
   RivalRecord,
   WindowScoreQuery,
   EventRecord,
@@ -90,6 +91,15 @@ const num = (v: unknown): number => (typeof v === "number" ? v : Number(v));
 const ms = (v: unknown): number => (v instanceof Date ? v : new Date(String(v))).getTime();
 const iso = (v: unknown): string => new Date(ms(v)).toISOString();
 const json = <T>(v: unknown): T => (typeof v === "string" ? JSON.parse(v) : v) as T;
+
+function rowToQuest(r: Record<string, unknown>): QuestProgress {
+  return {
+    questId: String(r.quest_id),
+    periodKey: String(r.period_key),
+    progress: num(r.progress),
+    completedAt: r.completed_at === null || r.completed_at === undefined ? null : ms(r.completed_at),
+  };
+}
 
 function rowToStreak(r: Record<string, unknown>): StreakState {
   return {
@@ -252,6 +262,17 @@ export class PostgresStore implements Store {
           `insert into ${t.streaks} (user_id, streak_id, current, longest, last_period, freezes) values ($1, $2, $3, $4, $5, $6)
            on conflict (user_id, streak_id) do update set current = $3, longest = $4, last_period = $5, freezes = $6`,
           [userId, id, s.current, s.longest, s.lastPeriod, s.freezes],
+        );
+      },
+      async getQuest(questId, periodKey) {
+        const { rows } = await q.query(`select * from ${t.quests} where user_id = $1 and quest_id = $2 and period_key = $3`, [userId, questId, periodKey]);
+        return rows[0] ? rowToQuest(rows[0]) : null;
+      },
+      async setQuest(p) {
+        await q.query(
+          `insert into ${t.quests} (user_id, quest_id, period_key, progress, completed_at) values ($1, $2, $3, $4, $5)
+           on conflict (user_id, quest_id, period_key) do update set progress = $4, completed_at = $5`,
+          [userId, p.questId, p.periodKey, p.progress, p.completedAt === null ? null : new Date(p.completedAt).toISOString()],
         );
       },
       async unlockedAchievements() {
@@ -499,6 +520,17 @@ export class PostgresStore implements Store {
       [rivalryId, ua, ub],
     );
     return rows.length > 0;
+  }
+
+  async quests(userId: string, keys: Array<{ questId: string; periodKey: string }>): Promise<QuestProgress[]> {
+    if (keys.length === 0) return [];
+    const { rows } = await this.db.query(
+      `select q.* from ${this.t.quests} q
+       join unnest($2::text[], $3::text[]) as k(quest_id, period_key) on q.quest_id = k.quest_id and q.period_key = k.period_key
+       where q.user_id = $1`,
+      [userId, keys.map((k) => k.questId), keys.map((k) => k.periodKey)],
+    );
+    return rows.map(rowToQuest);
   }
 
   async rivalries(rivalryId: string, userId: string): Promise<RivalRecord[]> {

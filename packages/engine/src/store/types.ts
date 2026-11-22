@@ -62,6 +62,14 @@ export interface RivalRecord {
   rounds: Array<{ roundKey: string; you: number; them: number }>;
 }
 
+/** A user's progress on one quest in one period. */
+export interface QuestProgress {
+  questId: string;
+  periodKey: string;
+  progress: number;
+  completedAt: number | null;
+}
+
 export interface WindowScoreQuery {
   currency: string;
   from: number;
@@ -130,6 +138,8 @@ export interface UserTx {
   settleMembership(leagueId: string, roundKey: string, result: { outcome: LeagueOutcome; finalRank: number; nextTier: string }): Promise<void>;
   /** Members of one group with their points in the round, ranked best first. */
   groupStandings(query: GroupQuery): Promise<GroupMember[]>;
+  getQuest(questId: string, periodKey: string): Promise<QuestProgress | null>;
+  setQuest(progress: QuestProgress): Promise<void>;
 }
 
 export interface UserSnapshot {
@@ -195,6 +205,8 @@ export interface Store {
   recordRivalryRound(rivalryId: string, a: string, b: string, roundKey: string, scoreA: number, scoreB: number): Promise<void>;
   /** Points each user earned in a window. Users with none are left out. */
   windowScores(query: WindowScoreQuery): Promise<Record<string, number>>;
+  /** A user's progress on these quest periods. Periods never started are left out. */
+  quests(userId: string, keys: Array<{ questId: string; periodKey: string }>): Promise<QuestProgress[]>;
   /** Throws if the database cannot be reached. */
   ping(): Promise<void>;
   /** Release connections. */

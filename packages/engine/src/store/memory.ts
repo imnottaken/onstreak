@@ -17,6 +17,7 @@ import type {
   Store,
   StoredEvent,
   UserSnapshot,
+  QuestProgress,
   UserTx,
 } from "./types.js";
 
@@ -28,6 +29,8 @@ interface UserData {
   balances: Map<string, number>;
   streaks: Map<string, StreakState>;
   achievements: Map<string, number>;
+  /** Keyed by "questId|periodKey". */
+  quests: Map<string, QuestProgress>;
 }
 
 interface LedgerRow {
@@ -66,6 +69,7 @@ export class MemoryStore implements Store {
         balances: new Map(),
         streaks: new Map(),
         achievements: new Map(),
+        quests: new Map(),
       };
       this.users.set(userId, d);
     }
@@ -125,6 +129,13 @@ export class MemoryStore implements Store {
       },
       setStreak: async (id, state) => {
         d.streaks.set(id, { ...state });
+      },
+      getQuest: async (questId, periodKey) => {
+        const q = d.quests.get(`${questId}|${periodKey}`);
+        return q ? { ...q } : null;
+      },
+      setQuest: async (q) => {
+        d.quests.set(`${q.questId}|${q.periodKey}`, { ...q });
       },
       unlockedAchievements: async () => new Set(d.achievements.keys()),
       unlock: async (id, ts) => {
@@ -275,6 +286,15 @@ export class MemoryStore implements Store {
   async removeRivalry(rivalryId: string, a: string, b: string): Promise<boolean> {
     const [ua, ub] = a < b ? [a, b] : [b, a];
     return this.rivals.delete(`${rivalryId}|${ua}|${ub}`);
+  }
+
+  async quests(userId: string, keys: Array<{ questId: string; periodKey: string }>): Promise<QuestProgress[]> {
+    const d = this.users.get(userId);
+    if (!d) return [];
+    return keys.flatMap((k) => {
+      const q = d.quests.get(`${k.questId}|${k.periodKey}`);
+      return q ? [{ ...q }] : [];
+    });
   }
 
   async rivalries(rivalryId: string, userId: string): Promise<RivalRecord[]> {

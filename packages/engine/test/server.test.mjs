@@ -102,6 +102,7 @@ test("SDK covers profiles, batches, history, health and request ids", async () =
     assert.equal(duel.rivals[0].rivalId, "zara");
     assert.deepEqual(duel.rivals[0].record, { wins: 0, losses: 0, draws: 0 });
     assert.equal((await xp.removeRival("weekly_duel", "omar", "zara")).removed, true);
+    assert.deepEqual((await xp.quests("omar")).quests, [], "no quests configured");
 
     const err = await xp.updateUser("zara", { nickname: "z" }).catch((e) => e);
     assert.ok(err instanceof OnstreakError);

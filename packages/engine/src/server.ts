@@ -145,6 +145,11 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         return send(200, await engine.events(id, { ...(limit !== undefined ? { limit } : {}), ...(cursor ? { cursor } : {}) }));
       }
 
+      if (req.method === "GET" && resource === "users" && id && sub === "quests" && parts.length === 4) {
+        const timezone = url.searchParams.get("timezone") ?? undefined;
+        return send(200, await engine.quests(id, timezone ? { timezone } : {}));
+      }
+
       if (resource === "users" && id && sub === "friends") {
         if (req.method === "GET" && parts.length === 4) return send(200, await engine.friends(id));
         if (req.method === "PUT" && subId && parts.length === 5) return send(200, await engine.addFriend(id, subId));

@@ -13,6 +13,8 @@ export type {
   FriendList,
   LeaderboardScope,
   RivalryStatus,
+  QuestStatus,
+  QuestList,
   RivalOutcome,
 } from "./engine.js";
 export { FriendLimitError, RivalLimitError } from "./store/types.js";
@@ -31,6 +33,8 @@ export type {
   LeagueRule,
   ResolvedLeague,
   RivalryRule,
+  QuestRule,
+  QuestReward,
   ResolvedRivalry,
 } from "./config.js";
 export { initialStreak, recordActivity, streakStatus } from "./streaks.js";
@@ -57,6 +61,7 @@ export type {
   MigrationReport,
   FriendRecord,
   RivalRecord,
+  QuestProgress,
   WindowScoreQuery,
 } from "./store/types.js";
 export { createHandler, createOnstreakServer } from "./server.js";

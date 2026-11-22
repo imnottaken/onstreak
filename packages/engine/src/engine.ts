@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig } from "./config.js";
+import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
 import { FriendLimitError, RivalLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type Store, type UserTx } from "./store/types.js";
@@ -40,6 +40,8 @@ export interface TrackResult {
   achievements: Array<{ id: string; name: string; description?: string }>;
   /** Leagues this event counted toward. `joined` is true the first time in a round. */
   leagues: Record<string, { tier: string; group: number; joined: boolean; previous: LeaguePrevious | null }>;
+  /** Quests this event moved forward. `completed` is true on the event that finished one; its rewards are already in `points`. */
+  quests: Record<string, { progress: number; target: number; completed: boolean; rewards: QuestReward[] }>;
 }
 
 /** How the user's last finished round of a league ended. */
@@ -113,6 +115,28 @@ export interface FriendList {
 }
 
 export type RivalOutcome = "won" | "lost" | "draw";
+
+export interface QuestStatus {
+  id: string;
+  name: string;
+  description?: string;
+  period: "daily" | "weekly";
+  /** Event or points goal, as configured. */
+  goal: QuestRule["goal"];
+  progress: number;
+  target: number;
+  completed: boolean;
+  completedAt: string | null;
+  rewards: QuestReward[];
+  /** The current period: progress resets at endsAt. */
+  startsAt: string;
+  endsAt: string;
+}
+
+export interface QuestList {
+  userId: string;
+  quests: QuestStatus[];
+}
 
 export interface RivalryStatus {
   rivalryId: string;
@@ -263,6 +287,34 @@ export class Engine {
         points[rule.currency] = entry;
       }
 
+      // Quests. Only events in the period running now count, and each quest pays
+      // its rewards once per period. Points goals count what the rules above
+      // awarded, not other quests' rewards.
+      const quests: TrackResult["quests"] = {};
+      const earned = new Map(Object.entries(points).map(([c, p]) => [c, p.awarded]));
+      for (const quest of config.quests) {
+        const gain = "event" in quest.goal ? (quest.goal.event === event ? value : 0) : (earned.get(quest.goal.points) ?? 0);
+        if (gain <= 0) continue;
+        const rule = { period: quest.period, timezone: quest.timezone ?? timezone };
+        const round = currentRound(rule, ts);
+        if (round.key !== currentRound(rule, recordedAt).key) continue;
+        const prev = await tx.getQuest(quest.id, round.key);
+        if (prev?.completedAt != null) continue;
+        const target = quest.goal.target;
+        const progress = Math.min(target, (prev?.progress ?? 0) + gain);
+        const completed = progress >= target;
+        await tx.setQuest({ questId: quest.id, periodKey: round.key, progress, completedAt: completed ? recordedAt : null });
+        const rewards = completed ? (quest.rewards ?? []).map((r) => ({ ...r })) : [];
+        for (const r of rewards) {
+          const total = await tx.addPoints(r.currency, r.amount, ts, eventId, recordedAt);
+          const entry = points[r.currency] ?? { awarded: 0, total };
+          entry.awarded += r.amount;
+          entry.total = total;
+          points[r.currency] = entry;
+        }
+        quests[quest.id] = { progress, target, completed, rewards };
+      }
+
       const streaks: TrackResult["streaks"] = {};
       const streakStates = new Map<string, StreakState>();
       for (const rule of config.streaks) {
@@ -319,7 +371,7 @@ export class Engine {
         }
       }
 
-      const result: TrackResult = { eventId, userId, event, value, duplicate: false, points, level, streaks, achievements, leagues };
+      const result: TrackResult = { eventId, userId, event, value, duplicate: false, points, level, streaks, achievements, leagues, quests };
       await tx.setEventResult(eventId, result);
       return result;
     });
@@ -430,6 +482,44 @@ export class Engine {
   }
 
   /** A user's friends, newest first, with their names and avatars. */
+  /** Every quest for the period running now, with the user's progress. */
+  async quests(userId: string, options: { timezone?: string } = {}): Promise<QuestList> {
+    if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces");
+    if (options.timezone !== undefined && !isValidTimeZone(options.timezone)) throw new EngineError(`unknown timezone "${options.timezone}"`);
+    const now = this.now();
+    let userZone = options.timezone;
+    if (userZone === undefined && this.config.quests.some((q) => !q.timezone)) {
+      userZone = (await this.store.snapshot(userId)).profile.timezone ?? this.config.defaultTimezone;
+    }
+    const rounds = this.config.quests.map((q) => currentRound({ period: q.period, timezone: q.timezone ?? userZone! }, now));
+    const stored = await this.store.quests(
+      userId,
+      this.config.quests.map((q, i) => ({ questId: q.id, periodKey: rounds[i]!.key })),
+    );
+    const byId = new Map(stored.map((s) => [s.questId, s]));
+    return {
+      userId,
+      quests: this.config.quests.map((q, i) => {
+        const s = byId.get(q.id);
+        const round = rounds[i]!;
+        return {
+          id: q.id,
+          name: q.name,
+          ...(q.description ? { description: q.description } : {}),
+          period: q.period,
+          goal: { ...q.goal },
+          progress: s?.progress ?? 0,
+          target: q.goal.target,
+          completed: s?.completedAt != null,
+          completedAt: s?.completedAt != null ? new Date(s.completedAt).toISOString() : null,
+          rewards: (q.rewards ?? []).map((r) => ({ ...r })),
+          startsAt: new Date(round.from).toISOString(),
+          endsAt: new Date(round.to).toISOString(),
+        };
+      }),
+    };
+  }
+
   async friends(userId: string): Promise<FriendList> {
     if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces");
     const friends = await this.store.friends(userId);

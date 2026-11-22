@@ -56,7 +56,8 @@ Things that would hurt early users if they were missing.
 - [x] **Friends and follows** (M). A social graph inside onstreak, needed for friend leaderboards and rivalries.
 - [x] **Friends-only leaderboards** (M).
 - [ ] **Teams, guilds and clubs** (L). Members, team points, team leaderboards, team leagues.
-- [ ] **Quests and missions** (L). Daily and weekly quests ("finish 3 lessons today"), multi-step quests, rewards on completion.
+- [x] **Quests and missions** (L). Daily and weekly quests ("finish 3 lessons today", "earn 50 XP"), rewards on completion.
+- [ ] **Multi-step quests** (M). Quest chains and missions with several goals, one-off (non-repeating) quests.
 - [ ] **Time-limited events** (M). "Double XP weekend", seasonal challenges, global community goals ("everyone together: 1M minutes").
 - [ ] **Seasons** (M). Reset or soft-reset points and leagues each season, keep an archive and award season badges.
 - [ ] **Multipliers and boosts** (M). Streak-based XP multiplier, event-wide boosts, personal boosts with an expiry.
