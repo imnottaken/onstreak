@@ -9,8 +9,16 @@ const MAX_BODY = 256 * 1024;
 const REQUEST_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
 export interface ServerOptions {
-  /** Secret clients send as `Authorization: Bearer <key>`. At least 16 characters. */
-  apiKey: string;
+  /** Secret clients send as `Authorization: Bearer <key>`. At least 16 characters. Has the admin scope. */
+  apiKey?: string;
+  /**
+   * More keys, each with a scope: "read" (GET only), "write" (everything an
+   * app does) or "admin" (also deleting and exporting users, reversing
+   * events, revoking achievements, config preview and the webhook log).
+   * Several keys at once make rotation easy: add the new one, then remove
+   * the old.
+   */
+  apiKeys?: Array<{ key: string; scope: KeyScope; name?: string }>;
   /** Where request and error logs go. Default: nowhere. */
   logger?: Logger;
   /** How long the database check in /health may take. Default 2000 ms. */
@@ -63,11 +71,30 @@ class HttpError extends Error {
   }
 }
 
-function authorized(req: IncomingMessage, apiKey: string): boolean {
+export type KeyScope = "read" | "write" | "admin";
+const SCOPES: readonly KeyScope[] = ["read", "write", "admin"];
+
+/** The scope of the key in the Authorization header, or null if it matches none. Every key is compared, so timing does not reveal which. */
+function scopeOf(req: IncomingMessage, keys: Array<{ key: Buffer; scope: KeyScope }>): KeyScope | null {
   const header = req.headers.authorization ?? "";
   const given = Buffer.from(header.startsWith("Bearer ") ? header.slice(7) : "");
-  const expected = Buffer.from(apiKey);
-  return given.length === expected.length && timingSafeEqual(given, expected);
+  let found: KeyScope | null = null;
+  for (const k of keys) {
+    if (given.length === k.key.length && timingSafeEqual(given, k.key) && found === null) found = k.scope;
+  }
+  return found;
+}
+
+/** Routes only an admin key may call. */
+function isAdminRoute(method: string | undefined, parts: string[]): boolean {
+  const [, resource, , sub, , subSub] = parts;
+  if (resource === "users" && method === "DELETE" && parts.length === 3) return true;
+  if (resource === "users" && sub === "export") return true;
+  if (resource === "users" && sub === "events" && subSub === "reverse") return true;
+  if (resource === "users" && sub === "achievements" && method === "DELETE") return true;
+  if (resource === "config") return true;
+  if (resource === "webhooks") return true;
+  return false;
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
@@ -106,7 +133,14 @@ interface ServerState {
 }
 
 function buildHandler(engine: Engine, options: ServerOptions, state: ServerState) {
-  if (!options.apiKey || options.apiKey.length < 16) throw new Error("apiKey must be at least 16 characters");
+  const keys: Array<{ key: Buffer; scope: KeyScope }> = [];
+  if (options.apiKey !== undefined) keys.push({ key: Buffer.from(options.apiKey), scope: "admin" });
+  for (const k of options.apiKeys ?? []) {
+    if (!SCOPES.includes(k.scope)) throw new Error(`api key scope must be read, write or admin, not "${String(k.scope)}"`);
+    keys.push({ key: Buffer.from(k.key ?? ""), scope: k.scope });
+  }
+  if (keys.length === 0) throw new Error("set apiKey or apiKeys");
+  if (keys.some((k) => k.key.length < 16)) throw new Error("apiKey must be at least 16 characters");
   const logger = options.logger ?? silentLogger;
   const healthTimeoutMs = options.healthTimeoutMs ?? 2000;
   const spec = openapiSpec(packageVersion());
@@ -189,8 +223,11 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
           throw new HttpError(429, "too many requests, slow down");
         }
       }
-      if (!authorized(req, options.apiKey)) throw new HttpError(401, "missing or wrong API key");
+      const scope = scopeOf(req, keys);
+      if (scope === null) throw new HttpError(401, "missing or wrong API key");
       if (parts[0] !== "v1") throw new HttpError(404, "not found");
+      if (scope === "read" && req.method !== "GET") throw new HttpError(403, "this key can only read (GET)");
+      if (scope !== "admin" && isAdminRoute(req.method, parts)) throw new HttpError(403, "this needs an admin key");
       const [, resource, id, sub, subId, subSub, subSubId] = parts;
 
       if (req.method === "GET" && resource === "webhooks" && id === "deliveries" && parts.length === 3) {

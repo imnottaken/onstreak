@@ -118,7 +118,7 @@ Things that would hurt early users if they were missing.
 
 ## Phase 7: Security and scale
 
-- [ ] **Multiple and scoped API keys** (M). Read-only keys, key rotation.
+- [x] **Multiple and scoped API keys** (M). Read-only keys, key rotation.
 - [ ] **Signed user tokens for browsers and apps** (M). Short-lived tokens so a client can read only its own user, without exposing the API key.
 - [x] **Rate limiting** (S).
 - [x] **CORS settings** (S).

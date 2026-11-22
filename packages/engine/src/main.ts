@@ -11,8 +11,23 @@ async function serve(env: NodeJS.ProcessEnv): Promise<void> {
   if (!LOG_LEVELS.includes(level)) throw new CliError(`ONSTREAK_LOG_LEVEL must be one of ${LOG_LEVELS.join(", ")}`);
   const logger = createLogger({ level, format: env.ONSTREAK_LOG_FORMAT === "pretty" ? "pretty" : "json" });
 
-  const apiKey = env.ONSTREAK_API_KEY;
-  if (!apiKey || apiKey.length < 16) throw new CliError("Set ONSTREAK_API_KEY (at least 16 characters) before starting onstreak.");
+  const apiKey = env.ONSTREAK_API_KEY || undefined;
+  // ONSTREAK_API_KEYS: comma-separated "scope:key" pairs, e.g. "read:abc...,write:def...".
+  const apiKeys = (env.ONSTREAK_API_KEYS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((pair) => {
+      const at = pair.indexOf(":");
+      const scope = pair.slice(0, at);
+      const key = pair.slice(at + 1);
+      if (at < 1 || !["read", "write", "admin"].includes(scope) || key.length < 16) {
+        throw new CliError('ONSTREAK_API_KEYS entries look like "read:<key>", "write:<key>" or "admin:<key>", with keys of at least 16 characters');
+      }
+      return { scope: scope as "read" | "write" | "admin", key };
+    });
+  if (!apiKeys.length && (!apiKey || apiKey.length < 16)) throw new CliError("Set ONSTREAK_API_KEY (at least 16 characters) before starting onstreak.");
+  if (apiKey !== undefined && apiKey.length < 16) throw new CliError("ONSTREAK_API_KEY must be at least 16 characters.");
   const { config } = loadConfig(env);
 
   const opened = openStore(env);
@@ -36,7 +51,8 @@ async function serve(env: NodeJS.ProcessEnv): Promise<void> {
   if (perMinute !== null && !(Number.isFinite(perMinute) && perMinute > 0)) throw new CliError("ONSTREAK_RATE_LIMIT_PER_MINUTE must be a positive number");
   const corsOrigins = (env.ONSTREAK_CORS_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   const server = createOnstreakServer(engine, {
-    apiKey,
+    ...(apiKey ? { apiKey } : {}),
+    ...(apiKeys.length ? { apiKeys } : {}),
     logger,
     ...(perMinute !== null ? { rateLimit: { perMinute, trustProxy: env.ONSTREAK_TRUST_PROXY === "true" } } : {}),
     ...(corsOrigins.length ? { corsOrigins } : {}),

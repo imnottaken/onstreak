@@ -62,7 +62,8 @@ The server migrates the schema on start. Set `ONSTREAK_AUTO_MIGRATE=false` to ma
 | Setting | Default | |
 | --- | --- | --- |
 | `ONSTREAK_CONFIG` | `./onstreak.config.json` | Config file |
-| `ONSTREAK_API_KEY` | (required) | Secret for `Authorization: Bearer`, at least 16 characters |
+| `ONSTREAK_API_KEY` | (required unless `ONSTREAK_API_KEYS` is set) | Secret for `Authorization: Bearer`, at least 16 characters. It has the admin scope |
+| `ONSTREAK_API_KEYS` | none | More keys as comma-separated `scope:key` pairs, e.g. `read:...,write:...`. `read` keys can only GET; `write` keys do everything an app does; `admin` keys can also delete and export users, reverse events, revoke achievements, preview configs and read the webhook log (others get 403). Several keys at once make rotation easy |
 | `DATABASE_URL` | in-memory store | Postgres connection string |
 | `ONSTREAK_DB_SCHEMA` | connection default | Postgres schema for onstreak's tables, created if missing |
 | `ONSTREAK_TABLE_PREFIX` | `onstreak_` | Prefix for table names, to share a database |

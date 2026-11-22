@@ -135,7 +135,7 @@ export type {
   TeamScoreQuery,
 } from "./store/types.js";
 export { createHandler, createOnstreakServer, RateLimiter } from "./server.js";
-export type { ServerOptions, OnstreakServer } from "./server.js";
+export type { ServerOptions, OnstreakServer, KeyScope } from "./server.js";
 export { createLogger, silentLogger, LOG_LEVELS } from "./logger.js";
 export type { Logger, LogLevel, LogFields, LoggerOptions } from "./logger.js";
 export { dayKey, periodKey, leaderboardWindow, startOfDay, weekStart } from "./time.js";

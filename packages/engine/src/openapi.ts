@@ -1214,6 +1214,7 @@ export function openapiSpec(version: string) {
   const authErrors = {
     "400": errorResponse("Invalid input"),
     "401": errorResponse("Missing or wrong API key"),
+    "403": errorResponse("This key's scope does not allow the call (read keys only GET; some routes need an admin key)"),
     "429": errorResponse("Too many requests (when the server has a rate limit); see the retry-after header"),
   };
   return {
