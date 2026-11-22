@@ -99,7 +99,7 @@ for (const [name, makeStore] of Object.entries(storeFactories)) {
 test("quest config is validated", () => {
   const bad = (quest, pattern) => assert.throws(() => new Engine({ ...base, quests: [{ id: "q", name: "Q", period: "daily", goal: { event: "x", target: 1 }, ...quest }] }, new MemoryStore()), pattern);
   bad({ name: "" }, /needs a name/);
-  bad({ period: "monthly" }, /daily or weekly/);
+  bad({ period: "monthly" }, /daily, weekly or once/);
   bad({ goal: { event: "x", target: 0 } }, /positive target/);
   bad({ goal: { event: "x", points: "xp", target: 1 } }, /goal/);
   bad({ goal: { points: "gold", target: 1 } }, /unknown currency/);
@@ -156,4 +156,58 @@ test("quest windows are validated", () => {
   assert.throws(() => resolveConfig({ ...base, quests: [{ ...q, from: "2026-02-01", to: "2026-01-01" }] }), /from before to/);
   assert.throws(() => resolveConfig({ ...base, quests: [{ ...q, from: "someday" }] }), /ISO dates/);
   assert.doesNotThrow(() => resolveConfig({ ...base, quests: [{ ...q, to: "2026-01-01" }] }));
+});
+
+const chained = {
+  ...base,
+  quests: [
+    { id: "first_lesson", name: "First lesson", period: "once", goal: { event: "lesson_completed", target: 1 }, rewards: [{ currency: "coins", amount: 2 }] },
+    { id: "five_lessons", name: "Five lessons", period: "once", after: "first_lesson", goal: { event: "lesson_completed", target: 5 }, rewards: [{ currency: "coins", amount: 10 }] },
+    { id: "xp_200", name: "Earn 200 XP", period: "once", after: "five_lessons", goal: { points: "xp", target: 200 } },
+    { id: "daily_two", name: "Two a day", period: "daily", after: "first_lesson", goal: { event: "lesson_completed", target: 2 } },
+  ],
+};
+
+for (const [name, makeStore] of Object.entries(storeFactories)) {
+  test(`${name}: one-off quests never reset, and chains unlock one after another`, async (t) => {
+    let now = start;
+    const engine = new Engine(chained, await makeStore(t), () => now);
+    const lesson = () => engine.track({ userId: "asha", event: "lesson_completed" });
+
+    let list = await engine.quests("asha");
+    assert.deepEqual(list.quests.map((q) => q.id), ["first_lesson"], "the rest are locked");
+    assert.deepEqual([list.quests[0].period, list.quests[0].startsAt, list.quests[0].endsAt], ["once", null, null]);
+
+    let r = await lesson();
+    assert.deepEqual(Object.keys(r.quests), ["first_lesson"], "the event that unlocks a quest does not count toward it");
+    assert.equal(r.quests.first_lesson.completed, true);
+    list = await engine.quests("asha");
+    assert.deepEqual(list.quests.map((q) => [q.id, q.completed, q.after]), [["first_lesson", true, undefined], ["five_lessons", false, "first_lesson"], ["daily_two", false, "first_lesson"]]);
+
+    now += 24 * HOUR;
+    r = await lesson();
+    assert.equal(r.quests.first_lesson, undefined, "done for good, even on a new day");
+    assert.deepEqual([r.quests.five_lessons.progress, r.quests.daily_two.progress], [1, 1]);
+    for (let i = 0; i < 4; i++) r = await lesson();
+    assert.deepEqual([r.quests.five_lessons.completed, r.quests.five_lessons.rewards], [true, [{ currency: "coins", amount: 10 }]]);
+    list = await engine.quests("asha");
+    assert.ok(list.quests.some((q) => q.id === "xp_200" && q.progress === 0), "the next link is open");
+
+    now += 7 * 24 * HOUR;
+    list = await engine.quests("asha");
+    const five = list.quests.find((q) => q.id === "five_lessons");
+    assert.deepEqual([five.completed, five.progress], [true, 5], "still done a week later");
+    assert.equal(list.quests.find((q) => q.id === "daily_two").progress, 0, "the daily one reset");
+  });
+}
+
+test("quest chains are validated", () => {
+  const q = (id, extra) => ({ id, name: id, period: "once", goal: { event: "x", target: 1 }, ...extra });
+  const bad = (quests, re) => assert.throws(() => resolveConfig({ ...base, quests }), re);
+  bad([q("a", { period: "yearly" })], /daily, weekly or once/);
+  bad([q("a", { after: "nope" })], /unknown quest/);
+  bad([q("a", { after: "a" })], /unknown quest/);
+  bad([q("a", { period: "daily" }), q("b", { after: "a" })], /repeats/);
+  bad([q("a", { after: "b" }), q("b", { after: "a" })], /loop/);
+  assert.doesNotThrow(() => resolveConfig({ ...base, quests: [q("a"), q("b", { after: "a" }), q("c", { after: "b", period: "weekly" })] }));
 });

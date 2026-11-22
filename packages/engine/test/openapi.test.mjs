@@ -126,7 +126,7 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   c.check("put", "/v1/rivalries/{rivalryId}/users/{userId}/rivals/{rivalId}", tooMany.status, await tooMany.json());
   assert.equal(tooMany.status, 409);
 
-  const questy = await serve(t, new MemoryStore(), { ...config, quests: [{ id: "two_lessons", name: "Two lessons", period: "daily", goal: { event: "lesson_completed", target: 2 }, rewards: [{ currency: "coins", amount: 3 }] }, { id: "xp_goal", name: "Earn XP", period: "weekly", goal: { points: "xp", target: 1000 } }] });
+  const questy = await serve(t, new MemoryStore(), { ...config, quests: [{ id: "two_lessons", name: "Two lessons", period: "daily", goal: { event: "lesson_completed", target: 2 }, rewards: [{ currency: "coins", amount: 3 }] }, { id: "xp_goal", name: "Earn XP", period: "weekly", goal: { points: "xp", target: 1000 } }, { id: "first", name: "First", period: "once", goal: { event: "lesson_completed", target: 1 } }, { id: "next", name: "Next", period: "once", after: "first", goal: { event: "lesson_completed", target: 3 } }] });
   const questCall = async (method, path, template, body) => {
     const res = await fetch(`${questy.base}${path}`, { method: method.toUpperCase(), headers: { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
     const json = await res.json();

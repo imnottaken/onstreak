@@ -462,8 +462,11 @@ export function RivalList({ status, title, emptyText = "No rivals yet. Challenge
 
 type Quest = QuestListData["quests"][number];
 
+/** Far enough away that a countdown to it never shows. */
+const NEVER = "9999-12-31T00:00:00.000Z";
+
 function QuestItem({ quest, now, unitLabel, formatScore }: { quest: Quest; now?: number; unitLabel?: (quest: Quest) => string | undefined; formatScore: (n: number) => string }) {
-  const left = useCountdown(quest.endsAt, now);
+  const left = useCountdown(quest.endsAt ?? NEVER, now);
   const pct = Math.round(Math.min(1, quest.progress / quest.target) * 100);
   const unit = unitLabel?.(quest) ?? ("points" in quest.goal ? quest.goal.points : undefined);
   const reward = rewardText(quest.rewards);
@@ -491,7 +494,9 @@ function QuestItem({ quest, now, unitLabel, formatScore }: { quest: Quest; now?:
         </div>
         <div className="os-quest__meta">
           <span className="os-quest__progress">{quest.completed ? "Done" : questProgressText(quest, formatScore, unit)}</span>
-          <span className="os-quest__ends">{left > 0 ? `${quest.completed ? "New quest" : "Ends"} in ${formatTimeLeft(left)}` : "Ended"}</span>
+          {quest.endsAt !== null && !(quest.completed && quest.period === "once") && (
+            <span className="os-quest__ends">{left > 0 ? `${quest.completed ? "New quest" : "Ends"} in ${formatTimeLeft(left)}` : "Ended"}</span>
+          )}
         </div>
       </div>
     </li>
@@ -503,7 +508,7 @@ export interface QuestListProps {
   quests: QuestListData;
   title?: string;
   /** Only show quests of one period. */
-  period?: "daily" | "weekly";
+  period?: "daily" | "weekly" | "once";
   /** Unit after the numbers, e.g. "min" for a minutes goal. Default: the currency for points goals, none for event goals. */
   unitLabel?: (quest: Quest) => string | undefined;
   formatScore?: (n: number) => string;

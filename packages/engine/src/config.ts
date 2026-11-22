@@ -109,8 +109,10 @@ export interface QuestRule {
   id: string;
   name: string;
   description?: string;
-  /** A new quest every day or week. */
-  period: StreakPeriod;
+  /** A new quest every day or week, or "once" for a one-off that never resets. */
+  period: StreakPeriod | "once";
+  /** Locked until this one-off quest is completed: build chains ("first lesson", then "five lessons", ...). */
+  after?: string;
   /**
    * Done when `event` adds up to `target` (event values are summed, so a plain
    * event counts 1), or when `target` points in a currency are earned.
@@ -468,7 +470,12 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
   uniqueIds("quest", quests.map((q) => q.id));
   for (const q of quests) {
     if (typeof q.name !== "string" || q.name.length === 0) throw new ConfigError(`quest "${q.id}" needs a name`);
-    if (!STREAK_PERIODS.includes(q.period)) throw new ConfigError(`quest "${q.id}" period must be daily or weekly`);
+    if (!STREAK_PERIODS.includes(q.period) && q.period !== "once") throw new ConfigError(`quest "${q.id}" period must be daily, weekly or once`);
+    if (q.after !== undefined) {
+      const prev = quests.find((x) => x.id === q.after);
+      if (!prev || prev.id === q.id) throw new ConfigError(`quest "${q.id}" comes after unknown quest "${q.after}"`);
+      if (prev.period !== "once") throw new ConfigError(`quest "${q.id}" can only come after a one-off quest, and "${prev.id}" repeats`);
+    }
     const g = q.goal as Record<string, unknown> | undefined;
     const kinds = g ? ["event", "points"].filter((k) => k in g) : [];
     if (kinds.length !== 1 || typeof g?.target !== "number" || !Number.isFinite(g.target) || g.target <= 0) {
@@ -484,6 +491,17 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     const from = q.from === undefined ? -Infinity : Date.parse(q.from);
     const to = q.to === undefined ? Infinity : Date.parse(q.to);
     if (Number.isNaN(from) || Number.isNaN(to) || to <= from) throw new ConfigError(`quest "${q.id}" from and to must be ISO dates with from before to`);
+  }
+
+  // Chains must not loop back on themselves.
+  for (const q of quests) {
+    const seen = new Set([q.id]);
+    let next = q.after;
+    while (next !== undefined) {
+      if (seen.has(next)) throw new ConfigError(`quest "${q.id}" is part of a loop of "after" quests`);
+      seen.add(next);
+      next = quests.find((x) => x.id === next)?.after;
+    }
   }
 
   const multipliers: ResolvedMultiplier[] = [];

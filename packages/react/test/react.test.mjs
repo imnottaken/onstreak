@@ -469,3 +469,13 @@ test("RewardCalendar ticks claimed days, highlights today and offers a claim", (
   const unnamed = fragment(renderToStaticMarkup(h(RewardCalendar, { calendar: { ...calendarData(true), name: undefined }, now: NOW })));
   assert.equal(unnamed.querySelector("h3").textContent, "Daily rewards");
 });
+
+test("QuestList shows one-off quests without a reset countdown", () => {
+  const once = (extra) => ({ id: "first", name: "First lesson", period: "once", goal: { event: "lesson_completed", target: 1 }, progress: 0, target: 1, completed: false, completedAt: null, rewards: [], startsAt: null, endsAt: null, until: null, ...extra });
+  const f = fragment(renderToStaticMarkup(h(QuestList, { quests: { userId: "a", quests: [once({}), once({ id: "second", name: "Five lessons", after: "first", target: 5, endsAt: new Date(NOW + 3 * 3_600_000).toISOString() })] }, now: NOW })));
+  const [first, second] = [...f.querySelectorAll(".os-quest")];
+  assert.equal(first.querySelector(".os-quest__ends"), null, "no end, no countdown");
+  assert.equal(second.querySelector(".os-quest__ends").textContent, "Ends in 3h");
+  const done = fragment(renderToStaticMarkup(h(QuestList, { quests: { userId: "a", quests: [once({ completed: true, progress: 1, endsAt: new Date(NOW + 3_600_000).toISOString() })] }, now: NOW })));
+  assert.equal(done.querySelector(".os-quest__ends"), null, "a finished one-off quest never comes back");
+});

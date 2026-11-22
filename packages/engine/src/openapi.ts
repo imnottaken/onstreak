@@ -162,7 +162,8 @@ const schemas = {
             id: { type: "string" },
             name: { type: "string" },
             description: { type: "string" },
-            period: { enum: ["daily", "weekly"] },
+            period: { enum: ["daily", "weekly", "once"] },
+            after: { type: "string", description: "The one-off quest this one unlocked after." },
             goal: {
               oneOf: [
                 { type: "object", required: ["event", "target"], additionalProperties: false, properties: { event: { type: "string" }, target: { type: "number" } } },
@@ -174,8 +175,8 @@ const schemas = {
             completed: { type: "boolean" },
             completedAt: nullable({ type: "string", format: "date-time" }),
             rewards: { type: "array", items: ref("QuestReward") },
-            startsAt: { type: "string", format: "date-time" },
-            endsAt: { type: "string", format: "date-time" },
+            startsAt: nullable({ type: "string", format: "date-time" }),
+            endsAt: nullable({ type: "string", format: "date-time", description: "When progress resets; for one-off quests, their end date or null." }),
             until: nullable({ type: "string", format: "date-time", description: "When a limited-time quest stops running." }),
           },
         },

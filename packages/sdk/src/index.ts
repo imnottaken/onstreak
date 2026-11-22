@@ -115,15 +115,19 @@ export interface QuestList {
     id: string;
     name: string;
     description?: string;
-    period: "daily" | "weekly";
+    period: "daily" | "weekly" | "once";
+    /** The one-off quest this one unlocked after. */
+    after?: string;
     goal: { event: string; target: number } | { points: string; target: number };
     progress: number;
     target: number;
     completed: boolean;
     completedAt: string | null;
     rewards: QuestReward[];
-    startsAt: string;
-    endsAt: string;
+    /** Null for one-off quests. */
+    startsAt: string | null;
+    /** When progress resets; for one-off quests, their end date or null. */
+    endsAt: string | null;
     /** When a limited-time quest stops running, or null if it always runs. */
     until: string | null;
   }>;

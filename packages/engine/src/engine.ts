@@ -137,7 +137,9 @@ export interface QuestStatus {
   id: string;
   name: string;
   description?: string;
-  period: "daily" | "weekly";
+  period: "daily" | "weekly" | "once";
+  /** The one-off quest this one unlocked after, if any. */
+  after?: string;
   /** Event or points goal, as configured. */
   goal: QuestRule["goal"];
   progress: number;
@@ -145,9 +147,9 @@ export interface QuestStatus {
   completed: boolean;
   completedAt: string | null;
   rewards: QuestReward[];
-  /** The current period: progress resets at endsAt. */
-  startsAt: string;
-  endsAt: string;
+  /** The current period: progress resets at endsAt. Null for one-off quests (endsAt is their `to` date, if any). */
+  startsAt: string | null;
+  endsAt: string | null;
   /** When a limited-time quest stops running, or null if it always runs. */
   until: string | null;
 }
@@ -431,6 +433,12 @@ const MAX_QUANTITY = 1000;
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 const REASON = /^[a-z0-9][a-z0-9_.:-]{0,63}$/i;
 
+/** The period a quest is in at `ms`: a day or week, or the single "once" period of a one-off quest. */
+function questRound(q: QuestRule, timezone: string, ms: number): { key: string; from: number | null; to: number | null } {
+  if (q.period === "once") return { key: "once", from: q.from ? Date.parse(q.from) : null, to: q.to ? Date.parse(q.to) : null };
+  return currentRound({ period: q.period, timezone }, ms);
+}
+
 /**
  * When a broken streak stops being repairable: `withinHours` after the start
  * of the first period that broke it (the one after the last period the
@@ -662,18 +670,22 @@ export class Engine {
       // awarded, not other quests' rewards.
       const quests: TrackResult["quests"] = {};
       const earned = new Map(Object.entries(points).map(([c, p]) => [c, p.awarded]));
+      const completedNow = new Set<string>();
       for (const quest of config.quests) {
         if (!questRunsAt(quest, ts)) continue;
         const gain = "event" in quest.goal ? (quest.goal.event === event ? value : 0) : (earned.get(quest.goal.points) ?? 0);
         if (gain <= 0) continue;
-        const rule = { period: quest.period, timezone: quest.timezone ?? timezone };
-        const round = currentRound(rule, ts);
-        if (round.key !== currentRound(rule, recordedAt).key) continue;
+        // A chained quest starts counting with the first event after the one that unlocked it.
+        if (quest.after !== undefined && (completedNow.has(quest.after) || (await tx.getQuest(quest.after, "once"))?.completedAt == null)) continue;
+        const zone = quest.timezone ?? timezone;
+        const round = questRound(quest, zone, ts);
+        if (round.key !== questRound(quest, zone, recordedAt).key) continue;
         const prev = await tx.getQuest(quest.id, round.key);
         if (prev?.completedAt != null) continue;
         const target = quest.goal.target;
         const progress = Math.min(target, (prev?.progress ?? 0) + gain);
         const completed = progress >= target;
+        if (completed) completedNow.add(quest.id);
         await tx.setQuest({ questId: quest.id, periodKey: round.key, progress, completedAt: completed ? recordedAt : null });
         const rewards = completed ? (quest.rewards ?? []).map((r) => ({ ...r })) : [];
         for (const r of rewards) {
@@ -899,31 +911,37 @@ export class Engine {
     if (userZone === undefined && this.config.quests.some((q) => !q.timezone && questRunsAt(q, now))) {
       userZone = (await this.store.snapshot(userId)).profile.timezone ?? this.config.defaultTimezone;
     }
-    const running = this.config.quests.filter((q) => questRunsAt(q, now));
-    const rounds = running.map((q) => currentRound({ period: q.period, timezone: q.timezone ?? userZone! }, now));
-    const stored = await this.store.quests(
-      userId,
-      running.map((q, i) => ({ questId: q.id, periodKey: rounds[i]!.key })),
-    );
-    const byId = new Map(stored.map((s) => [s.questId, s]));
+    const once = this.config.quests.filter((q) => q.period === "once").map((q) => ({ questId: q.id, periodKey: "once" }));
+    const candidates = this.config.quests.filter((q) => questRunsAt(q, now));
+    const candidateRounds = candidates.map((q) => questRound(q, q.timezone ?? userZone!, now));
+    const stored = await this.store.quests(userId, [
+      ...candidates.map((q, i) => ({ questId: q.id, periodKey: candidateRounds[i]!.key })).filter((k) => k.periodKey !== "once"),
+      ...once,
+    ]);
+    const byId = new Map(stored.map((s) => [`${s.questId}|${s.periodKey}`, s]));
+    const doneOnce = (id: string) => byId.get(`${id}|once`)?.completedAt != null;
+    // Locked quests (their "after" quest is not done yet) are left out.
+    const running = candidates.filter((q) => q.after === undefined || doneOnce(q.after));
+    const rounds = running.map((q) => candidateRounds[candidates.indexOf(q)]!);
     return {
       userId,
       quests: running.map((q, i) => {
-        const s = byId.get(q.id);
         const round = rounds[i]!;
+        const s = byId.get(`${q.id}|${round.key}`);
         return {
           id: q.id,
           name: q.name,
           ...(q.description ? { description: q.description } : {}),
           period: q.period,
+          ...(q.after ? { after: q.after } : {}),
           goal: { ...q.goal },
           progress: s?.progress ?? 0,
           target: q.goal.target,
           completed: s?.completedAt != null,
           completedAt: s?.completedAt != null ? new Date(s.completedAt).toISOString() : null,
           rewards: (q.rewards ?? []).map((r) => ({ ...r })),
-          startsAt: new Date(round.from).toISOString(),
-          endsAt: new Date(round.to).toISOString(),
+          startsAt: q.period === "once" ? null : new Date(round.from!).toISOString(),
+          endsAt: round.to === null ? null : new Date(round.to).toISOString(),
           until: q.to === undefined ? null : new Date(Date.parse(q.to)).toISOString(),
         };
       }),
