@@ -103,6 +103,7 @@ test("SDK covers profiles, batches, history, health and request ids", async () =
     assert.deepEqual(duel.rivals[0].record, { wins: 0, losses: 0, draws: 0 });
     assert.equal((await xp.removeRival("weekly_duel", "omar", "zara")).removed, true);
     assert.deepEqual((await xp.quests("omar")).quests, [], "no quests configured");
+    assert.deepEqual((await xp.calendars("omar")).calendars, [], "no calendars configured");
 
     const shop = await xp.store("zara");
     assert.equal(shop.wallet.coins, 1);

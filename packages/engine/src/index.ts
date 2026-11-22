@@ -27,6 +27,8 @@ export type {
   Boost,
   BoostInput,
   BoostResult,
+  CalendarStatus,
+  CalendarList,
 } from "./engine.js";
 export { FriendLimitError, RivalLimitError } from "./store/types.js";
 export { zoneFor, outcomeFor, nextTier, currentRound, roundFromKey, nextRoundKey } from "./leagues.js";
@@ -51,6 +53,7 @@ export type {
   ResolvedRivalry,
   ItemRule,
   BoostSpec,
+  CalendarRule,
 } from "./config.js";
 export { initialStreak, recordActivity, streakStatus } from "./streaks.js";
 export type { StreakState, StreakStatus, StreakUpdate } from "./streaks.js";
@@ -82,6 +85,7 @@ export type {
   PurchasePageQuery,
   ItemUseRecord,
   BoostRecord,
+  CalendarState,
 } from "./store/types.js";
 export { createHandler, createOnstreakServer } from "./server.js";
 export type { ServerOptions, OnstreakServer } from "./server.js";

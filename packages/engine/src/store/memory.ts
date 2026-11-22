@@ -22,6 +22,7 @@ import type {
   PurchaseRecord,
   ItemUseRecord,
   BoostRecord,
+  CalendarState,
   UserTx,
 } from "./types.js";
 
@@ -41,6 +42,7 @@ interface UserData {
   purchases: PurchaseRecord[];
   itemUses: ItemUseRecord[];
   boosts: BoostRecord[];
+  calendars: Map<string, CalendarState>;
 }
 
 interface LedgerRow {
@@ -91,6 +93,7 @@ export class MemoryStore implements Store {
         purchases: [],
         itemUses: [],
         boosts: [],
+        calendars: new Map(),
       };
       this.users.set(userId, d);
     }
@@ -156,6 +159,13 @@ export class MemoryStore implements Store {
         const owned = (d.inventory.get(p.itemId) ?? 0) + p.quantity;
         d.inventory.set(p.itemId, owned);
         return owned;
+      },
+      getCalendar: async (id) => {
+        const c = d.calendars.get(id);
+        return c ? { ...c } : null;
+      },
+      setCalendar: async (id, state) => {
+        d.calendars.set(id, { ...state });
       },
       getBoosts: async (after) => liveBoosts(d.boosts, after),
       findBoost: async (key) => {
@@ -237,13 +247,14 @@ export class MemoryStore implements Store {
 
   async snapshot(userId: string): Promise<UserSnapshot> {
     const d = this.users.get(userId);
-    if (!d) return { profile: emptyProfile(), metrics: {}, balances: {}, spent: {}, inventory: {}, streaks: {}, achievements: [] };
+    if (!d) return { profile: emptyProfile(), metrics: {}, balances: {}, spent: {}, inventory: {}, calendars: {}, streaks: {}, achievements: [] };
     return {
       profile: copyProfile(d.profile),
       metrics: Object.fromEntries(d.metrics),
       balances: Object.fromEntries(d.balances),
       spent: Object.fromEntries(d.spent),
       inventory: Object.fromEntries([...d.inventory].filter(([, n]) => n > 0)),
+      calendars: Object.fromEntries([...d.calendars].map(([k, v]) => [k, { ...v }])),
       streaks: Object.fromEntries([...d.streaks].map(([k, v]) => [k, { ...v }])),
       achievements: [...d.achievements]
         .sort((a, b) => a[1] - b[1])

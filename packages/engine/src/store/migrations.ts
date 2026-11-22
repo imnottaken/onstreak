@@ -30,6 +30,7 @@ export interface Tables {
   purchases: string;
   itemUses: string;
   boosts: string;
+  calendars: string;
 }
 
 export function tableNames(prefix: string): Tables {
@@ -52,6 +53,7 @@ export function tableNames(prefix: string): Tables {
     purchases: `${prefix}purchases`,
     itemUses: `${prefix}item_uses`,
     boosts: `${prefix}boosts`,
+    calendars: `${prefix}calendar_progress`,
   };
 }
 
@@ -277,6 +279,19 @@ export const MIGRATIONS: readonly Migration[] = [
          unique (user_id, idempotency_key)
        )`,
       `create index if not exists ${t.prefix}boosts_user_end on ${t.boosts} (user_id, ends_at)`,
+    ],
+  },
+  {
+    version: 11,
+    name: "reward calendars",
+    statements: (t) => [
+      `create table if not exists ${t.calendars} (
+         user_id text not null references ${t.users}(id),
+         calendar_id text not null,
+         day integer not null,
+         last_period text not null,
+         primary key (user_id, calendar_id)
+       )`,
     ],
   },
 ];

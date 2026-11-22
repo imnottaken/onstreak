@@ -87,6 +87,7 @@ Everything is declared in one JSON file. See [examples/onstreak.config.json](exa
 | `leagues` | `{ id, currency, tiers, groupSize?, promote?, demote?, period?, timezone? }` (defaults: 30 per group, 7 up, 5 down, weekly) |
 | `rivalries` | `{ id, currency, period?, timezone?, max? }` (defaults: weekly, UTC, 10 rivals each) |
 | `quests` | `{ id, name, description?, period: daily \| weekly, goal: { event, target } \| { points, target }, rewards?: [{ currency, amount }], timezone? }`. Days start in each user's zone unless the quest sets one |
+| `calendars` | `{ id, name?, event, days: [{ rewards: [{ currency, amount }] }], missed?: reset \| continue, afterLast?: repeat \| stay, timezone? }`: login rewards. The first `event` each day claims the next day's rewards; a missed day starts over unless `missed` is `continue` |
 | `items` | `{ id, name, description?, price: { currency, amount }, limit?, metadata?, effect? }`: things users can buy with points. `limit` caps how many one user can own. `effect: { streakFreeze: <streak id> }` makes using one add a freeze to that streak, and `effect: { boost: { factor, minutes, currency? } }` gives a personal boost; items without an effect are just taken from the inventory when used |
 | `multipliers` | `{ id, currency?, factor, from, to }` for a time window ("double XP weekend"), or `{ id, currency?, streak, steps: [{ gte, factor }] }` for a streak bonus. They scale points from point rules (not quest rewards) and multiply together; track results list the ones applied |
 | `friends` | `{ max? }` (default 1000) |
@@ -110,6 +111,7 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 | `GET /v1/users/:id/purchases?limit=&cursor=` | The user's purchases, newest first |
 | `POST /v1/users/:id/boosts` | Give one user a multiplier for a while: `{ factor, minutes, currency?, reason?, idempotencyKey? }`. The same factor and currency queue back to back instead of stacking; different ones multiply. Running and queued boosts show on the user |
 | `POST /v1/users/:id/inventory/:itemId/use` | Use owned items: `{ quantity?, idempotencyKey? }`. Applies the item's effect. 409 with `code` `not_owned`, `limit_reached` (freezes at their max) or `streak_broken` (a freeze cannot revive a lapsed streak) |
+| `GET /v1/users/:id/calendars?timezone=` | Each login reward calendar: which days are claimed, what today pays, and when the next day opens. Track the calendar's event to claim |
 | `PUT /v1/users/:id/friends/:friendId` | Make two users friends (mutual, safe to repeat). 409 past the friend limit |
 | `DELETE /v1/users/:id/friends/:friendId` | End a friendship for both users |
 | `GET /v1/users/:id/friends` | A user's friends, newest first, with names and avatars |
@@ -128,7 +130,7 @@ Spending never lowers earned points. `points` on a user is what they earned (lev
 
 The full machine-readable description is served at `GET /openapi.json` (OpenAPI 3.1, no key needed), so you can generate a client for any language. Tests check every response against it, so it stays accurate.
 
-The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `store`, `purchase`, `purchases`, `useItem`, `grantBoost`, `leaderboard`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
+The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `calendars`, `store`, `purchase`, `purchases`, `useItem`, `grantBoost`, `leaderboard`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
 
 ## React components
 

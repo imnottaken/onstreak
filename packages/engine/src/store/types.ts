@@ -103,6 +103,12 @@ export interface BoostRecord {
   idempotencyKey: string | null;
 }
 
+/** Where a user is in a reward calendar: the last day claimed, and when. */
+export interface CalendarState {
+  day: number;
+  lastPeriod: string;
+}
+
 export interface PurchasePageQuery {
   limit: number;
   /** Return purchases strictly older than this position (newest first). */
@@ -193,6 +199,8 @@ export interface UserTx {
   getBoosts(after: number): Promise<BoostRecord[]>;
   findBoost(idempotencyKey: string): Promise<BoostRecord | null>;
   addBoost(boost: BoostRecord): Promise<void>;
+  getCalendar(calendarId: string): Promise<CalendarState | null>;
+  setCalendar(calendarId: string, state: CalendarState): Promise<void>;
 }
 
 export interface UserSnapshot {
@@ -204,6 +212,8 @@ export interface UserSnapshot {
   spent: Record<string, number>;
   /** Items owned, by item id. Items with none are left out. */
   inventory: Record<string, number>;
+  /** Reward calendar progress, by calendar id. */
+  calendars: Record<string, CalendarState>;
   streaks: Record<string, StreakState>;
   achievements: Array<{ id: string; unlockedAt: string }>;
 }

@@ -22,6 +22,8 @@ export interface TrackResult {
   leagues: Record<string, { tier: string; group: number; joined: boolean; previous: LeaguePrevious | null }>;
   /** Quests this event moved forward. Rewards of a quest it completed are already in `points`. */
   quests: Record<string, { progress: number; target: number; completed: boolean; rewards: QuestReward[] }>;
+  /** Reward calendar days this event claimed. Their rewards are already in `points`. */
+  calendars: Record<string, { day: number; rewards: QuestReward[] }>;
   /** Multipliers applied to points from point rules. A null currency means every currency. */
   multipliers: Record<string, { factor: number; currency: string | null }>;
 }
@@ -167,6 +169,21 @@ export interface PurchaseResult {
   duplicate: boolean;
   wallet: Record<string, number>;
   owned: number;
+}
+
+export interface CalendarList {
+  userId: string;
+  calendars: Array<{
+    id: string;
+    name?: string;
+    /** Tracking this event claims the day. */
+    event: string;
+    /** The day claimed today, or the day the next claim pays. */
+    day: number;
+    claimedToday: boolean;
+    days: Array<{ day: number; rewards: QuestReward[]; status: "claimed" | "today" | "upcoming" }>;
+    nextClaimAt: string;
+  }>;
 }
 
 export interface Boost {
@@ -333,6 +350,9 @@ export function createClient(options: ClientOptions) {
      */
     useItem: (userId: string, itemId: string, opts: { quantity?: number; idempotencyKey?: string } = {}) =>
       call<ItemUseResult>("POST", `${user(userId)}/inventory/${encodeURIComponent(itemId)}/use`, opts),
+    /** Login reward calendars with the user's place in each. Track the calendar's event to claim a day. */
+    calendars: (userId: string, options: { timezone?: string } = {}) =>
+      call<CalendarList>("GET", `${user(userId)}/calendars${options.timezone ? `?timezone=${encodeURIComponent(options.timezone)}` : ""}`),
     /** Give a user a personal multiplier for some minutes, e.g. 2x XP for an hour. */
     grantBoost: (userId: string, input: BoostInput) =>
       call<{ userId: string; boost: Boost; duplicate: boolean; boosts: Boost[] }>("POST", `${user(userId)}/boosts`, input),

@@ -122,6 +122,24 @@ export type MultiplierRule =
   | { id: string; currency?: string; factor: number; from: string; to: string }
   | { id: string; currency?: string; streak: string; steps: Array<{ gte: number; factor: number }> };
 
+/**
+ * A login reward calendar: the first `event` each day claims the next day's
+ * rewards ("day 1: 5 coins ... day 7: 50 coins"). Missing a day starts over
+ * unless `missed` is "continue". After the last day it starts over, or stays
+ * on the last day with `afterLast: "stay"`.
+ */
+export interface CalendarRule {
+  id: string;
+  name?: string;
+  /** The event that claims a day, e.g. "app_opened". */
+  event: string;
+  days: Array<{ rewards: QuestReward[] }>;
+  missed?: "reset" | "continue";
+  afterLast?: "repeat" | "stay";
+  /** Fix where days start for everyone. Default: each user's own time zone. */
+  timezone?: string;
+}
+
 /** A personal multiplier: `factor` on points from point rules for `minutes`. No currency means every currency. */
 export interface BoostSpec {
   factor: number;
@@ -177,6 +195,7 @@ export interface OnstreakConfig {
   quests?: QuestRule[];
   multipliers?: MultiplierRule[];
   items?: ItemRule[];
+  calendars?: CalendarRule[];
   friends?: {
     /** Most friends one user can have. Default 1000. */
     max?: number;
@@ -209,6 +228,7 @@ export interface ResolvedConfig {
   quests: QuestRule[];
   multipliers: ResolvedMultiplier[];
   items: ItemRule[];
+  calendars: CalendarRule[];
   friends: { max: number };
 }
 
@@ -413,6 +433,24 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     }
   }
 
+  const calendars = input.calendars ?? [];
+  uniqueIds("calendar", calendars.map((c) => c.id));
+  for (const c of calendars) {
+    if (typeof c.event !== "string" || !ID.test(c.event)) throw new ConfigError(`calendar "${c.id}" has bad event "${c.event}"`);
+    if (c.name !== undefined && (typeof c.name !== "string" || c.name.length === 0)) throw new ConfigError(`calendar "${c.id}" name must be a non-empty string`);
+    if (!Array.isArray(c.days) || c.days.length === 0 || c.days.length > 366) throw new ConfigError(`calendar "${c.id}" needs 1 to 366 days`);
+    for (const d of c.days) {
+      if (!d || !Array.isArray(d.rewards)) throw new ConfigError(`calendar "${c.id}" days need rewards: [{ currency, amount }]`);
+      for (const r of d.rewards) {
+        hasCurrency(r.currency, `calendar "${c.id}" reward`);
+        if (typeof r.amount !== "number" || !Number.isFinite(r.amount) || r.amount <= 0) throw new ConfigError(`calendar "${c.id}" rewards need a positive amount`);
+      }
+    }
+    if (c.missed !== undefined && c.missed !== "reset" && c.missed !== "continue") throw new ConfigError(`calendar "${c.id}" missed must be "reset" or "continue"`);
+    if (c.afterLast !== undefined && c.afterLast !== "repeat" && c.afterLast !== "stay") throw new ConfigError(`calendar "${c.id}" afterLast must be "repeat" or "stay"`);
+    if (c.timezone !== undefined && !isValidTimeZone(c.timezone)) throw new ConfigError(`calendar "${c.id}" has unknown timezone "${c.timezone}"`);
+  }
+
   const maxFriends = input.friends?.max ?? 1000;
   if (!Number.isInteger(maxFriends) || maxFriends < 1 || maxFriends > 100_000) {
     throw new ConfigError("friends.max must be a whole number from 1 to 100000");
@@ -431,6 +469,7 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     quests,
     multipliers,
     items,
+    calendars,
     friends: { max: maxFriends },
   };
 }

@@ -51,7 +51,7 @@ const schemas = {
   },
   TrackResult: {
     type: "object",
-    required: ["eventId", "userId", "event", "value", "duplicate", "points", "level", "streaks", "achievements", "leagues", "quests", "multipliers"],
+    required: ["eventId", "userId", "event", "value", "duplicate", "points", "level", "streaks", "achievements", "leagues", "quests", "calendars", "multipliers"],
     additionalProperties: false,
     properties: {
       eventId: { type: "string", format: "uuid" },
@@ -115,6 +115,13 @@ const schemas = {
           completed: { type: "boolean", description: "True only on the event that completed the quest." },
           rewards: { type: "array", items: ref("QuestReward") },
         },
+      }),
+      calendars: map({
+        type: "object",
+        description: "Reward calendar days this event claimed. Their rewards are already in points.",
+        required: ["day", "rewards"],
+        additionalProperties: false,
+        properties: { day: { type: "integer", minimum: 1 }, rewards: { type: "array", items: ref("QuestReward") } },
       }),
       multipliers: map({
         type: "object",
@@ -232,6 +239,43 @@ const schemas = {
       duplicate: { type: "boolean" },
       wallet: map({ type: "number" }),
       owned: { type: "integer", minimum: 0 },
+    },
+  },
+  CalendarList: {
+    type: "object",
+    required: ["userId", "calendars"],
+    additionalProperties: false,
+    properties: {
+      userId: { type: "string" },
+      calendars: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id", "event", "day", "claimedToday", "days", "nextClaimAt"],
+          additionalProperties: false,
+          properties: {
+            id: { type: "string" },
+            name: { type: "string" },
+            event: { type: "string", description: "Tracking this event claims the day." },
+            day: { type: "integer", minimum: 1, description: "The day claimed today, or the day the next claim pays." },
+            claimedToday: { type: "boolean" },
+            days: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["day", "rewards", "status"],
+                additionalProperties: false,
+                properties: {
+                  day: { type: "integer", minimum: 1 },
+                  rewards: { type: "array", items: ref("QuestReward") },
+                  status: { enum: ["claimed", "today", "upcoming"] },
+                },
+              },
+            },
+            nextClaimAt: { type: "string", format: "date-time", description: "When today ends." },
+          },
+        },
+      },
     },
   },
   Boost: {
@@ -713,6 +757,15 @@ export function openapiSpec(version: string) {
           summary: "A user's purchases, newest first",
           parameters: [limitParam(), { name: "cursor", in: "query", schema: { type: "string" }, description: "nextCursor from the previous page." }],
           responses: { "200": ok("A page of purchases", ref("PurchaseHistory")), ...authErrors },
+        },
+      },
+      "/v1/users/{userId}/calendars": {
+        parameters: [userIdParam],
+        get: {
+          operationId: "calendars",
+          summary: "Login reward calendars with the user's place in each",
+          parameters: [{ name: "timezone", in: "query", schema: { type: "string" }, description: "Override the zone that decides when days start." }],
+          responses: { "200": ok("The user's calendars", ref("CalendarList")), ...authErrors },
         },
       },
       "/v1/users/{userId}/boosts": {

@@ -174,6 +174,11 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         return send(200, await engine.grantBoost(id, body as Parameters<Engine["grantBoost"]>[1]));
       }
 
+      if (req.method === "GET" && resource === "users" && id && sub === "calendars" && parts.length === 4) {
+        const timezone = url.searchParams.get("timezone") ?? undefined;
+        return send(200, await engine.calendars(id, timezone ? { timezone } : {}));
+      }
+
       if (resource === "users" && id && sub === "friends") {
         if (req.method === "GET" && parts.length === 4) return send(200, await engine.friends(id));
         if (req.method === "PUT" && subId && parts.length === 5) return send(200, await engine.addFriend(id, subId));

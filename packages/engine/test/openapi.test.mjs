@@ -186,6 +186,19 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   const maxed = await richCall("/v1/users/r/inventory/streak_freeze/use", {});
   assert.equal(maxed.code, "limit_reached");
 
+  const cal = await serve(t, new MemoryStore(), { ...config, calendars: [{ id: "login", name: "Daily login", event: "app_opened", days: [{ rewards: [{ currency: "coins", amount: 5 }] }, { rewards: [] }] }] });
+  const calCall = async (method, path, template, body) => {
+    const res = await fetch(`${cal.base}${path}`, { method: method.toUpperCase(), headers: { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const json = await res.json();
+    c.check(method, template, res.status, json);
+    return json;
+  };
+  const claim = await calCall("post", "/v1/events", "/v1/events", { userId: "c", event: "app_opened" });
+  assert.deepEqual(claim.calendars.login, { day: 1, rewards: [{ currency: "coins", amount: 5 }] });
+  const calendars = await calCall("get", "/v1/users/c/calendars", "/v1/users/{userId}/calendars");
+  assert.equal(calendars.calendars[0].claimedToday, true);
+  await calCall("get", "/v1/users/c/calendars?timezone=Nope", "/v1/users/{userId}/calendars"); // 400
+
   await call("get", "/health", "/health", undefined, { key: null });
   store.ping = async () => {
     throw new Error("down");

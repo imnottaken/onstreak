@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, boostSpecProblem } from "./config.js";
+import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, boostSpecProblem } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
-import { FriendLimitError, RivalLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type ItemUseRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
-import { isValidTimeZone, leaderboardWindow, periodKey, type LeaderboardPeriod } from "./time.js";
+import { FriendLimitError, RivalLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
+import { isValidTimeZone, leaderboardWindow, periodKey, periodsBetween, type LeaderboardPeriod } from "./time.js";
 
 export class EngineError extends Error {
   constructor(
@@ -44,6 +44,8 @@ export interface TrackResult {
   leagues: Record<string, { tier: string; group: number; joined: boolean; previous: LeaguePrevious | null }>;
   /** Quests this event moved forward. `completed` is true on the event that finished one; its rewards are already in `points`. */
   quests: Record<string, { progress: number; target: number; completed: boolean; rewards: QuestReward[] }>;
+  /** Reward calendar days this event claimed. Their rewards are already in `points`. */
+  calendars: Record<string, { day: number; rewards: QuestReward[] }>;
   /** Multipliers applied to this event's points from point rules (not quest rewards). Null currency means every currency. */
   multipliers: Record<string, { factor: number; currency: string | null }>;
 }
@@ -222,6 +224,23 @@ export interface BoostResult {
   boosts: Boost[];
 }
 
+export interface CalendarStatus {
+  id: string;
+  name?: string;
+  event: string;
+  /** The day claimed today, or the day the next claim will pay. */
+  day: number;
+  claimedToday: boolean;
+  days: Array<{ day: number; rewards: QuestReward[]; status: "claimed" | "today" | "upcoming" }>;
+  /** When today ends and the next day can be claimed. */
+  nextClaimAt: string;
+}
+
+export interface CalendarList {
+  userId: string;
+  calendars: CalendarStatus[];
+}
+
 export interface ItemUseInput {
   /** How many to use at once. Default 1. */
   quantity?: number;
@@ -286,6 +305,19 @@ const MAX_QUANTITY = 1000;
 /** Trim float noise from sums like 0.1 + 0.2. */
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 const REASON = /^[a-z0-9][a-z0-9_.:-]{0,63}$/i;
+
+/**
+ * The calendar day a claim on `today` would pay, or null if the user already
+ * claimed today (or `today` is before their last claim).
+ */
+function nextCalendarDay(rule: CalendarRule, state: CalendarState | null, today: string): number | null {
+  if (!state) return 1;
+  const gap = periodsBetween(state.lastPeriod, today, "daily");
+  if (gap <= 0) return null;
+  if (gap > 1 && (rule.missed ?? "reset") === "reset") return 1;
+  if (state.day < rule.days.length) return state.day + 1;
+  return (rule.afterLast ?? "repeat") === "repeat" ? 1 : rule.days.length;
+}
 
 const toBoost = (b: BoostRecord): Boost => ({
   id: b.id,
@@ -501,6 +533,28 @@ export class Engine {
         quests[quest.id] = { progress, target, completed, rewards };
       }
 
+      // Reward calendars: the first matching event each day claims the next day.
+      // Like quests, only events from today count.
+      const calendars: TrackResult["calendars"] = {};
+      for (const cal of config.calendars) {
+        if (cal.event !== event) continue;
+        const zone = cal.timezone ?? timezone;
+        const today = periodKey(ts, "daily", zone);
+        if (today !== periodKey(recordedAt, "daily", zone)) continue;
+        const day = nextCalendarDay(cal, await tx.getCalendar(cal.id), today);
+        if (day === null) continue;
+        await tx.setCalendar(cal.id, { day, lastPeriod: today });
+        const rewards = cal.days[day - 1]!.rewards.map((r) => ({ ...r }));
+        for (const r of rewards) {
+          const total = await tx.addPoints(r.currency, r.amount, ts, eventId, recordedAt);
+          const entry = points[r.currency] ?? { awarded: 0, total };
+          entry.awarded += r.amount;
+          entry.total = total;
+          points[r.currency] = entry;
+        }
+        calendars[cal.id] = { day, rewards };
+      }
+
       const achievements: TrackResult["achievements"] = [];
       if (config.achievements.length > 0) {
         const unlocked = await tx.unlockedAchievements();
@@ -539,7 +593,7 @@ export class Engine {
         }
       }
 
-      const result: TrackResult = { eventId, userId, event, value, duplicate: false, points, level, streaks, achievements, leagues, quests, multipliers };
+      const result: TrackResult = { eventId, userId, event, value, duplicate: false, points, level, streaks, achievements, leagues, quests, calendars, multipliers };
       await tx.setEventResult(eventId, result);
       return result;
     });
@@ -687,6 +741,39 @@ export class Engine {
           rewards: (q.rewards ?? []).map((r) => ({ ...r })),
           startsAt: new Date(round.from).toISOString(),
           endsAt: new Date(round.to).toISOString(),
+        };
+      }),
+    };
+  }
+
+  /** Every reward calendar with the user's place in it: what is claimed, what today pays, and what comes next. */
+  async calendars(userId: string, options: { timezone?: string } = {}): Promise<CalendarList> {
+    checkUserId(userId);
+    if (options.timezone !== undefined && !isValidTimeZone(options.timezone)) throw new EngineError(`unknown timezone "${options.timezone}"`);
+    const now = this.now();
+    const snap = await this.store.snapshot(userId);
+    const userZone = options.timezone ?? snap.profile.timezone ?? this.config.defaultTimezone;
+    return {
+      userId,
+      calendars: this.config.calendars.map((cal): CalendarStatus => {
+        const zone = cal.timezone ?? userZone;
+        const today = periodKey(now, "daily", zone);
+        const state = snap.calendars[cal.id] ?? null;
+        const next = nextCalendarDay(cal, state, today);
+        const claimedToday = next === null;
+        const day = claimedToday ? state!.day : next;
+        return {
+          id: cal.id,
+          ...(cal.name ? { name: cal.name } : {}),
+          event: cal.event,
+          day,
+          claimedToday,
+          days: cal.days.map((d, i) => ({
+            day: i + 1,
+            rewards: d.rewards.map((r) => ({ ...r })),
+            status: i + 1 < day || (claimedToday && i + 1 === day) ? "claimed" : i + 1 === day ? "today" : "upcoming",
+          })),
+          nextClaimAt: new Date(currentRound({ period: "daily", timezone: zone }, now).to).toISOString(),
         };
       }),
     };
