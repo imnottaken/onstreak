@@ -174,3 +174,19 @@ test("a streak freeze from the shop is used to cover a missed day", async (t) =>
   doc = await view();
   assert.equal(streakLabel(doc), "2 day streak, done today", "both freezes covered the gap");
 });
+
+test("an XP potion doubles XP until it runs out", async (t) => {
+  const { view, press } = await start(t);
+  for (let i = 0; i < 2; i++) await press("/do/lesson"); // 2 coins + 3 from the quest
+  await press("/buy/xp_potion");
+  await press("/use/xp_potion");
+  let doc = await view();
+  assert.equal(doc.querySelector(".boost").textContent, "🧪 2x xp for 30 more min");
+  await press("/do/study"); // 15 minutes: 15 xp, doubled
+  doc = await view();
+  const study = [...doc.querySelectorAll(".events li")].map((li) => li.textContent).find((x) => x.includes("minutes studied"));
+  assert.match(study, /\+40 XP$/, "15 minutes doubled to 30, plus 10 for finishing the 40 XP quest");
+  await press("/next-day");
+  doc = await view();
+  assert.equal(doc.querySelector(".boost"), null, "gone the next day");
+});

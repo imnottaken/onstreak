@@ -24,11 +24,14 @@ export type {
   PurchaseHistory,
   ItemUseInput,
   ItemUseResult,
+  Boost,
+  BoostInput,
+  BoostResult,
 } from "./engine.js";
 export { FriendLimitError, RivalLimitError } from "./store/types.js";
 export { zoneFor, outcomeFor, nextTier, currentRound, roundFromKey, nextRoundKey } from "./leagues.js";
 export type { LeagueOutcome, LeagueZone, LeagueRound, RoundRule } from "./leagues.js";
-export { resolveConfig, levelFor, ConfigError } from "./config.js";
+export { resolveConfig, levelFor, ConfigError, MAX_BOOST_MINUTES } from "./config.js";
 export type {
   OnstreakConfig,
   ResolvedConfig,
@@ -47,6 +50,7 @@ export type {
   QuestReward,
   ResolvedRivalry,
   ItemRule,
+  BoostSpec,
 } from "./config.js";
 export { initialStreak, recordActivity, streakStatus } from "./streaks.js";
 export type { StreakState, StreakStatus, StreakUpdate } from "./streaks.js";
@@ -77,6 +81,7 @@ export type {
   PurchaseRecord,
   PurchasePageQuery,
   ItemUseRecord,
+  BoostRecord,
 } from "./store/types.js";
 export { createHandler, createOnstreakServer } from "./server.js";
 export type { ServerOptions, OnstreakServer } from "./server.js";

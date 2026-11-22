@@ -10,6 +10,7 @@ import type {
   PurchasePageQuery,
   PurchaseRecord,
   ItemUseRecord,
+  BoostRecord,
   RivalRecord,
   WindowScoreQuery,
   EventRecord,
@@ -112,6 +113,18 @@ function rowToPurchase(r: Record<string, unknown>): PurchaseRecord {
     currency: String(r.currency),
     cost: num(r.cost),
     purchasedAt: ms(r.purchased_at),
+    idempotencyKey: (r.idempotency_key as string | null) ?? null,
+  };
+}
+
+function rowToBoost(r: Record<string, unknown>): BoostRecord {
+  return {
+    id: String(r.id),
+    currency: (r.currency as string | null) ?? null,
+    factor: num(r.factor),
+    startsAt: ms(r.starts_at),
+    endsAt: ms(r.ends_at),
+    reason: String(r.reason),
     idempotencyKey: (r.idempotency_key as string | null) ?? null,
   };
 }
@@ -298,6 +311,23 @@ export class PostgresStore implements Store {
           [userId, p.itemId, p.quantity],
         );
         return num(rows[0]?.quantity);
+      },
+      async getBoosts(after) {
+        const { rows } = await q.query(
+          `select * from ${t.boosts} where user_id = $1 and ends_at > $2 order by starts_at, id`,
+          [userId, new Date(after).toISOString()],
+        );
+        return rows.map(rowToBoost);
+      },
+      async findBoost(key) {
+        const { rows } = await q.query(`select * from ${t.boosts} where user_id = $1 and idempotency_key = $2`, [userId, key]);
+        return rows[0] ? rowToBoost(rows[0]) : null;
+      },
+      async addBoost(b) {
+        await q.query(
+          `insert into ${t.boosts} (id, user_id, currency, factor, starts_at, ends_at, reason, idempotency_key) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [b.id, userId, b.currency, b.factor, new Date(b.startsAt).toISOString(), new Date(b.endsAt).toISOString(), b.reason, b.idempotencyKey],
+        );
       },
       async findItemUse(key) {
         const { rows } = await q.query(`select result from ${t.itemUses} where user_id = $1 and idempotency_key = $2`, [userId, key]);
@@ -502,6 +532,14 @@ export class PostgresStore implements Store {
       recordedAt: ms(r.recorded_at),
       result: r.result ? json<TrackResult>(r.result) : null,
     }));
+  }
+
+  async boosts(userId: string, after: number): Promise<BoostRecord[]> {
+    const { rows } = await this.db.query(
+      `select * from ${this.t.boosts} where user_id = $1 and ends_at > $2 order by starts_at, id`,
+      [userId, new Date(after).toISOString()],
+    );
+    return rows.map(rowToBoost);
   }
 
   async purchases(userId: string, query: PurchasePageQuery): Promise<PurchaseRecord[]> {

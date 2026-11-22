@@ -234,6 +234,42 @@ const schemas = {
       owned: { type: "integer", minimum: 0 },
     },
   },
+  Boost: {
+    type: "object",
+    required: ["id", "factor", "currency", "startsAt", "endsAt", "reason"],
+    additionalProperties: false,
+    properties: {
+      id: { type: "string", format: "uuid" },
+      factor: { type: "number", exclusiveMinimum: 0, maximum: 100 },
+      currency: nullable({ type: "string", description: "Null: every currency." }),
+      startsAt: { type: "string", format: "date-time" },
+      endsAt: { type: "string", format: "date-time" },
+      reason: { type: "string" },
+    },
+  },
+  BoostInput: {
+    type: "object",
+    required: ["factor", "minutes"],
+    additionalProperties: false,
+    properties: {
+      factor: { type: "number", exclusiveMinimum: 0, maximum: 100 },
+      minutes: { type: "integer", minimum: 1, maximum: 43200 },
+      currency: { type: "string", description: "Omit to boost every currency." },
+      reason: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$", default: "boost" },
+      idempotencyKey: { type: "string", minLength: 1, maxLength: 200 },
+    },
+  },
+  BoostResult: {
+    type: "object",
+    required: ["userId", "boost", "duplicate", "boosts"],
+    additionalProperties: false,
+    properties: {
+      userId: { type: "string" },
+      boost: ref("Boost"),
+      duplicate: { type: "boolean" },
+      boosts: { type: "array", items: ref("Boost") },
+    },
+  },
   ItemUseInput: {
     type: "object",
     additionalProperties: false,
@@ -261,6 +297,18 @@ const schemas = {
             required: ["streak", "freezes"],
             additionalProperties: false,
             properties: { streak: { type: "string" }, freezes: { type: "integer", description: "Freezes the streak holds now." } },
+          },
+          boost: {
+            type: "object",
+            required: ["factor", "currency", "startsAt", "endsAt"],
+            additionalProperties: false,
+            description: "The boosts this use queued, from the first one's start to the last one's end.",
+            properties: {
+              factor: { type: "number" },
+              currency: nullable({ type: "string" }),
+              startsAt: { type: "string", format: "date-time" },
+              endsAt: { type: "string", format: "date-time" },
+            },
           },
         },
       },
@@ -299,7 +347,7 @@ const schemas = {
   },
   UserProfile: {
     type: "object",
-    required: ["userId", "profile", "points", "wallet", "inventory", "level", "metrics", "streaks", "achievements"],
+    required: ["userId", "profile", "points", "wallet", "inventory", "boosts", "level", "metrics", "streaks", "achievements"],
     additionalProperties: false,
     properties: {
       userId: { type: "string" },
@@ -307,6 +355,7 @@ const schemas = {
       points: map({ type: "number", description: "Points earned. Spending does not lower these." }),
       wallet: map({ type: "number", description: "Points left to spend: earned minus spent." }),
       inventory: map({ type: "integer", description: "Items owned, by item id." }),
+      boosts: { type: "array", items: ref("Boost"), description: "Personal boosts running now or queued, soonest first." },
       level: nullable({
         type: "object",
         required: ["current", "points", "startsAt", "nextAt"],
@@ -664,6 +713,16 @@ export function openapiSpec(version: string) {
           summary: "A user's purchases, newest first",
           parameters: [limitParam(), { name: "cursor", in: "query", schema: { type: "string" }, description: "nextCursor from the previous page." }],
           responses: { "200": ok("A page of purchases", ref("PurchaseHistory")), ...authErrors },
+        },
+      },
+      "/v1/users/{userId}/boosts": {
+        parameters: [userIdParam],
+        post: {
+          operationId: "grantBoost",
+          summary: "Give a user a personal multiplier for some minutes",
+          description: "Applies to points from point rules for events while it runs. The same factor and currency queue back to back.",
+          requestBody: { required: true, content: json(ref("BoostInput")) },
+          responses: { "200": ok("The new boost and every boost running or queued", ref("BoostResult")), ...authErrors },
         },
       },
       "/v1/users/{userId}/inventory/{itemId}/use": {

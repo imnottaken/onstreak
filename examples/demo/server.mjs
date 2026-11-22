@@ -46,6 +46,7 @@ export const demoConfig = {
   ],
   items: [
     { id: "streak_freeze", name: "Streak freeze", description: "Use it to cover a missed day", price: { currency: "coins", amount: 4 }, limit: 2, effect: { streakFreeze: "daily_lesson" }, metadata: { icon: "🧊" } },
+    { id: "xp_potion", name: "XP potion", description: "Double XP for 30 minutes", price: { currency: "coins", amount: 3 }, effect: { boost: { factor: 2, minutes: 30, currency: "xp" } }, metadata: { icon: "🧪" } },
     { id: "sticker_pack", name: "Sticker pack", description: "Show off in chat", price: { currency: "coins", amount: 2 }, metadata: { icon: "🌟" } },
     { id: "night_theme", name: "Night theme", price: { currency: "coins", amount: 5 }, limit: 1, metadata: { icon: "🌙" } },
     { id: "gold_frame", name: "Gold frame", description: "A frame for your avatar", price: { currency: "coins", amount: 8 }, limit: 1, metadata: { icon: "🖼️" } },
@@ -101,6 +102,7 @@ button.primary { background: #f97316; border-color: #f97316; color: #fff; font-w
 button.small { padding: 4px 10px; font-size: 0.8125rem; }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 .item-actions { display: flex; gap: 6px; }
+.boost { margin: 0 0 12px; font-size: 0.875rem; font-weight: 600; color: #8250df; }
 .spaced { margin-top: 16px; }
 .events li { padding: 4px 0; border-top: 1px solid #d0d7de33; }
 </style>
@@ -154,8 +156,12 @@ export function createDemo({ seed = 42 } = {}) {
         "span",
         { className: "item-actions" },
         item.owned > 0 &&
-          item.id === "streak_freeze" &&
-          h("form", { method: "post", action: `/use/${item.id}` }, h("button", { type: "submit", className: "small", disabled: freezesFull, title: freezesFull ? "You already hold the most freezes" : undefined }, "Use")),
+          demoConfig.items.find((i) => i.id === item.id)?.effect &&
+          h(
+            "form",
+            { method: "post", action: `/use/${item.id}` },
+            h("button", { type: "submit", className: "small", disabled: item.id === "streak_freeze" && freezesFull, title: item.id === "streak_freeze" && freezesFull ? "You already hold the most freezes" : undefined }, "Use"),
+          ),
         h("form", { method: "post", action: `/buy/${item.id}` }, h("button", { type: "submit", className: "small", disabled: !item.canBuy }, "Buy")),
       );
     const rivalIds = new Set(rivals.rivals.map((r) => r.rivalId));
@@ -192,6 +198,12 @@ export function createDemo({ seed = 42 } = {}) {
             { className: "card" },
             h("h2", null, "Your progress"),
             h("div", { className: "stats" }, h(StreakFlame, { streak: user.streaks.daily_lesson }), h("span", { className: "muted" }, `${user.wallet.coins} coins`)),
+            user.boosts.length > 0 &&
+              h(
+                "p",
+                { className: "boost" },
+                `🧪 ${user.boosts[0].factor}x ${user.boosts[0].currency ?? "points"} for ${Math.max(1, Math.round((Date.parse(user.boosts[user.boosts.length - 1].endsAt) - now()) / 60_000))} more min`,
+              ),
             user.level && h(LevelBar, { level: user.level }),
           ),
           h(

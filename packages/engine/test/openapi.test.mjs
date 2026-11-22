@@ -176,6 +176,13 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   await richCall("/v1/users/r/purchases", { item: "streak_freeze", quantity: 2 });
   const frozen = await richCall("/v1/users/r/inventory/streak_freeze/use", {});
   assert.deepEqual(frozen.effects, { streakFreeze: { streak: "daily_lesson", freezes: 2 } });
+  const granted = await call("post", "/v1/users/asha/boosts", "/v1/users/{userId}/boosts", { factor: 2, minutes: 60, currency: "xp", reason: "welcome_back", idempotencyKey: "b1" });
+  assert.equal(granted.json.boosts.length, 1);
+  await call("post", "/v1/users/asha/boosts", "/v1/users/{userId}/boosts", { factor: 2, minutes: 60, currency: "xp", idempotencyKey: "b1" }); // duplicate
+  await call("post", "/v1/users/asha/boosts", "/v1/users/{userId}/boosts", { factor: 0, minutes: 60 }); // 400
+  await call("get", "/v1/users/asha", "/v1/users/{userId}"); // with a boost
+  const boosted = await call("post", "/v1/events", "/v1/events", { userId: "asha", event: "lesson_completed" });
+  assert.equal(boosted.json.points.xp.awarded, 20);
   const maxed = await richCall("/v1/users/r/inventory/streak_freeze/use", {});
   assert.equal(maxed.code, "limit_reached");
 

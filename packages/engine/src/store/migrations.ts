@@ -29,6 +29,7 @@ export interface Tables {
   inventory: string;
   purchases: string;
   itemUses: string;
+  boosts: string;
 }
 
 export function tableNames(prefix: string): Tables {
@@ -50,6 +51,7 @@ export function tableNames(prefix: string): Tables {
     inventory: `${prefix}inventory`,
     purchases: `${prefix}purchases`,
     itemUses: `${prefix}item_uses`,
+    boosts: `${prefix}boosts`,
   };
 }
 
@@ -257,6 +259,24 @@ export const MIGRATIONS: readonly Migration[] = [
          result jsonb not null,
          unique (user_id, idempotency_key)
        )`,
+    ],
+  },
+  {
+    version: 10,
+    name: "personal boosts",
+    statements: (t) => [
+      `create table if not exists ${t.boosts} (
+         id uuid primary key,
+         user_id text not null references ${t.users}(id),
+         currency text,
+         factor double precision not null,
+         starts_at timestamptz not null,
+         ends_at timestamptz not null,
+         reason text not null,
+         idempotency_key text,
+         unique (user_id, idempotency_key)
+       )`,
+      `create index if not exists ${t.prefix}boosts_user_end on ${t.boosts} (user_id, ends_at)`,
     ],
   },
 ];

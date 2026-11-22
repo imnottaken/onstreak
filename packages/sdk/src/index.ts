@@ -71,6 +71,8 @@ export interface UserProfile {
   wallet: Record<string, number>;
   /** Items owned, by item id. */
   inventory: Record<string, number>;
+  /** Personal boosts running now or queued, soonest first. */
+  boosts: Boost[];
   /** startsAt: points where the current level began; nextAt: points for the next one (null at max). */
   level: { current: number; points: number; startsAt: number; nextAt: number | null } | null;
   metrics: Record<string, number>;
@@ -167,6 +169,25 @@ export interface PurchaseResult {
   owned: number;
 }
 
+export interface Boost {
+  id: string;
+  factor: number;
+  /** Null: every currency. */
+  currency: string | null;
+  startsAt: string;
+  endsAt: string;
+  reason: string;
+}
+
+export interface BoostInput {
+  factor: number;
+  minutes: number;
+  /** Omit to boost every currency. */
+  currency?: string;
+  reason?: string;
+  idempotencyKey?: string;
+}
+
 export interface ItemUseResult {
   userId: string;
   item: string;
@@ -174,7 +195,10 @@ export interface ItemUseResult {
   /** How many the user has left. */
   owned: number;
   duplicate: boolean;
-  effects: { streakFreeze?: { streak: string; freezes: number } };
+  effects: {
+    streakFreeze?: { streak: string; freezes: number };
+    boost?: { factor: number; currency: string | null; startsAt: string; endsAt: string };
+  };
 }
 
 export interface PurchaseHistory {
@@ -309,6 +333,9 @@ export function createClient(options: ClientOptions) {
      */
     useItem: (userId: string, itemId: string, opts: { quantity?: number; idempotencyKey?: string } = {}) =>
       call<ItemUseResult>("POST", `${user(userId)}/inventory/${encodeURIComponent(itemId)}/use`, opts),
+    /** Give a user a personal multiplier for some minutes, e.g. 2x XP for an hour. */
+    grantBoost: (userId: string, input: BoostInput) =>
+      call<{ userId: string; boost: Boost; duplicate: boolean; boosts: Boost[] }>("POST", `${user(userId)}/boosts`, input),
     /** A user's purchases, newest first. Pass `nextCursor` back to page. */
     purchases: (userId: string, opts: { limit?: number; cursor?: string } = {}) => {
       const params = new URLSearchParams();

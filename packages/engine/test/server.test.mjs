@@ -116,6 +116,9 @@ test("SDK covers profiles, batches, history, health and request ids", async () =
     const used = await xp.useItem("zara", "sticker", { idempotencyKey: "u1" });
     assert.deepEqual([used.used, used.owned, used.effects], [1, 0, {}]);
     assert.equal((await xp.useItem("zara", "sticker", { idempotencyKey: "u1" })).duplicate, true);
+    const boost = await xp.grantBoost("zara", { factor: 3, minutes: 5, reason: "support" });
+    assert.deepEqual([boost.boost.factor, boost.boost.currency, boost.boosts.length], [3, null, 1]);
+    assert.equal((await xp.getUser("zara")).boosts[0].reason, "support");
     const none = await xp.useItem("zara", "sticker").catch((e) => e);
     assert.deepEqual([none.status, none.code], [409, "not_owned"]);
 

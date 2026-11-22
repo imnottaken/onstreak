@@ -168,6 +168,12 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         return send(200, await engine.useItem(id, subId, (body ?? {}) as Parameters<Engine["useItem"]>[2]));
       }
 
+      if (req.method === "POST" && resource === "users" && id && sub === "boosts" && parts.length === 4) {
+        const body = await readJson(req);
+        if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "body must be a JSON object");
+        return send(200, await engine.grantBoost(id, body as Parameters<Engine["grantBoost"]>[1]));
+      }
+
       if (resource === "users" && id && sub === "friends") {
         if (req.method === "GET" && parts.length === 4) return send(200, await engine.friends(id));
         if (req.method === "PUT" && subId && parts.length === 5) return send(200, await engine.addFriend(id, subId));

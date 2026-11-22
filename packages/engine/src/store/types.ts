@@ -92,6 +92,17 @@ export interface ItemUseRecord {
   result: ItemUseResult;
 }
 
+/** A multiplier given to one user for a while. Null currency means every currency. */
+export interface BoostRecord {
+  id: string;
+  currency: string | null;
+  factor: number;
+  startsAt: number;
+  endsAt: number;
+  reason: string;
+  idempotencyKey: string | null;
+}
+
 export interface PurchasePageQuery {
   limit: number;
   /** Return purchases strictly older than this position (newest first). */
@@ -178,6 +189,10 @@ export interface UserTx {
   findItemUse(idempotencyKey: string): Promise<ItemUseResult | null>;
   /** Store a use and take its quantity from the inventory (the caller checks there are enough). Returns how many are left. */
   recordItemUse(use: ItemUseRecord): Promise<number>;
+  /** Boosts that end after `after` (running or yet to start), soonest start first. */
+  getBoosts(after: number): Promise<BoostRecord[]>;
+  findBoost(idempotencyKey: string): Promise<BoostRecord | null>;
+  addBoost(boost: BoostRecord): Promise<void>;
 }
 
 export interface UserSnapshot {
@@ -250,6 +265,8 @@ export interface Store {
   windowScores(query: WindowScoreQuery): Promise<Record<string, number>>;
   /** A user's progress on these quest periods. Periods never started are left out. */
   quests(userId: string, keys: Array<{ questId: string; periodKey: string }>): Promise<QuestProgress[]>;
+  /** A user's boosts that end after `after`, soonest start first. */
+  boosts(userId: string, after: number): Promise<BoostRecord[]>;
   /** A user's purchases, newest first. */
   purchases(userId: string, query: PurchasePageQuery): Promise<PurchaseRecord[]>;
   /** Throws if the database cannot be reached. */

@@ -122,6 +122,26 @@ export type MultiplierRule =
   | { id: string; currency?: string; factor: number; from: string; to: string }
   | { id: string; currency?: string; streak: string; steps: Array<{ gte: number; factor: number }> };
 
+/** A personal multiplier: `factor` on points from point rules for `minutes`. No currency means every currency. */
+export interface BoostSpec {
+  factor: number;
+  minutes: number;
+  currency?: string;
+}
+
+/** Longest a single boost may last: 30 days. */
+export const MAX_BOOST_MINUTES = 30 * 24 * 60;
+
+/** Why a boost spec is invalid, or null if it is fine. */
+export function boostSpecProblem(spec: unknown, currencies: string[]): string | null {
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) return "a boost needs { factor, minutes, currency? }";
+  const b = spec as Record<string, unknown>;
+  if (typeof b.factor !== "number" || !Number.isFinite(b.factor) || b.factor <= 0 || b.factor > 100) return "boost factor must be above 0 and at most 100";
+  if (!Number.isInteger(b.minutes) || (b.minutes as number) < 1 || (b.minutes as number) > MAX_BOOST_MINUTES) return `boost minutes must be a whole number from 1 to ${MAX_BOOST_MINUTES}`;
+  if (b.currency !== undefined && (typeof b.currency !== "string" || !currencies.includes(b.currency))) return `boost uses unknown currency "${String(b.currency)}"`;
+  return null;
+}
+
 /** Something users can buy with points from the reward store. */
 export interface ItemRule {
   id: string;
@@ -135,10 +155,12 @@ export interface ItemRule {
   metadata?: Record<string, unknown>;
   /**
    * What using one does. `streakFreeze` adds a freeze to that streak (up to its
-   * freezes.max). Without an effect, using an item just takes it from the
-   * inventory, for things your app handles itself (vouchers, unlocks).
+   * freezes.max). `boost` gives the user a personal multiplier for some
+   * minutes; using several queues them back to back. Without an effect, using
+   * an item just takes it from the inventory, for things your app handles
+   * itself (vouchers, unlocks).
    */
-  effect?: { streakFreeze: string };
+  effect?: { streakFreeze: string } | { boost: BoostSpec };
 }
 
 export interface OnstreakConfig {
@@ -381,9 +403,12 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     if (i.metadata !== undefined && (i.metadata === null || typeof i.metadata !== "object" || Array.isArray(i.metadata))) {
       throw new ConfigError(`item "${i.id}" metadata must be an object`);
     }
-    if (i.effect !== undefined) {
-      const target = streaks.find((s) => s.id === i.effect?.streakFreeze);
-      if (!target) throw new ConfigError(`item "${i.id}" effect needs { streakFreeze: <streak id> } with a known streak`);
+    if (i.effect !== undefined && i.effect !== null && typeof i.effect === "object" && "boost" in i.effect) {
+      const problem = boostSpecProblem(i.effect.boost, currencies);
+      if (problem) throw new ConfigError(`item "${i.id}" ${problem}`);
+    } else if (i.effect !== undefined) {
+      const target = streaks.find((s) => s.id === (i.effect as { streakFreeze?: string } | null)?.streakFreeze);
+      if (!target) throw new ConfigError(`item "${i.id}" effect needs { streakFreeze: <streak id> } with a known streak, or { boost: { factor, minutes } }`);
       if ((target.freezes?.max ?? 0) < 1) throw new ConfigError(`item "${i.id}" gives freezes, but streak "${target.id}" has freezes.max 0`);
     }
   }

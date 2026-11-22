@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule } from "./config.js";
+import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, boostSpecProblem } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
-import { FriendLimitError, RivalLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type ItemUseRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
+import { FriendLimitError, RivalLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type ItemUseRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
 import { isValidTimeZone, leaderboardWindow, periodKey, type LeaderboardPeriod } from "./time.js";
 
 export class EngineError extends Error {
@@ -84,6 +84,8 @@ export interface UserProfile {
   wallet: Record<string, number>;
   /** Items owned, by item id. */
   inventory: Record<string, number>;
+  /** Personal boosts running now or queued to start, soonest first. */
+  boosts: Boost[];
   /** startsAt: points where the current level began; nextAt: points for the next one (null at max). */
   level: { current: number; points: number; startsAt: number; nextAt: number | null } | null;
   metrics: Record<string, number>;
@@ -195,6 +197,31 @@ export interface PurchaseResult {
   owned: number;
 }
 
+/** A personal multiplier on points from point rules. Null currency means every currency. */
+export interface Boost {
+  id: string;
+  factor: number;
+  currency: string | null;
+  startsAt: string;
+  endsAt: string;
+  reason: string;
+}
+
+export interface BoostInput extends BoostSpec {
+  /** Shown back to you, e.g. "welcome_back" or "support". Default "boost". */
+  reason?: string;
+  /** Retries with the same key return the first boost instead of adding another. */
+  idempotencyKey?: string;
+}
+
+export interface BoostResult {
+  userId: string;
+  boost: Boost;
+  duplicate: boolean;
+  /** Every boost running now or queued, soonest first. */
+  boosts: Boost[];
+}
+
 export interface ItemUseInput {
   /** How many to use at once. Default 1. */
   quantity?: number;
@@ -210,7 +237,11 @@ export interface ItemUseResult {
   owned: number;
   duplicate: boolean;
   /** What using it did, if the item has an effect. */
-  effects: { streakFreeze?: { streak: string; freezes: number } };
+  effects: {
+    streakFreeze?: { streak: string; freezes: number };
+    /** The boosts this use queued: from the first one's start to the last one's end. */
+    boost?: { factor: number; currency: string | null; startsAt: string; endsAt: string };
+  };
 }
 
 export interface PurchaseHistory {
@@ -254,6 +285,30 @@ const MAX_QUANTITY = 1000;
 
 /** Trim float noise from sums like 0.1 + 0.2. */
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
+const REASON = /^[a-z0-9][a-z0-9_.:-]{0,63}$/i;
+
+const toBoost = (b: BoostRecord): Boost => ({
+  id: b.id,
+  factor: b.factor,
+  currency: b.currency,
+  startsAt: new Date(b.startsAt).toISOString(),
+  endsAt: new Date(b.endsAt).toISOString(),
+  reason: b.reason,
+});
+
+/**
+ * Add a boost. A boost with the same factor and currency as one already
+ * running or queued starts when the last of those ends, so stacking the same
+ * boost extends it instead of multiplying it.
+ */
+async function queueBoost(tx: UserTx, spec: BoostSpec, now: number, reason: string, idempotencyKey: string | null): Promise<BoostRecord> {
+  const currency = spec.currency ?? null;
+  const same = (await tx.getBoosts(now)).filter((b) => b.factor === spec.factor && b.currency === currency);
+  const startsAt = Math.max(now, ...same.map((b) => b.endsAt));
+  const record: BoostRecord = { id: randomUUID(), currency, factor: spec.factor, startsAt, endsAt: startsAt + spec.minutes * 60_000, reason, idempotencyKey };
+  await tx.addBoost(record);
+  return record;
+}
 
 function checkUserId(userId: unknown): asserts userId is string {
   if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces (max 128 chars)");
@@ -398,6 +453,10 @@ export class Engine {
         }
         if (factor !== null && factor !== 1) multipliers[m.id] = { factor, currency: m.currency };
       }
+      // Personal boosts running when the event happened. Ones granted later never reach back.
+      for (const b of await tx.getBoosts(ts)) {
+        if (b.startsAt <= ts && b.factor !== 1) multipliers[`boost:${b.id}`] = { factor: b.factor, currency: b.currency };
+      }
       const factorFor = (currency: string) =>
         Object.values(multipliers).reduce((f, m) => (m.currency === null || m.currency === currency ? f * m.factor : f), 1);
 
@@ -490,7 +549,7 @@ export class Engine {
     if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces");
     if (options.timezone !== undefined && !isValidTimeZone(options.timezone)) throw new EngineError(`unknown timezone "${options.timezone}"`);
 
-    const snap = await this.store.snapshot(userId);
+    const [snap, boosts] = await Promise.all([this.store.snapshot(userId), this.store.boosts(userId, this.now())]);
     const timezone = options.timezone ?? snap.profile.timezone ?? this.config.defaultTimezone;
     const points: Record<string, number> = {};
     const wallet: Record<string, number> = {};
@@ -525,7 +584,7 @@ export class Engine {
         return { id: a.id, name: rule.name, ...(rule.description ? { description: rule.description } : {}), unlockedAt: a.unlockedAt };
       });
 
-    return { userId, profile: snap.profile, points, wallet, inventory: snap.inventory, level, metrics: snap.metrics, streaks, achievements };
+    return { userId, profile: snap.profile, points, wallet, inventory: snap.inventory, boosts: boosts.map(toBoost), level, metrics: snap.metrics, streaks, achievements };
   }
 
   /**
@@ -912,8 +971,17 @@ export class Engine {
 
       const usedAt = this.now();
       const effects: ItemUseResult["effects"] = {};
-      if (item.effect?.streakFreeze) {
-        const rule = this.config.streaks.find((s) => s.id === item.effect!.streakFreeze)!;
+      const effect = item.effect;
+      if (effect && "boost" in effect) {
+        let first: BoostRecord | null = null;
+        let last: BoostRecord | null = null;
+        for (let i = 0; i < quantity; i++) {
+          last = await queueBoost(tx, effect.boost, usedAt, `item:${item.id}`, null);
+          first ??= last;
+        }
+        effects.boost = { factor: effect.boost.factor, currency: effect.boost.currency ?? null, startsAt: toBoost(first!).startsAt, endsAt: toBoost(last!).endsAt };
+      } else if (effect) {
+        const rule = this.config.streaks.find((s) => s.id === effect.streakFreeze)!;
         const state = (await tx.getStreak(rule.id)) ?? initialStreak(rule);
         const timezone = (await tx.getProfile()).timezone ?? this.config.defaultTimezone;
         if (streakStatus(rule, state, periodKey(usedAt, rule.period, timezone)).status === "broken") {
@@ -931,6 +999,31 @@ export class Engine {
       const record: ItemUseRecord = { id: randomUUID(), itemId: item.id, quantity, usedAt, idempotencyKey, result };
       await tx.recordItemUse(record);
       return result;
+    });
+  }
+
+  /**
+   * Give one user a multiplier for a while ("2x XP for an hour"), e.g. as a
+   * reward or a welcome-back gift. Boosts apply to points from point rules
+   * for events that happen while they run, and multiply with other
+   * multipliers. The same factor and currency queue back to back.
+   */
+  async grantBoost(userId: string, input: BoostInput): Promise<BoostResult> {
+    checkUserId(userId);
+    const problem = boostSpecProblem(input, this.config.currencies);
+    if (problem) throw new EngineError(problem);
+    const reason = input.reason ?? "boost";
+    if (typeof reason !== "string" || !REASON.test(reason)) throw new EngineError("reason must be 1-64 letters, digits, _ . : -");
+    const idempotencyKey = input.idempotencyKey ?? null;
+    if (idempotencyKey !== null && (typeof idempotencyKey !== "string" || idempotencyKey.length === 0 || idempotencyKey.length > 200)) {
+      throw new EngineError("idempotencyKey must be a string of 1-200 characters");
+    }
+    const spec: BoostSpec = { factor: input.factor, minutes: input.minutes, ...(input.currency !== undefined ? { currency: input.currency } : {}) };
+    return this.store.withUser(userId, async (tx) => {
+      const now = this.now();
+      const previous = idempotencyKey ? await tx.findBoost(idempotencyKey) : null;
+      const boost = previous ?? (await queueBoost(tx, spec, now, reason, idempotencyKey));
+      return { userId, boost: toBoost(boost), duplicate: previous !== null, boosts: (await tx.getBoosts(now)).map(toBoost) };
     });
   }
 

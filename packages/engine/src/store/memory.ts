@@ -21,6 +21,7 @@ import type {
   PurchasePageQuery,
   PurchaseRecord,
   ItemUseRecord,
+  BoostRecord,
   UserTx,
 } from "./types.js";
 
@@ -39,6 +40,7 @@ interface UserData {
   /** Oldest first. */
   purchases: PurchaseRecord[];
   itemUses: ItemUseRecord[];
+  boosts: BoostRecord[];
 }
 
 interface LedgerRow {
@@ -48,6 +50,12 @@ interface LedgerRow {
   ts: number;
   recordedAt: number;
 }
+
+const liveBoosts = (boosts: BoostRecord[], after: number) =>
+  boosts
+    .filter((b) => b.endsAt > after)
+    .sort((a, b) => a.startsAt - b.startsAt || (a.id < b.id ? -1 : 1))
+    .map((b) => ({ ...b }));
 
 const emptyProfile = (): ProfileData => ({ displayName: null, avatarUrl: null, metadata: {}, timezone: null });
 const copyProfile = (p: ProfileData): ProfileData => ({ ...p, metadata: structuredClone(p.metadata) });
@@ -82,6 +90,7 @@ export class MemoryStore implements Store {
         inventory: new Map(),
         purchases: [],
         itemUses: [],
+        boosts: [],
       };
       this.users.set(userId, d);
     }
@@ -147,6 +156,14 @@ export class MemoryStore implements Store {
         const owned = (d.inventory.get(p.itemId) ?? 0) + p.quantity;
         d.inventory.set(p.itemId, owned);
         return owned;
+      },
+      getBoosts: async (after) => liveBoosts(d.boosts, after),
+      findBoost: async (key) => {
+        const b = d.boosts.find((x) => x.idempotencyKey === key);
+        return b ? { ...b } : null;
+      },
+      addBoost: async (b) => {
+        d.boosts.push({ ...b });
       },
       findItemUse: async (key) => {
         const u = d.itemUses.find((x) => x.idempotencyKey === key);
@@ -274,6 +291,11 @@ export class MemoryStore implements Store {
       .filter((e) => !before || e.ts < before.ts || (e.ts === before.ts && e.id < before.id))
       .slice(0, q.limit)
       .map((e) => ({ id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result }));
+  }
+
+  async boosts(userId: string, after: number): Promise<BoostRecord[]> {
+    const d = this.users.get(userId);
+    return d ? liveBoosts(d.boosts, after) : [];
   }
 
   async purchases(userId: string, q: PurchasePageQuery): Promise<PurchaseRecord[]> {

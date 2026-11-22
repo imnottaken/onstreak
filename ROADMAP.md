@@ -61,10 +61,10 @@ Things that would hurt early users if they were missing.
 - [ ] **Time-limited events** (M). "Double XP weekend", seasonal challenges, global community goals ("everyone together: 1M minutes").
 - [ ] **Seasons** (M). Reset or soft-reset points and leagues each season, keep an archive and award season badges.
 - [x] **Multipliers and boosts** (M). Streak-based XP multiplier, event-wide boosts.
-- [ ] **Personal boosts** (S). A boost given to one user with an expiry ("2x XP for 1 hour"), e.g. bought in the reward store.
+- [x] **Personal boosts** (S). A boost given to one user with an expiry ("2x XP for 1 hour"), e.g. bought in the reward store.
 - [x] **Spendable currencies and a reward store** (L). Spend coins on items, inventory, purchase history, balance checks.
 - [x] **Using items** (S). Consume an owned item (`POST /v1/users/:id/inventory/:item/use`); a streak-freeze effect.
-- [ ] **Refunds and more item effects** (S). Refund a purchase; a personal-boost effect once personal boosts exist.
+- [ ] **Refunds** (S). Refund a purchase (back to the wallet, out of the inventory).
 - [x] **RewardStore React component** (S). Item grid with prices, owned counts and a buy button that calls your server.
 - [ ] **Streak repair** (M). Repair a broken streak within N hours, e.g. by paying coins. (Buying freezes with coins works through items with a `streakFreeze` effect.)
 - [ ] **Richer streak rules** (M). "At least 3 lessons a day" to count, weekends off, custom week start, monthly streaks.
