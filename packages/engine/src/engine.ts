@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward } from "./config.js";
+import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
-import { FriendLimitError, RivalLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type Store, type UserTx } from "./store/types.js";
+import { FriendLimitError, RivalLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
 import { isValidTimeZone, leaderboardWindow, periodKey, type LeaderboardPeriod } from "./time.js";
 
 export class EngineError extends Error {
   constructor(
     message: string,
     readonly status = 400,
+    /** A stable reason clients can branch on, e.g. "insufficient_funds". */
+    readonly code?: string,
   ) {
     super(message);
     this.name = "EngineError";
@@ -76,7 +78,12 @@ export interface LeagueStatus {
 export interface UserProfile {
   userId: string;
   profile: ProfileData;
+  /** Points earned, per currency. Spending does not lower these. */
   points: Record<string, number>;
+  /** Points left to spend in the reward store: earned minus spent. */
+  wallet: Record<string, number>;
+  /** Items owned, by item id. */
+  inventory: Record<string, number>;
   /** startsAt: points where the current level began; nextAt: points for the next one (null at max). */
   level: { current: number; points: number; startsAt: number; nextAt: number | null } | null;
   metrics: Record<string, number>;
@@ -140,6 +147,60 @@ export interface QuestList {
   quests: QuestStatus[];
 }
 
+/** An item in the reward store, from one user's point of view. */
+export interface StoreItemStatus {
+  id: string;
+  name: string;
+  description?: string;
+  price: { currency: string; amount: number };
+  /** Most a user can own, or null for no limit. */
+  limit: number | null;
+  metadata?: Record<string, unknown>;
+  owned: number;
+  /** The user can afford one more and is under the limit. */
+  canBuy: boolean;
+}
+
+export interface RewardStore {
+  userId: string;
+  wallet: Record<string, number>;
+  items: StoreItemStatus[];
+}
+
+export interface PurchaseInput {
+  item: string;
+  /** How many to buy at once. Default 1. */
+  quantity?: number;
+  /** Retries with the same key return the first purchase instead of charging twice. */
+  idempotencyKey?: string;
+}
+
+export interface Purchase {
+  id: string;
+  item: string;
+  /** The item's current name, or null if it is no longer in the config. */
+  name: string | null;
+  quantity: number;
+  cost: { currency: string; amount: number };
+  purchasedAt: string;
+}
+
+export interface PurchaseResult {
+  userId: string;
+  purchase: Purchase;
+  duplicate: boolean;
+  /** Spendable balances after the purchase. */
+  wallet: Record<string, number>;
+  /** How many of the item the user owns now. */
+  owned: number;
+}
+
+export interface PurchaseHistory {
+  purchases: Purchase[];
+  /** Pass as `cursor` to get the next (older) page, or null at the end. */
+  nextCursor: string | null;
+}
+
 export interface RivalryStatus {
   rivalryId: string;
   userId: string;
@@ -171,6 +232,14 @@ const MAX_LIMIT = 100;
 export const MAX_BATCH = 100;
 const MAX_METADATA_BYTES = 8 * 1024;
 const PROFILE_FIELDS = new Set(["displayName", "avatarUrl", "metadata", "timezone"]);
+const MAX_QUANTITY = 1000;
+
+/** Trim float noise from sums like 0.1 + 0.2. */
+const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
+
+function checkUserId(userId: unknown): asserts userId is string {
+  if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces (max 128 chars)");
+}
 
 function encodeCursor(e: { ts: number; id: string }): string {
   return Buffer.from(`${e.ts}:${e.id}`).toString("base64url");
@@ -406,7 +475,11 @@ export class Engine {
     const snap = await this.store.snapshot(userId);
     const timezone = options.timezone ?? snap.profile.timezone ?? this.config.defaultTimezone;
     const points: Record<string, number> = {};
-    for (const c of this.config.currencies) points[c] = snap.balances[c] ?? 0;
+    const wallet: Record<string, number> = {};
+    for (const c of this.config.currencies) {
+      points[c] = snap.balances[c] ?? 0;
+      wallet[c] = round6(points[c] - (snap.spent[c] ?? 0));
+    }
 
     let level: UserProfile["level"] = null;
     if (this.config.levels) {
@@ -434,7 +507,7 @@ export class Engine {
         return { id: a.id, name: rule.name, ...(rule.description ? { description: rule.description } : {}), unlockedAt: a.unlockedAt };
       });
 
-    return { userId, profile: snap.profile, points, level, metrics: snap.metrics, streaks, achievements };
+    return { userId, profile: snap.profile, points, wallet, inventory: snap.inventory, level, metrics: snap.metrics, streaks, achievements };
   }
 
   /**
@@ -723,6 +796,101 @@ export class Engine {
     const clean = validateProfilePatch(patch);
     await this.store.withUser(userId, (tx) => tx.updateProfile(clean));
     return this.getUser(userId);
+  }
+
+  /** The reward store as one user sees it: their spendable balances, and what they own and can buy. */
+  async rewardStore(userId: string): Promise<RewardStore> {
+    checkUserId(userId);
+    const snap = await this.store.snapshot(userId);
+    const wallet: Record<string, number> = {};
+    for (const c of this.config.currencies) wallet[c] = round6((snap.balances[c] ?? 0) - (snap.spent[c] ?? 0));
+    const items = this.config.items.map((item): StoreItemStatus => {
+      const owned = snap.inventory[item.id] ?? 0;
+      const limit = item.limit ?? null;
+      return {
+        id: item.id,
+        name: item.name,
+        ...(item.description ? { description: item.description } : {}),
+        price: { ...item.price },
+        limit,
+        ...(item.metadata ? { metadata: structuredClone(item.metadata) } : {}),
+        owned,
+        canBuy: (limit === null || owned < limit) && (wallet[item.price.currency] ?? 0) >= item.price.amount,
+      };
+    });
+    return { userId, wallet, items };
+  }
+
+  /**
+   * Buy an item with points. Fails with 409 and code "insufficient_funds" when
+   * the user cannot afford it, or "limit_reached" when they would own more
+   * than the item's limit. Spending lowers the wallet, never earned points.
+   */
+  async purchase(userId: string, input: PurchaseInput): Promise<PurchaseResult> {
+    checkUserId(userId);
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new EngineError("body must be a JSON object");
+    const item = this.config.items.find((i) => i.id === input.item);
+    if (!item) throw new EngineError(`unknown item "${String(input.item)}"`, 404);
+    const quantity = input.quantity ?? 1;
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY) throw new EngineError(`quantity must be a whole number from 1 to ${MAX_QUANTITY}`);
+    const idempotencyKey = input.idempotencyKey ?? null;
+    if (idempotencyKey !== null && (typeof idempotencyKey !== "string" || idempotencyKey.length === 0 || idempotencyKey.length > 200)) {
+      throw new EngineError("idempotencyKey must be a string of 1-200 characters");
+    }
+
+    return this.store.withUser(userId, async (tx) => {
+      const walletOf = async () => {
+        const wallet: Record<string, number> = {};
+        for (const c of this.config.currencies) wallet[c] = round6((await tx.getBalance(c)) - (await tx.getSpent(c)));
+        return wallet;
+      };
+      if (idempotencyKey) {
+        const previous = await tx.findPurchase(idempotencyKey);
+        if (previous) {
+          return { userId, purchase: this.toPurchase(previous), duplicate: true, wallet: await walletOf(), owned: await tx.getInventory(previous.itemId) };
+        }
+      }
+      const owned = await tx.getInventory(item.id);
+      if (item.limit !== undefined && owned + quantity > item.limit) {
+        throw new EngineError(`${userId} can own at most ${item.limit} of "${item.id}" and has ${owned}`, 409, "limit_reached");
+      }
+      const { currency } = item.price;
+      const cost = round6(item.price.amount * quantity);
+      const available = round6((await tx.getBalance(currency)) - (await tx.getSpent(currency)));
+      if (available < cost) {
+        throw new EngineError(`"${item.id}" costs ${cost} ${currency} and ${userId} has ${available}`, 409, "insufficient_funds");
+      }
+      const record: PurchaseRecord = { id: randomUUID(), itemId: item.id, quantity, currency, cost, purchasedAt: this.now(), idempotencyKey };
+      const nowOwned = await tx.recordPurchase(record);
+      return { userId, purchase: this.toPurchase(record), duplicate: false, wallet: await walletOf(), owned: nowOwned };
+    });
+  }
+
+  /** A user's purchases, newest first. */
+  async purchases(userId: string, options: { limit?: number; cursor?: string } = {}): Promise<PurchaseHistory> {
+    checkUserId(userId);
+    const limit = options.limit ?? 20;
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) throw new EngineError(`limit must be a whole number from 1 to ${MAX_LIMIT}`);
+    const before = options.cursor ? decodeCursor(options.cursor) : undefined;
+    const rows = await this.store.purchases(userId, { limit: limit + 1, ...(before ? { before } : {}) });
+    const page = rows.slice(0, limit);
+    const last = page[page.length - 1];
+    return {
+      purchases: page.map((p) => this.toPurchase(p)),
+      nextCursor: rows.length > limit && last ? encodeCursor({ ts: last.purchasedAt, id: last.id }) : null,
+    };
+  }
+
+  private toPurchase(p: PurchaseRecord): Purchase {
+    const item: ItemRule | undefined = this.config.items.find((i) => i.id === p.itemId);
+    return {
+      id: p.id,
+      item: p.itemId,
+      name: item?.name ?? null,
+      quantity: p.quantity,
+      cost: { currency: p.currency, amount: p.cost },
+      purchasedAt: new Date(p.purchasedAt).toISOString(),
+    };
   }
 
   /** A user's events, newest first, with what each one awarded. */

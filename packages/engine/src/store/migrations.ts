@@ -26,6 +26,8 @@ export interface Tables {
   rivalries: string;
   rivalryRounds: string;
   quests: string;
+  inventory: string;
+  purchases: string;
 }
 
 export function tableNames(prefix: string): Tables {
@@ -44,6 +46,8 @@ export function tableNames(prefix: string): Tables {
     rivalries: `${prefix}rivalries`,
     rivalryRounds: `${prefix}rivalry_rounds`,
     quests: `${prefix}quest_progress`,
+    inventory: `${prefix}inventory`,
+    purchases: `${prefix}purchases`,
   };
 }
 
@@ -209,6 +213,32 @@ export const MIGRATIONS: readonly Migration[] = [
          completed_at timestamptz,
          primary key (user_id, quest_id, period_key)
        )`,
+    ],
+  },
+  {
+    version: 8,
+    name: "reward store",
+    statements: (t) => [
+      // Earned totals stay as they are (levels, achievements and boards use them); spending is tracked beside them.
+      `alter table ${t.balances} add column if not exists spent double precision not null default 0`,
+      `create table if not exists ${t.inventory} (
+         user_id text not null references ${t.users}(id),
+         item_id text not null,
+         quantity integer not null check (quantity >= 0),
+         primary key (user_id, item_id)
+       )`,
+      `create table if not exists ${t.purchases} (
+         id uuid primary key,
+         user_id text not null references ${t.users}(id),
+         item_id text not null,
+         quantity integer not null,
+         currency text not null,
+         cost double precision not null,
+         purchased_at timestamptz not null,
+         idempotency_key text,
+         unique (user_id, idempotency_key)
+       )`,
+      `create index if not exists ${t.prefix}purchases_user on ${t.purchases} (user_id, purchased_at desc, id desc)`,
     ],
   },
 ];

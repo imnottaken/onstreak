@@ -70,6 +70,24 @@ export interface QuestProgress {
   completedAt: number | null;
 }
 
+/** One purchase from the reward store. */
+export interface PurchaseRecord {
+  id: string;
+  itemId: string;
+  quantity: number;
+  currency: string;
+  /** Total paid: price times quantity. */
+  cost: number;
+  purchasedAt: number;
+  idempotencyKey: string | null;
+}
+
+export interface PurchasePageQuery {
+  limit: number;
+  /** Return purchases strictly older than this position (newest first). */
+  before?: { ts: number; id: string };
+}
+
 export interface WindowScoreQuery {
   currency: string;
   from: number;
@@ -140,12 +158,24 @@ export interface UserTx {
   groupStandings(query: GroupQuery): Promise<GroupMember[]>;
   getQuest(questId: string, periodKey: string): Promise<QuestProgress | null>;
   setQuest(progress: QuestProgress): Promise<void>;
+  /** Points spent so far in a currency. Spendable balance is getBalance minus this. */
+  getSpent(currency: string): Promise<number>;
+  /** How many of an item the user owns. */
+  getInventory(itemId: string): Promise<number>;
+  findPurchase(idempotencyKey: string): Promise<PurchaseRecord | null>;
+  /** Store a purchase: adds its cost to spent and its quantity to the inventory. Returns the new quantity owned. */
+  recordPurchase(purchase: PurchaseRecord): Promise<number>;
 }
 
 export interface UserSnapshot {
   profile: ProfileData;
   metrics: Record<string, number>;
+  /** Points earned, per currency (never goes down). */
   balances: Record<string, number>;
+  /** Points spent in the reward store, per currency. */
+  spent: Record<string, number>;
+  /** Items owned, by item id. Items with none are left out. */
+  inventory: Record<string, number>;
   streaks: Record<string, StreakState>;
   achievements: Array<{ id: string; unlockedAt: string }>;
 }
@@ -207,6 +237,8 @@ export interface Store {
   windowScores(query: WindowScoreQuery): Promise<Record<string, number>>;
   /** A user's progress on these quest periods. Periods never started are left out. */
   quests(userId: string, keys: Array<{ questId: string; periodKey: string }>): Promise<QuestProgress[]>;
+  /** A user's purchases, newest first. */
+  purchases(userId: string, query: PurchasePageQuery): Promise<PurchaseRecord[]>;
   /** Throws if the database cannot be reached. */
   ping(): Promise<void>;
   /** Release connections. */

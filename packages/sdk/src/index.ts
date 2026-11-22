@@ -65,7 +65,12 @@ export interface ProfilePatch {
 export interface UserProfile {
   userId: string;
   profile: Profile;
+  /** Points earned. Spending does not lower these. */
   points: Record<string, number>;
+  /** Points left to spend in the reward store: earned minus spent. */
+  wallet: Record<string, number>;
+  /** Items owned, by item id. */
+  inventory: Record<string, number>;
   /** startsAt: points where the current level began; nextAt: points for the next one (null at max). */
   level: { current: number; points: number; startsAt: number; nextAt: number | null } | null;
   metrics: Record<string, number>;
@@ -113,6 +118,58 @@ export interface QuestList {
     startsAt: string;
     endsAt: string;
   }>;
+}
+
+export interface Price {
+  currency: string;
+  amount: number;
+}
+
+export interface RewardStore {
+  userId: string;
+  wallet: Record<string, number>;
+  items: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    price: Price;
+    /** Most a user can own, or null for no limit. */
+    limit: number | null;
+    metadata?: Record<string, unknown>;
+    owned: number;
+    /** The user can afford one more and is under the limit. */
+    canBuy: boolean;
+  }>;
+}
+
+export interface PurchaseInput {
+  item: string;
+  quantity?: number;
+  /** Retries with the same key return the first purchase instead of charging twice. */
+  idempotencyKey?: string;
+}
+
+export interface Purchase {
+  id: string;
+  item: string;
+  /** Null if the item is no longer in the server's config. */
+  name: string | null;
+  quantity: number;
+  cost: Price;
+  purchasedAt: string;
+}
+
+export interface PurchaseResult {
+  userId: string;
+  purchase: Purchase;
+  duplicate: boolean;
+  wallet: Record<string, number>;
+  owned: number;
+}
+
+export interface PurchaseHistory {
+  purchases: Purchase[];
+  nextCursor: string | null;
 }
 
 export type RivalOutcome = "won" | "lost" | "draw";
@@ -166,6 +223,8 @@ export class OnstreakError extends Error {
     message: string,
     /** The server's x-request-id, to find this request in its logs. */
     readonly requestId: string | null = null,
+    /** A stable reason when the server gives one, e.g. "insufficient_funds" or "limit_reached". */
+    readonly code: string | null = null,
   ) {
     super(message);
     this.name = "OnstreakError";
@@ -185,12 +244,13 @@ export function createClient(options: ClientOptions) {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    const data = (await res.json().catch(() => ({}))) as { error?: string; requestId?: string };
+    const data = (await res.json().catch(() => ({}))) as { error?: string; requestId?: string; code?: string };
     if (!res.ok && !okStatuses.includes(res.status)) {
       throw new OnstreakError(
         res.status,
         data.error ?? `onstreak request failed with ${res.status}`,
         data.requestId ?? res.headers.get("x-request-id"),
+        data.code ?? null,
       );
     }
     return data as T;
@@ -226,6 +286,21 @@ export function createClient(options: ClientOptions) {
     /** Every quest for the current day or week, with the user's progress. */
     quests: (userId: string, options: { timezone?: string } = {}) =>
       call<QuestList>("GET", `${user(userId)}/quests${options.timezone ? `?timezone=${encodeURIComponent(options.timezone)}` : ""}`),
+    /** The reward store for one user: their spendable balances, and what they own and can buy. */
+    store: (userId: string) => call<RewardStore>("GET", `${user(userId)}/store`),
+    /**
+     * Buy an item with points. Throws OnstreakError with status 409 and code
+     * "insufficient_funds" or "limit_reached" when the purchase is refused.
+     */
+    purchase: (userId: string, input: PurchaseInput) => call<PurchaseResult>("POST", `${user(userId)}/purchases`, input),
+    /** A user's purchases, newest first. Pass `nextCursor` back to page. */
+    purchases: (userId: string, opts: { limit?: number; cursor?: string } = {}) => {
+      const params = new URLSearchParams();
+      if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+      if (opts.cursor) params.set("cursor", opts.cursor);
+      const qs = params.toString();
+      return call<PurchaseHistory>("GET", `${user(userId)}/purchases${qs ? `?${qs}` : ""}`);
+    },
     /** A user's rivals: this round's live score, record, streak and last result. */
     rivals: (rivalryId: string, userId: string) =>
       call<RivalryStatus>("GET", `/v1/rivalries/${encodeURIComponent(rivalryId)}/users/${encodeURIComponent(userId)}`),

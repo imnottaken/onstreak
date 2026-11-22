@@ -122,6 +122,19 @@ export type MultiplierRule =
   | { id: string; currency?: string; factor: number; from: string; to: string }
   | { id: string; currency?: string; streak: string; steps: Array<{ gte: number; factor: number }> };
 
+/** Something users can buy with points from the reward store. */
+export interface ItemRule {
+  id: string;
+  name: string;
+  description?: string;
+  /** What one costs. The amount comes out of the user's spendable balance, not their earned total. */
+  price: { currency: string; amount: number };
+  /** Most a user can own at once. Default: no limit. */
+  limit?: number;
+  /** Anything your app needs to show or use the item (image URL, sku). Returned as is. */
+  metadata?: Record<string, unknown>;
+}
+
 export interface OnstreakConfig {
   /** Time zone used for streaks when an event does not say. Default UTC. */
   defaultTimezone?: string;
@@ -135,6 +148,7 @@ export interface OnstreakConfig {
   rivalries?: RivalryRule[];
   quests?: QuestRule[];
   multipliers?: MultiplierRule[];
+  items?: ItemRule[];
   friends?: {
     /** Most friends one user can have. Default 1000. */
     max?: number;
@@ -166,6 +180,7 @@ export interface ResolvedConfig {
   rivalries: ResolvedRivalry[];
   quests: QuestRule[];
   multipliers: ResolvedMultiplier[];
+  items: ItemRule[];
   friends: { max: number };
 }
 
@@ -349,6 +364,19 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     }
   }
 
+  const items = input.items ?? [];
+  uniqueIds("item", items.map((i) => i.id));
+  for (const i of items) {
+    if (typeof i.name !== "string" || i.name.length === 0) throw new ConfigError(`item "${i.id}" needs a name`);
+    if (!i.price || typeof i.price !== "object") throw new ConfigError(`item "${i.id}" needs price: { currency, amount }`);
+    hasCurrency(i.price.currency, `item "${i.id}"`);
+    if (!isNonNegative(i.price.amount)) throw new ConfigError(`item "${i.id}" price amount must be zero or more`);
+    if (i.limit !== undefined && !(Number.isInteger(i.limit) && i.limit >= 1)) throw new ConfigError(`item "${i.id}" limit must be a whole number of at least 1`);
+    if (i.metadata !== undefined && (i.metadata === null || typeof i.metadata !== "object" || Array.isArray(i.metadata))) {
+      throw new ConfigError(`item "${i.id}" metadata must be an object`);
+    }
+  }
+
   const maxFriends = input.friends?.max ?? 1000;
   if (!Number.isInteger(maxFriends) || maxFriends < 1 || maxFriends > 100_000) {
     throw new ConfigError("friends.max must be a whole number from 1 to 100000");
@@ -366,6 +394,7 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     rivalries,
     quests,
     multipliers,
+    items,
     friends: { max: maxFriends },
   };
 }

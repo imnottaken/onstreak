@@ -150,6 +150,19 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         return send(200, await engine.quests(id, timezone ? { timezone } : {}));
       }
 
+      if (req.method === "GET" && resource === "users" && id && sub === "store" && parts.length === 4) {
+        return send(200, await engine.rewardStore(id));
+      }
+
+      if (resource === "users" && id && sub === "purchases" && parts.length === 4) {
+        if (req.method === "POST") return send(200, await engine.purchase(id, (await readJson(req)) as Parameters<Engine["purchase"]>[1]));
+        if (req.method === "GET") {
+          const limit = intParam(url, "limit");
+          const cursor = url.searchParams.get("cursor") ?? undefined;
+          return send(200, await engine.purchases(id, { ...(limit !== undefined ? { limit } : {}), ...(cursor ? { cursor } : {}) }));
+        }
+      }
+
       if (resource === "users" && id && sub === "friends") {
         if (req.method === "GET" && parts.length === 4) return send(200, await engine.friends(id));
         if (req.method === "PUT" && subId && parts.length === 5) return send(200, await engine.addFriend(id, subId));
@@ -184,6 +197,7 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
 
       throw new HttpError(404, "not found");
     } catch (err) {
+      if (err instanceof EngineError && err.code) return send(err.status, { error: err.message, code: err.code, requestId });
       if (err instanceof HttpError || err instanceof EngineError) return send(err.status, { error: err.message, requestId });
       logger.error("unhandled error", { requestId, method: req.method, path: url.pathname, err });
       return send(500, { error: "internal error", requestId });

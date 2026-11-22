@@ -16,6 +16,12 @@ export type {
   QuestStatus,
   QuestList,
   RivalOutcome,
+  StoreItemStatus,
+  RewardStore,
+  PurchaseInput,
+  Purchase,
+  PurchaseResult,
+  PurchaseHistory,
 } from "./engine.js";
 export { FriendLimitError, RivalLimitError } from "./store/types.js";
 export { zoneFor, outcomeFor, nextTier, currentRound, roundFromKey, nextRoundKey } from "./leagues.js";
@@ -38,6 +44,7 @@ export type {
   ResolvedMultiplier,
   QuestReward,
   ResolvedRivalry,
+  ItemRule,
 } from "./config.js";
 export { initialStreak, recordActivity, streakStatus } from "./streaks.js";
 export type { StreakState, StreakStatus, StreakUpdate } from "./streaks.js";
@@ -65,6 +72,8 @@ export type {
   RivalRecord,
   QuestProgress,
   WindowScoreQuery,
+  PurchaseRecord,
+  PurchasePageQuery,
 } from "./store/types.js";
 export { createHandler, createOnstreakServer } from "./server.js";
 export type { ServerOptions, OnstreakServer } from "./server.js";

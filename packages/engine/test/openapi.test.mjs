@@ -141,6 +141,23 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   await questCall("get", "/v1/users/q/quests?timezone=UTC", "/v1/users/{userId}/quests");
   await questCall("get", "/v1/users/q/quests?timezone=Nope", "/v1/users/{userId}/quests"); // 400
 
+  // Reward store: asha has 1 coin from her one counted lesson.
+  const shop = await call("get", "/v1/users/asha/store", "/v1/users/{userId}/store");
+  assert.equal(shop.json.wallet.coins, 1);
+  const bought = await call("post", "/v1/users/asha/purchases", "/v1/users/{userId}/purchases", { item: "sticker", idempotencyKey: "p1" });
+  assert.equal(bought.status, 200);
+  await call("post", "/v1/users/asha/purchases", "/v1/users/{userId}/purchases", { item: "sticker", idempotencyKey: "p1" }); // duplicate
+  const broke = await call("post", "/v1/users/asha/purchases", "/v1/users/{userId}/purchases", { item: "sticker" });
+  assert.deepEqual([broke.status, broke.json.code], [409, "insufficient_funds"]);
+  await call("post", "/v1/users/asha/purchases", "/v1/users/{userId}/purchases", { item: "gold_frame" });
+  const capped = await call("post", "/v1/users/asha/purchases", "/v1/users/{userId}/purchases", { item: "gold_frame" });
+  assert.deepEqual([capped.status, capped.json.code], [409, "limit_reached"]);
+  await call("post", "/v1/users/asha/purchases", "/v1/users/{userId}/purchases", { item: "nope" }); // 404
+  await call("post", "/v1/users/asha/purchases", "/v1/users/{userId}/purchases", { item: "sticker", quantity: 0 }); // 400
+  const history = await call("get", "/v1/users/asha/purchases?limit=1", "/v1/users/{userId}/purchases");
+  await call("get", `/v1/users/asha/purchases?limit=1&cursor=${history.json.nextCursor}`, "/v1/users/{userId}/purchases");
+  await call("get", "/v1/users/asha", "/v1/users/{userId}"); // with a wallet and inventory
+
   await call("get", "/health", "/health", undefined, { key: null });
   store.ping = async () => {
     throw new Error("down");

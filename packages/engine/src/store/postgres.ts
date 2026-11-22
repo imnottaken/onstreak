@@ -7,6 +7,8 @@ import type {
   EventPageQuery,
   FriendRecord,
   QuestProgress,
+  PurchasePageQuery,
+  PurchaseRecord,
   RivalRecord,
   WindowScoreQuery,
   EventRecord,
@@ -98,6 +100,18 @@ function rowToQuest(r: Record<string, unknown>): QuestProgress {
     periodKey: String(r.period_key),
     progress: num(r.progress),
     completedAt: r.completed_at === null || r.completed_at === undefined ? null : ms(r.completed_at),
+  };
+}
+
+function rowToPurchase(r: Record<string, unknown>): PurchaseRecord {
+  return {
+    id: String(r.id),
+    itemId: String(r.item_id),
+    quantity: num(r.quantity),
+    currency: String(r.currency),
+    cost: num(r.cost),
+    purchasedAt: ms(r.purchased_at),
+    idempotencyKey: (r.idempotency_key as string | null) ?? null,
   };
 }
 
@@ -253,6 +267,37 @@ export class PostgresStore implements Store {
         const { rows } = await q.query(`select total from ${t.balances} where user_id = $1 and currency = $2`, [userId, currency]);
         return rows[0] ? num(rows[0].total) : 0;
       },
+      async getSpent(currency) {
+        const { rows } = await q.query(`select spent from ${t.balances} where user_id = $1 and currency = $2`, [userId, currency]);
+        return rows[0] ? num(rows[0].spent) : 0;
+      },
+      async getInventory(itemId) {
+        const { rows } = await q.query(`select quantity from ${t.inventory} where user_id = $1 and item_id = $2`, [userId, itemId]);
+        return rows[0] ? num(rows[0].quantity) : 0;
+      },
+      async findPurchase(key) {
+        const { rows } = await q.query(`select * from ${t.purchases} where user_id = $1 and idempotency_key = $2`, [userId, key]);
+        return rows[0] ? rowToPurchase(rows[0]) : null;
+      },
+      async recordPurchase(p) {
+        await q.query(
+          `insert into ${t.purchases} (id, user_id, item_id, quantity, currency, cost, purchased_at, idempotency_key)
+           values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [p.id, userId, p.itemId, p.quantity, p.currency, p.cost, new Date(p.purchasedAt).toISOString(), p.idempotencyKey],
+        );
+        await q.query(
+          `insert into ${t.balances} (user_id, currency, total, spent) values ($1, $2, 0, $3)
+           on conflict (user_id, currency) do update set spent = ${t.balances}.spent + excluded.spent`,
+          [userId, p.currency, p.cost],
+        );
+        const { rows } = await q.query(
+          `insert into ${t.inventory} (user_id, item_id, quantity) values ($1, $2, $3)
+           on conflict (user_id, item_id) do update set quantity = ${t.inventory}.quantity + excluded.quantity
+           returning quantity`,
+          [userId, p.itemId, p.quantity],
+        );
+        return num(rows[0]?.quantity);
+      },
       async getStreak(id) {
         const { rows } = await q.query(`select * from ${t.streaks} where user_id = $1 and streak_id = $2`, [userId, id]);
         return rows[0] ? rowToStreak(rows[0]) : null;
@@ -357,10 +402,11 @@ export class PostgresStore implements Store {
 
   async snapshot(userId: string): Promise<UserSnapshot> {
     const t = this.t;
-    const [profile, metrics, balances, streaks, achievements] = await Promise.all([
+    const [profile, metrics, balances, inventory, streaks, achievements] = await Promise.all([
       this.db.query(`select display_name, avatar_url, metadata, timezone from ${t.users} where id = $1`, [userId]),
       this.db.query(`select key, total from ${t.metrics} where user_id = $1`, [userId]),
-      this.db.query(`select currency, total from ${t.balances} where user_id = $1`, [userId]),
+      this.db.query(`select currency, total, spent from ${t.balances} where user_id = $1`, [userId]),
+      this.db.query(`select item_id, quantity from ${t.inventory} where user_id = $1 and quantity > 0`, [userId]),
       this.db.query(`select * from ${t.streaks} where user_id = $1`, [userId]),
       this.db.query(`select achievement_id, unlocked_at from ${t.achievements} where user_id = $1 order by unlocked_at`, [userId]),
     ]);
@@ -368,6 +414,8 @@ export class PostgresStore implements Store {
       profile: rowToProfile(profile.rows[0]),
       metrics: Object.fromEntries(metrics.rows.map((r) => [String(r.key), num(r.total)])),
       balances: Object.fromEntries(balances.rows.map((r) => [String(r.currency), num(r.total)])),
+      spent: Object.fromEntries(balances.rows.filter((r) => num(r.spent) !== 0).map((r) => [String(r.currency), num(r.spent)])),
+      inventory: Object.fromEntries(inventory.rows.map((r) => [String(r.item_id), num(r.quantity)])),
       streaks: Object.fromEntries(streaks.rows.map((r) => [String(r.streak_id), rowToStreak(r)])),
       achievements: achievements.rows.map((r) => ({ id: String(r.achievement_id), unlockedAt: iso(r.unlocked_at) })),
     };
@@ -438,6 +486,18 @@ export class PostgresStore implements Store {
       recordedAt: ms(r.recorded_at),
       result: r.result ? json<TrackResult>(r.result) : null,
     }));
+  }
+
+  async purchases(userId: string, query: PurchasePageQuery): Promise<PurchaseRecord[]> {
+    const { rows } = await this.db.query(
+      `select * from ${this.t.purchases}
+       where user_id = $1
+         and ($2::timestamptz is null or (purchased_at, id) < ($2::timestamptz, $3::uuid))
+       order by purchased_at desc, id desc
+       limit $4`,
+      [userId, query.before ? new Date(query.before.ts).toISOString() : null, query.before?.id ?? null, query.limit],
+    );
+    return rows.map(rowToPurchase);
   }
 
   async addFriendship(a: string, b: string, ts: number, maxFriends: number): Promise<boolean> {

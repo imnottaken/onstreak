@@ -18,6 +18,8 @@ import type {
   StoredEvent,
   UserSnapshot,
   QuestProgress,
+  PurchasePageQuery,
+  PurchaseRecord,
   UserTx,
 } from "./types.js";
 
@@ -31,6 +33,10 @@ interface UserData {
   achievements: Map<string, number>;
   /** Keyed by "questId|periodKey". */
   quests: Map<string, QuestProgress>;
+  spent: Map<string, number>;
+  inventory: Map<string, number>;
+  /** Oldest first. */
+  purchases: PurchaseRecord[];
 }
 
 interface LedgerRow {
@@ -70,6 +76,9 @@ export class MemoryStore implements Store {
         streaks: new Map(),
         achievements: new Map(),
         quests: new Map(),
+        spent: new Map(),
+        inventory: new Map(),
+        purchases: [],
       };
       this.users.set(userId, d);
     }
@@ -123,6 +132,19 @@ export class MemoryStore implements Store {
         return total;
       },
       getBalance: async (currency) => d.balances.get(currency) ?? 0,
+      getSpent: async (currency) => d.spent.get(currency) ?? 0,
+      getInventory: async (itemId) => d.inventory.get(itemId) ?? 0,
+      findPurchase: async (key) => {
+        const p = d.purchases.find((x) => x.idempotencyKey === key);
+        return p ? { ...p } : null;
+      },
+      recordPurchase: async (p) => {
+        d.purchases.push({ ...p });
+        d.spent.set(p.currency, (d.spent.get(p.currency) ?? 0) + p.cost);
+        const owned = (d.inventory.get(p.itemId) ?? 0) + p.quantity;
+        d.inventory.set(p.itemId, owned);
+        return owned;
+      },
       getStreak: async (id) => {
         const s = d.streaks.get(id);
         return s ? { ...s } : null;
@@ -185,11 +207,13 @@ export class MemoryStore implements Store {
 
   async snapshot(userId: string): Promise<UserSnapshot> {
     const d = this.users.get(userId);
-    if (!d) return { profile: emptyProfile(), metrics: {}, balances: {}, streaks: {}, achievements: [] };
+    if (!d) return { profile: emptyProfile(), metrics: {}, balances: {}, spent: {}, inventory: {}, streaks: {}, achievements: [] };
     return {
       profile: copyProfile(d.profile),
       metrics: Object.fromEntries(d.metrics),
       balances: Object.fromEntries(d.balances),
+      spent: Object.fromEntries(d.spent),
+      inventory: Object.fromEntries([...d.inventory].filter(([, n]) => n > 0)),
       streaks: Object.fromEntries([...d.streaks].map(([k, v]) => [k, { ...v }])),
       achievements: [...d.achievements]
         .sort((a, b) => a[1] - b[1])
@@ -237,6 +261,17 @@ export class MemoryStore implements Store {
       .filter((e) => !before || e.ts < before.ts || (e.ts === before.ts && e.id < before.id))
       .slice(0, q.limit)
       .map((e) => ({ id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result }));
+  }
+
+  async purchases(userId: string, q: PurchasePageQuery): Promise<PurchaseRecord[]> {
+    const d = this.users.get(userId);
+    if (!d) return [];
+    const before = q.before;
+    return [...d.purchases]
+      .sort((a, b) => b.purchasedAt - a.purchasedAt || (a.id < b.id ? 1 : -1))
+      .filter((p) => !before || p.purchasedAt < before.ts || (p.purchasedAt === before.ts && p.id < before.id))
+      .slice(0, q.limit)
+      .map((p) => ({ ...p }));
   }
 
   async addFriendship(a: string, b: string, ts: number, maxFriends: number): Promise<boolean> {

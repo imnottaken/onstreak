@@ -21,6 +21,7 @@ const schemas = {
     additionalProperties: false,
     properties: {
       error: { type: "string", description: "What went wrong, in plain words." },
+      code: { type: "string", description: 'A stable reason to branch on, when there is one: "insufficient_funds", "limit_reached".' },
       requestId: { type: "string", description: "Matches the x-request-id header and the server logs." },
     },
   },
@@ -165,6 +166,83 @@ const schemas = {
       },
     },
   },
+  Price: {
+    type: "object",
+    required: ["currency", "amount"],
+    additionalProperties: false,
+    properties: { currency: { type: "string" }, amount: { type: "number", minimum: 0 } },
+  },
+  RewardStore: {
+    type: "object",
+    required: ["userId", "wallet", "items"],
+    additionalProperties: false,
+    properties: {
+      userId: { type: "string" },
+      wallet: map({ type: "number" }),
+      items: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id", "name", "price", "limit", "owned", "canBuy"],
+          additionalProperties: false,
+          properties: {
+            id: { type: "string" },
+            name: { type: "string" },
+            description: { type: "string" },
+            price: ref("Price"),
+            limit: nullable({ type: "integer", minimum: 1 }),
+            metadata: { type: "object" },
+            owned: { type: "integer", minimum: 0 },
+            canBuy: { type: "boolean", description: "The user can afford one more and is under the limit." },
+          },
+        },
+      },
+    },
+  },
+  PurchaseInput: {
+    type: "object",
+    required: ["item"],
+    additionalProperties: false,
+    properties: {
+      item: { type: "string" },
+      quantity: { type: "integer", minimum: 1, maximum: 1000, default: 1 },
+      idempotencyKey: { type: "string", minLength: 1, maxLength: 200, description: "Retries with the same key return the first purchase." },
+    },
+  },
+  Purchase: {
+    type: "object",
+    required: ["id", "item", "name", "quantity", "cost", "purchasedAt"],
+    additionalProperties: false,
+    properties: {
+      id: { type: "string", format: "uuid" },
+      item: { type: "string" },
+      name: nullable({ type: "string" }),
+      quantity: { type: "integer", minimum: 1 },
+      cost: ref("Price"),
+      purchasedAt: { type: "string", format: "date-time" },
+    },
+  },
+  PurchaseResult: {
+    type: "object",
+    required: ["userId", "purchase", "duplicate", "wallet", "owned"],
+    additionalProperties: false,
+    properties: {
+      userId: { type: "string" },
+      purchase: ref("Purchase"),
+      duplicate: { type: "boolean" },
+      wallet: map({ type: "number" }),
+      owned: { type: "integer", minimum: 0 },
+    },
+  },
+  PurchaseHistory: {
+    type: "object",
+    required: ["purchases", "nextCursor"],
+    additionalProperties: false,
+    properties: {
+      purchases: { type: "array", items: ref("Purchase") },
+      nextCursor: nullable({ type: "string" }),
+    },
+  },
   Profile: {
     type: "object",
     required: ["displayName", "avatarUrl", "metadata", "timezone"],
@@ -189,12 +267,14 @@ const schemas = {
   },
   UserProfile: {
     type: "object",
-    required: ["userId", "profile", "points", "level", "metrics", "streaks", "achievements"],
+    required: ["userId", "profile", "points", "wallet", "inventory", "level", "metrics", "streaks", "achievements"],
     additionalProperties: false,
     properties: {
       userId: { type: "string" },
       profile: ref("Profile"),
-      points: map({ type: "number" }),
+      points: map({ type: "number", description: "Points earned. Spending does not lower these." }),
+      wallet: map({ type: "number", description: "Points left to spend: earned minus spent." }),
+      inventory: map({ type: "integer", description: "Items owned, by item id." }),
       level: nullable({
         type: "object",
         required: ["current", "points", "startsAt", "nextAt"],
@@ -524,6 +604,34 @@ export function openapiSpec(version: string) {
           summary: "Every quest for the current day or week, with the user's progress",
           parameters: [{ name: "timezone", in: "query", schema: { type: "string" }, description: "Override the zone that decides when days start." }],
           responses: { "200": ok("The user's quests", ref("QuestList")), ...authErrors },
+        },
+      },
+      "/v1/users/{userId}/store": {
+        parameters: [userIdParam],
+        get: {
+          operationId: "rewardStore",
+          summary: "The reward store: spendable balances, and what the user owns and can buy",
+          responses: { "200": ok("The store for this user", ref("RewardStore")), ...authErrors },
+        },
+      },
+      "/v1/users/{userId}/purchases": {
+        parameters: [userIdParam],
+        post: {
+          operationId: "purchase",
+          summary: "Buy an item with points",
+          requestBody: { required: true, content: json(ref("PurchaseInput")) },
+          responses: {
+            "200": ok("The purchase and the balances after it", ref("PurchaseResult")),
+            ...authErrors,
+            "404": errorResponse("Unknown item"),
+            "409": errorResponse('Not enough points (code "insufficient_funds") or the item limit is reached (code "limit_reached")'),
+          },
+        },
+        get: {
+          operationId: "purchases",
+          summary: "A user's purchases, newest first",
+          parameters: [limitParam(), { name: "cursor", in: "query", schema: { type: "string" }, description: "nextCursor from the previous page." }],
+          responses: { "200": ok("A page of purchases", ref("PurchaseHistory")), ...authErrors },
         },
       },
       "/v1/users/{userId}/friends": {
