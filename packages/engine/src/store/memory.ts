@@ -391,6 +391,14 @@ export class MemoryStore implements Store {
       .map((e) => ({ id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result, properties: e.properties ? { ...e.properties } : null }));
   }
 
+  async activeStreaks(streakId: string, afterUserId: string | null, limit: number) {
+    return [...this.users.entries()]
+      .filter(([id, d]) => (afterUserId === null || id > afterUserId) && (d.streaks.get(streakId)?.current ?? 0) > 0)
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .slice(0, limit)
+      .map(([userId, d]) => ({ userId, state: { ...d.streaks.get(streakId)! }, timezone: d.profile.timezone }));
+  }
+
   async communityTotal(q: CommunityTotalQuery): Promise<number> {
     let total = 0;
     if (q.kind === "points") {

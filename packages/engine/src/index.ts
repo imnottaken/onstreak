@@ -47,6 +47,7 @@ export type {
   AchievementStatus,
   AchievementList,
   LeaderboardHistory,
+  StreaksAtRisk,
 } from "./engine.js";
 export { FriendLimitError, RivalLimitError, TeamFullError, AlreadyInTeamError } from "./store/types.js";
 export { zoneFor, outcomeFor, nextTier, currentRound, roundFromKey, nextRoundKey } from "./leagues.js";

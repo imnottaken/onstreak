@@ -541,6 +541,19 @@ export function createClient(options: ClientOptions) {
       const qs = params.toString();
       return call<TeamLeaderboard>("GET", `/v1/leaderboards/${encodeURIComponent(id)}/teams${qs ? `?${qs}` : ""}`);
     },
+    /** Users whose streak is going but who have not done this period's activity yet, for reminders. */
+    streaksAtRisk: (streakId: string, opts: { limit?: number; endingWithinHours?: number; cursor?: string } = {}) => {
+      const params = new URLSearchParams();
+      if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+      if (opts.endingWithinHours !== undefined) params.set("endingWithinHours", String(opts.endingWithinHours));
+      if (opts.cursor) params.set("cursor", opts.cursor);
+      const qs = params.toString();
+      return call<{
+        streak: string;
+        users: Array<{ userId: string; displayName: string | null; current: number; freezes: number; endsAt: string; lastChance: boolean }>;
+        nextCursor: string | null;
+      }>("GET", `/v1/streaks/${encodeURIComponent(streakId)}/at-risk${qs ? `?${qs}` : ""}`);
+    },
     /** Winners of past windows, newest first, fixed as they stood when each closed. */
     leaderboardHistory: (id: string, opts: { periods?: number; top?: number } = {}) => {
       const params = new URLSearchParams();

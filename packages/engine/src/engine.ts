@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, type StreakRule, matchesWhere, boostSpecProblem, achievementLevels, isLeaf, type AchievementCondition, type AchievementLeaf, questGoals, questRunsAt, type QuestGoal } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
-import { breakPeriod, shiftPeriod, streakPeriodKey, streakPeriodsBetween, initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
+import { breakPeriod, missedBetween, shiftPeriod, streakPeriodKey, streakPeriodsBetween, initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
 import { AlreadyInTeamError, FriendLimitError, RivalLimitError, TeamFullError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type ReferralRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
 import { addDays, isValidTimeZone, leaderboardWindow, periodKey, periodsBetween, startOfDay, type LeaderboardPeriod } from "./time.js";
 
@@ -135,6 +135,24 @@ export interface LeaderboardResult {
   to: string | null;
   entries: RankedUser[];
   user: RankedUser | null;
+}
+
+export interface StreaksAtRisk {
+  streak: string;
+  /** Users whose streak is still going but who have not done this period's activity yet. */
+  users: Array<{
+    userId: string;
+    displayName: string | null;
+    current: number;
+    /** Freezes left once the periods already missed are covered. */
+    freezes: number;
+    /** When the period ends in the user's time zone. Missing it uses a freeze, or breaks the streak. */
+    endsAt: string;
+    /** True when no freeze is left, so missing this period breaks the streak. */
+    lastChance: boolean;
+  }>;
+  /** Pass as `cursor` to keep going, or null when every user was checked. */
+  nextCursor: string | null;
 }
 
 export interface LeaderboardHistory {
@@ -1143,6 +1161,65 @@ export class Engine {
       ...(segment ? { segment: { ...segment } } : {}),
       entries: entries.map((e) => withProfile(e, names)),
       user: user ? withProfile(user, names) : null,
+    };
+  }
+
+  /**
+   * Users who have a streak going but have not done this period's activity
+   * yet, for reminders ("your 12-day streak ends at midnight"). Each user's
+   * own time zone decides when their period ends. Pages by user id.
+   */
+  async streaksAtRisk(streakId: string, options: { limit?: number; cursor?: string; endingWithinHours?: number } = {}): Promise<StreaksAtRisk> {
+    const rule = this.config.streaks.find((s) => s.id === streakId);
+    if (!rule) throw new EngineError(`unknown streak "${String(streakId)}"`, 404);
+    const limit = options.limit ?? 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new EngineError("limit must be a whole number from 1 to 500");
+    const within = options.endingWithinHours;
+    if (within !== undefined && !(typeof within === "number" && within > 0 && within <= 24 * 31)) throw new EngineError("endingWithinHours must be above 0 and at most 744");
+    let after: string | null = null;
+    if (options.cursor !== undefined) {
+      try {
+        after = Buffer.from(options.cursor, "base64url").toString("utf8");
+      } catch {
+        after = null;
+      }
+      if (!after || !USER_ID.test(after)) throw new EngineError("cursor is not valid");
+    }
+    const now = this.now();
+    const found: Array<Omit<StreaksAtRisk["users"][number], "displayName">> = [];
+    let lastSeen: string | null = after;
+    let exhausted = false;
+    // Scan in pages until the page is full; at most 20 pages per call.
+    for (let page = 0; page < 20 && found.length < limit; page++) {
+      const rows = await this.store.activeStreaks(rule.id, lastSeen, 500);
+      if (rows.length === 0) {
+        exhausted = true;
+        break;
+      }
+      for (const row of rows) {
+        lastSeen = row.userId;
+        const zone = row.timezone ?? this.config.defaultTimezone;
+        const period = streakPeriodKey(rule, now, zone);
+        const status = streakStatus(rule, row.state, period);
+        if (status.status !== "pending") continue;
+        const next = shiftPeriod(rule, period, 1);
+        // Skipping a period that is not required (a weekend with skipWeekends) costs nothing.
+        if (missedBetween(rule, row.state.lastPeriod!, next) === missedBetween(rule, row.state.lastPeriod!, period)) continue;
+        const endsAt = startOfDay(next, zone);
+        if (within !== undefined && endsAt - now > within * 3_600_000) continue;
+        found.push({ userId: row.userId, current: status.current, freezes: status.freezes - missedBetween(rule, row.state.lastPeriod!, period), endsAt: new Date(endsAt).toISOString(), lastChance: breakPeriod(rule, row.state.lastPeriod!, row.state.freezes) === next });
+        if (found.length === limit) break;
+      }
+      if (rows.length < 500 && found.length < limit) {
+        exhausted = true;
+        break;
+      }
+    }
+    const names = await this.store.profiles(found.map((f) => f.userId));
+    return {
+      streak: rule.id,
+      users: found.map((f) => ({ ...f, displayName: names[f.userId]?.displayName ?? null })),
+      nextCursor: exhausted || lastSeen === null ? null : Buffer.from(lastSeen).toString("base64url"),
     };
   }
 

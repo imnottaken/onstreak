@@ -337,6 +337,8 @@ export interface Store {
   /** A user's progress on these quest periods. Periods never started are left out. */
   quests(userId: string, keys: Array<{ questId: string; periodKey: string }>): Promise<QuestProgress[]>;
   communityTotal(query: CommunityTotalQuery): Promise<number>;
+  /** Users with a running streak (current > 0), by user id after `afterUserId`, with their saved time zone. */
+  activeStreaks(streakId: string, afterUserId: string | null, limit: number): Promise<Array<{ userId: string; state: StreakState; timezone: string | null }>>;
   /** Community goals whose rewards this user has claimed. */
   communityClaims(userId: string): Promise<Set<string>>;
   /** Season awards this user has taken, by season id. */

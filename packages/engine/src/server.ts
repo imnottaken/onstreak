@@ -254,6 +254,19 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
       if (req.method === "GET" && resource === "users" && id && sub === "team" && parts.length === 4) {
         return send(200, await engine.userTeam(id));
       }
+      if (req.method === "GET" && resource === "streaks" && id && sub === "at-risk" && parts.length === 4) {
+        const limit = intParam(url, "limit");
+        const hours = url.searchParams.get("endingWithinHours");
+        const cursor = url.searchParams.get("cursor") ?? undefined;
+        return send(
+          200,
+          await engine.streaksAtRisk(id, {
+            ...(limit !== undefined ? { limit } : {}),
+            ...(hours !== null ? { endingWithinHours: Number(hours) } : {}),
+            ...(cursor ? { cursor } : {}),
+          }),
+        );
+      }
       if (req.method === "GET" && resource === "leaderboards" && id && sub === "history" && parts.length === 4) {
         const periods = intParam(url, "periods");
         const top = intParam(url, "top");

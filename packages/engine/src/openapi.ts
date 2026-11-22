@@ -832,6 +832,31 @@ const schemas = {
       avatarUrl: nullable({ type: "string" }),
     },
   },
+  StreaksAtRisk: {
+    type: "object",
+    required: ["streak", "users", "nextCursor"],
+    additionalProperties: false,
+    properties: {
+      streak: { type: "string" },
+      users: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["userId", "displayName", "current", "freezes", "endsAt", "lastChance"],
+          additionalProperties: false,
+          properties: {
+            userId: { type: "string" },
+            displayName: nullable({ type: "string" }),
+            current: { type: "integer" },
+            freezes: { type: "integer" },
+            endsAt: { type: "string", format: "date-time", description: "When the period ends in the user's time zone." },
+            lastChance: { type: "boolean", description: "Missing this period breaks the streak (no freeze covers it)." },
+          },
+        },
+      },
+      nextCursor: nullable({ type: "string" }),
+    },
+  },
   LeaderboardHistory: {
     type: "object",
     required: ["id", "currency", "period", "windows"],
@@ -1291,6 +1316,20 @@ export function openapiSpec(version: string) {
           operationId: "userTeam",
           summary: "The team a user is in",
           responses: { "200": ok("The user's team, or null", ref("UserTeam")), ...authErrors },
+        },
+      },
+      "/v1/streaks/{streakId}/at-risk": {
+        parameters: [{ name: "streakId", in: "path", required: true, schema: { type: "string" } }],
+        get: {
+          operationId: "streaksAtRisk",
+          summary: "Users whose streak is going but who have not done this period's activity yet",
+          description: "For reminders. Each user's time zone decides when their period ends. Pages by user id.",
+          parameters: [
+            { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 500, default: 50 } },
+            { name: "endingWithinHours", in: "query", schema: { type: "number", exclusiveMinimum: 0, maximum: 744 }, description: "Only users whose period ends within this many hours." },
+            { name: "cursor", in: "query", schema: { type: "string" }, description: "nextCursor from the previous page." },
+          ],
+          responses: { "200": ok("A page of users at risk", ref("StreaksAtRisk")), ...authErrors, "404": errorResponse("Unknown streak") },
         },
       },
       "/v1/leaderboards/{leaderboardId}/history": {

@@ -95,6 +95,9 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   await call("get", "/v1/leaderboards/xp_weekly/history?periods=2&top=1", "/v1/leaderboards/{leaderboardId}/history");
   await call("get", "/v1/leaderboards/xp_all/history", "/v1/leaderboards/{leaderboardId}/history"); // 400
   await call("get", "/v1/leaderboards/nope/history", "/v1/leaderboards/{leaderboardId}/history"); // 404
+  await call("get", "/v1/streaks/daily_lesson/at-risk?limit=5&endingWithinHours=48", "/v1/streaks/{streakId}/at-risk");
+  await call("get", "/v1/streaks/daily_lesson/at-risk?limit=0", "/v1/streaks/{streakId}/at-risk"); // 400
+  await call("get", "/v1/streaks/nope/at-risk", "/v1/streaks/{streakId}/at-risk"); // 404
   await call("put", "/v1/users/asha/friends/maya", "/v1/users/{userId}/friends/{friendId}");
   const friendsBoard = await call("get", "/v1/leaderboards/xp_weekly?userId=asha&scope=friends", "/v1/leaderboards/{leaderboardId}");
   assert.deepEqual(friendsBoard.json.entries.map((e) => e.userId), ["asha", "maya"]);

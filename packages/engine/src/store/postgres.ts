@@ -661,6 +661,16 @@ export class PostgresStore implements Store {
     }));
   }
 
+  async activeStreaks(streakId: string, afterUserId: string | null, limit: number) {
+    const { rows } = await this.db.query(
+      `select s.*, u.timezone from ${this.t.streaks} s join ${this.t.users} u on u.id = s.user_id
+       where s.streak_id = $1 and s.current > 0 and ($2::text is null or s.user_id > $2)
+       order by s.user_id limit $3`,
+      [streakId, afterUserId, limit],
+    );
+    return rows.map((r) => ({ userId: String(r.user_id), state: rowToStreak(r), timezone: (r.timezone as string | null) ?? null }));
+  }
+
   async communityTotal(q: CommunityTotalQuery): Promise<number> {
     const sql =
       q.kind === "points"

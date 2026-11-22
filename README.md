@@ -128,6 +128,7 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 | `DELETE /v1/rivalries/:id/users/:userId/rivals/:rivalId` | End a rivalry and drop its record |
 | `GET /v1/rivalries/:id/users/:userId` | Each rival's live score this round, win/loss/draw record, current streak and last result |
 | `GET /v1/leaderboards/:id?limit=&userId=&scope=` | Top entries for the current window with names and avatars, plus that user's own rank. `scope=friends` ranks only the user and their friends, zeros included. `around=N` (with `userId`) returns the places around the user instead of the top; `segment=country:IN` ranks only users whose profile metadata matches |
+| `GET /v1/streaks/:id/at-risk?limit=&endingWithinHours=&cursor=` | Users whose streak is going but who have not done this period's activity yet, with when their period ends in their own time zone and whether it is their last chance. For reminders |
 | `GET /v1/leaderboards/:id/history?periods=&top=` | Winners of past windows, newest first, fixed as they stood when each window closed |
 | `PUT /v1/teams/:teamId` | Create a team or rename it: `{ name }` |
 | `GET /v1/teams/:teamId?leaderboard=` | A team and its members; with a leaderboard id, each member's points for the team and the team's rank |
@@ -151,7 +152,7 @@ Spending never lowers earned points. `points` on a user is what they earned (lev
 
 The full machine-readable description is served at `GET /openapi.json` (OpenAPI 3.1, no key needed), so you can generate a client for any language. Tests check every response against it, so it stays accurate.
 
-The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `calendars`, `communityGoals`, `seasons`, `seasonStandings`, `achievements`, `saveTeam`, `team`, `addTeamMember`, `removeTeamMember`, `userTeam`, `teamLeaderboard`, `teamGoals`, `addReferral`, `referrals`, `store`, `purchase`, `purchases`, `useItem`, `refundPurchase`, `repairStreak`, `grantBoost`, `leaderboard`, `leaderboardHistory`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
+The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `calendars`, `communityGoals`, `seasons`, `seasonStandings`, `achievements`, `saveTeam`, `team`, `addTeamMember`, `removeTeamMember`, `userTeam`, `teamLeaderboard`, `teamGoals`, `addReferral`, `referrals`, `store`, `purchase`, `purchases`, `useItem`, `refundPurchase`, `repairStreak`, `grantBoost`, `leaderboard`, `leaderboardHistory`, `streaksAtRisk`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
 
 ## React components
 
