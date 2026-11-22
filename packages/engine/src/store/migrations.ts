@@ -39,6 +39,7 @@ export interface Tables {
   teamGoalRewards: string;
   prestige: string;
   webhookDeliveries: string;
+  notices: string;
 }
 
 export function tableNames(prefix: string): Tables {
@@ -70,6 +71,7 @@ export function tableNames(prefix: string): Tables {
     teamGoalRewards: `${prefix}team_goal_rewards`,
     prestige: `${prefix}prestige`,
     webhookDeliveries: `${prefix}webhook_deliveries`,
+    notices: `${prefix}scheduled_notices`,
   };
 }
 
@@ -443,6 +445,17 @@ export const MIGRATIONS: readonly Migration[] = [
        )`,
       `create index if not exists ${t.prefix}webhook_due on ${t.webhookDeliveries} (next_attempt_at) where status = 'pending'`,
       `create index if not exists ${t.prefix}webhook_log on ${t.webhookDeliveries} (created_at desc, id desc)`,
+    ],
+  },
+  {
+    version: 23,
+    name: "scheduled notices",
+    statements: (t) => [
+      // One row per notice the scheduler has sent (a reminder for a user's period, a season end), so it is sent once.
+      `create table if not exists ${t.notices} (
+         key text primary key,
+         created_at timestamptz not null
+       )`,
     ],
   },
 ];

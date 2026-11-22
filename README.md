@@ -71,6 +71,7 @@ The server migrates the schema on start. Set `ONSTREAK_AUTO_MIGRATE=false` to ma
 | `ONSTREAK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `ONSTREAK_LOG_FORMAT` | `json` | `pretty` for readable local logs |
 | `ONSTREAK_SHUTDOWN_TIMEOUT_MS` | `10000` | How long requests may finish on SIGTERM |
+| `ONSTREAK_SCHEDULER_INTERVAL_MS` | `60000` | How often the server runs scheduled jobs (streak reminders, season ends; only with `webhooks` configured) |
 | `ONSTREAK_WEBHOOK_INTERVAL_MS` | `2000` | How often the server sends due webhook deliveries (only with `webhooks` configured) |
 
 ## Configure
@@ -170,7 +171,7 @@ Add `webhooks` to the config to be told when things happen:
 "webhooks": [{ "id": "app", "url": "https://example.com/onstreak", "events": ["level.up", "achievement.unlocked"], "secretEnv": "ONSTREAK_WEBHOOK_SECRET" }]
 ```
 
-Event types: `level.up`, `achievement.unlocked`, `streak.extended`, `streak.broken`, `quest.completed`, `league.settled` (or `["*"]`). Deliveries are written in the same transaction as the event (an outbox), so they exist exactly when the event does, and the server sends them in the background. Each POST has a JSON body `{ id, type, createdAt, userId, eventId, data }` and the headers `onstreak-event`, `onstreak-delivery` and `onstreak-signature: t=<unix>,v1=<hex>` (HMAC-SHA256 of `t.body`). Check it with `verifyWebhookSignature(secret, rawBody, header)` from `@onstreak/engine`. Answer with any 2xx; anything else is retried with backoff (30 s, 1 min, 2 min, ... up to 6 h) and marked failed after 8 attempts. Several servers can share a database without sending anything twice.
+Event types: `level.up`, `achievement.unlocked`, `streak.extended`, `streak.broken`, `streak.at_risk`, `quest.completed`, `league.settled`, `season.ended` (or `["*"]`). The last two come from the built-in scheduler, no cron needed: a streak with `remindBeforeHours: 3` sends `streak.at_risk` to users who have not acted yet, 3 hours before their period ends (once per period), and `season.ended` is sent once with the season's top 3. Deliveries are written in the same transaction as the event (an outbox), so they exist exactly when the event does, and the server sends them in the background. Each POST has a JSON body `{ id, type, createdAt, userId, eventId, data }` and the headers `onstreak-event`, `onstreak-delivery` and `onstreak-signature: t=<unix>,v1=<hex>` (HMAC-SHA256 of `t.body`). Check it with `verifyWebhookSignature(secret, rawBody, header)` from `@onstreak/engine`. Answer with any 2xx; anything else is retried with backoff (30 s, 1 min, 2 min, ... up to 6 h) and marked failed after 8 attempts. Several servers can share a database without sending anything twice.
 
 ## React components
 

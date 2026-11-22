@@ -119,7 +119,7 @@ test("webhook config is validated", () => {
   bad({ secret: undefined, secretEnv: "ONSTREAK_TEST_MISSING_SECRET" }, /set ONSTREAK_TEST_MISSING_SECRET/);
   process.env.ONSTREAK_TEST_HOOK_SECRET = SECRET;
   assert.equal(resolveConfig({ ...base, webhooks: [{ ...w, secret: undefined, secretEnv: "ONSTREAK_TEST_HOOK_SECRET" }] }).webhooks[0].secret, SECRET);
-  assert.equal(resolveConfig({ ...base, webhooks: [w] }).webhooks[0].events.size, 6);
+  assert.equal(resolveConfig({ ...base, webhooks: [w] }).webhooks[0].events.size, 8);
 });
 
 test("pg: concurrent workers never send a delivery twice", { skip: PG_URL ? false : "set TEST_DATABASE_URL" }, async (t) => {

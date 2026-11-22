@@ -84,6 +84,7 @@ export class MemoryStore implements Store {
   private communityClaimRows = new Set<string>();
   /** Keyed by "userId|seasonId". */
   private webhookRows = new Map<string, WebhookDelivery>();
+  private noticeKeys = new Set<string>();
   private seasonAwardRows = new Map<string, { rank: number; claimedAt: number }>();
   private teamRows = new Map<string, TeamRecord>();
   /** Keyed by user id: a user is in at most one team. */
@@ -411,6 +412,13 @@ export class MemoryStore implements Store {
       .filter((e) => !before || e.ts < before.ts || (e.ts === before.ts && e.id < before.id))
       .slice(0, q.limit)
       .map((e) => ({ id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result, properties: e.properties ? { ...e.properties } : null, reversedAt: (e as { reversedAt?: number | null }).reversedAt ?? null }));
+  }
+
+  async enqueueOnce(key: string, _at: number, deliveries: WebhookDelivery[]): Promise<boolean> {
+    if (this.noticeKeys.has(key)) return false;
+    this.noticeKeys.add(key);
+    for (const r of deliveries) this.webhookRows.set(r.id, structuredClone(r));
+    return true;
   }
 
   async claimWebhooks(now: number, limit: number, leaseMs: number): Promise<WebhookDelivery[]> {

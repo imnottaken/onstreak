@@ -38,7 +38,7 @@ function translationsProblem(t: unknown): string | null {
   return null;
 }
 
-export const WEBHOOK_EVENT_TYPES = ["level.up", "achievement.unlocked", "streak.extended", "streak.broken", "quest.completed", "league.settled"] as const;
+export const WEBHOOK_EVENT_TYPES = ["level.up", "achievement.unlocked", "streak.extended", "streak.broken", "streak.at_risk", "quest.completed", "league.settled", "season.ended"] as const;
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 
 /**
@@ -121,6 +121,8 @@ export interface StreakRule {
   minimum?: number;
   /** Daily streaks only: Saturdays and Sundays are never counted as missed (activity on them still counts). */
   skipWeekends?: boolean;
+  /** Send a streak.at_risk webhook this many hours before a user's period ends, if they have not acted yet (once per period). */
+  remindBeforeHours?: number;
 }
 
 /**
@@ -648,6 +650,9 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
   uniqueIds("streak", streaks.map((s) => s.id));
   for (const s of streaks) {
     if (typeof s.event !== "string" || !ID.test(s.event)) throw new ConfigError(`streak "${s.id}" has bad event "${s.event}"`);
+    if (s.remindBeforeHours !== undefined && !(typeof s.remindBeforeHours === "number" && s.remindBeforeHours > 0 && s.remindBeforeHours <= 744)) {
+      throw new ConfigError(`streak "${s.id}" remindBeforeHours must be above 0 and at most 744`);
+    }
     const streakWhere = whereProblem(s.where);
     if (streakWhere) throw new ConfigError(`streak "${s.id}": ${streakWhere}`);
     if (!STREAK_PERIODS.includes(s.period) && s.period !== "monthly") throw new ConfigError(`streak "${s.id}" period must be daily, weekly or monthly`);

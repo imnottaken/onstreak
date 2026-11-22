@@ -724,6 +724,22 @@ export class PostgresStore implements Store {
     }));
   }
 
+  async enqueueOnce(key: string, at: number, deliveries: WebhookDelivery[]): Promise<boolean> {
+    const t = this.t;
+    return this.db.transaction(async (q) => {
+      const { rows } = await q.query(`insert into ${t.notices} (key, created_at) values ($1, $2) on conflict do nothing returning key`, [key, new Date(at).toISOString()]);
+      if (rows.length === 0) return false;
+      for (const w of deliveries) {
+        await q.query(
+          `insert into ${t.webhookDeliveries} (id, webhook_id, type, user_id, payload, status, attempts, next_attempt_at, created_at)
+           values ($1, $2, $3, $4, $5, 'pending', 0, $6, $7)`,
+          [w.id, w.webhookId, w.type, w.userId, JSON.stringify(w.payload), new Date(w.nextAttemptAt).toISOString(), new Date(w.createdAt).toISOString()],
+        );
+      }
+      return true;
+    });
+  }
+
   async claimWebhooks(now: number, limit: number, leaseMs: number): Promise<WebhookDelivery[]> {
     const t = this.t;
     const { rows } = await this.db.query(

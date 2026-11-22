@@ -1153,6 +1153,11 @@ export class Engine {
     }
     for (const [quest, q] of Object.entries(r.quests)) if (q.completed) notes.push({ type: "quest.completed", data: { quest, rewards: q.rewards } });
     for (const [league, l] of Object.entries(r.leagues)) if (l.joined && l.previous) notes.push({ type: "league.settled", data: { league, ...l.previous } });
+    return this.deliveriesFor(notes, r.userId, r.eventId, at);
+  }
+
+  /** One outbox row per note per webhook that wants its type. A null user is a system notice (e.g. a season ending). */
+  private deliveriesFor(notes: Array<{ type: WebhookEventType; data: Record<string, unknown> }>, userId: string | null, eventId: string | null, at: number): WebhookDelivery[] {
     const rows: WebhookDelivery[] = [];
     for (const n of notes) {
       for (const hook of this.config.webhooks) {
@@ -1162,8 +1167,8 @@ export class Engine {
           id,
           webhookId: hook.id,
           type: n.type,
-          userId: r.userId,
-          payload: { id, type: n.type, createdAt: new Date(at).toISOString(), userId: r.userId, eventId: r.eventId, data: n.data },
+          userId: userId ?? "",
+          payload: { id, type: n.type, createdAt: new Date(at).toISOString(), userId, eventId, data: n.data },
           status: "pending",
           attempts: 0,
           nextAttemptAt: at,
@@ -1174,6 +1179,43 @@ export class Engine {
       }
     }
     return rows;
+  }
+
+  /**
+   * Run the scheduled jobs once (the server does every minute): queue a
+   * streak.at_risk webhook for users whose period ends within the streak's
+   * remindBeforeHours and who have not acted yet (once per user per period),
+   * and a season.ended webhook once for each season that ended in the last
+   * 7 days, with its top 3. Safe to run from several servers at once.
+   */
+  async runScheduledJobs(): Promise<{ reminders: number; seasonsEnded: number }> {
+    const wants = (type: WebhookEventType) => this.config.webhooks.some((w) => w.events.has(type));
+    let reminders = 0;
+    let seasonsEnded = 0;
+    const now = this.now();
+    if (wants("streak.at_risk")) {
+      for (const rule of this.config.streaks) {
+        if (rule.remindBeforeHours === undefined) continue;
+        let cursor: string | undefined;
+        do {
+          const page = await this.streaksAtRisk(rule.id, { limit: 500, endingWithinHours: rule.remindBeforeHours, ...(cursor ? { cursor } : {}) });
+          for (const u of page.users) {
+            const rows = this.deliveriesFor([{ type: "streak.at_risk", data: { streak: rule.id, current: u.current, freezes: u.freezes, endsAt: u.endsAt, lastChance: u.lastChance } }], u.userId, null, now);
+            if (await this.store.enqueueOnce(`remind:${rule.id}:${u.userId}:${u.endsAt}`, now, rows)) reminders++;
+          }
+          cursor = page.nextCursor ?? undefined;
+        } while (cursor);
+      }
+    }
+    if (wants("season.ended")) {
+      for (const s of this.config.seasons) {
+        if (s.to > now || now - s.to > 7 * 86_400_000) continue;
+        const standings = await this.seasonStandings(s.id, { limit: 3 });
+        const rows = this.deliveriesFor([{ type: "season.ended", data: { season: s.id, name: s.name, endsAt: standings.endsAt, top: standings.entries } }], null, null, now);
+        if (await this.store.enqueueOnce(`season-ended:${s.id}`, now, rows)) seasonsEnded++;
+      }
+    }
+    return { reminders, seasonsEnded };
   }
 
   /**

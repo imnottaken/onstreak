@@ -60,6 +60,28 @@ async function serve(env: NodeJS.ProcessEnv): Promise<void> {
     logger.info("webhook delivery on", { webhooks: engine.config.webhooks.length, everyMs: every });
   }
 
+  // Scheduled jobs (streak reminders, season ends) only matter when webhooks carry them.
+  let jobsTimer: NodeJS.Timeout | null = null;
+  if (engine.config.webhooks.length > 0) {
+    const every = Number(env.ONSTREAK_SCHEDULER_INTERVAL_MS ?? 60_000);
+    let busy = false;
+    const run = () => {
+      if (busy) return;
+      busy = true;
+      engine
+        .runScheduledJobs()
+        .then((r) => {
+          if (r.reminders > 0 || r.seasonsEnded > 0) logger.info("scheduled jobs", r);
+        })
+        .catch((err) => logger.error("scheduled jobs failed", { err }))
+        .finally(() => {
+          busy = false;
+        });
+    };
+    jobsTimer = setInterval(run, every);
+    run();
+  }
+
   let stopping = false;
   const stop = async (signal: string) => {
     if (stopping) {
@@ -70,6 +92,7 @@ async function serve(env: NodeJS.ProcessEnv): Promise<void> {
     const timeoutMs = Number(env.ONSTREAK_SHUTDOWN_TIMEOUT_MS ?? 10_000);
     logger.info("shutting down", { signal, timeoutMs });
     if (webhookTimer) clearInterval(webhookTimer);
+    if (jobsTimer) clearInterval(jobsTimer);
     const { forced } = await server.shutdown({ timeoutMs });
     logger.info("stopped", { forced });
     process.exit(0);

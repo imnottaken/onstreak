@@ -99,7 +99,7 @@ Things that would hurt early users if they were missing.
 ## Phase 5: Integrations
 
 - [x] **Webhooks** (L). Signed payloads for level-up, unlock, streak extended or broken, promotion, with retries and a delivery log.
-- [ ] **Built-in scheduler** (M). Runs reminders, season ends and league round summaries without an outside cron.
+- [x] **Built-in scheduler** (M). Runs reminders, season ends and league round summaries without an outside cron.
 - [ ] **Email and push nudges** (L). Streak reminders, "league ends in 3 hours", "you lost first place", through Resend, OneSignal or FCM.
 - [ ] **Supabase-native mode** (M). Work with Supabase auth user IDs, row-level security, and database triggers as event sources.
 - [ ] **Postgres-native tracking** (M). Track events with a SQL function or trigger, no HTTP call needed.

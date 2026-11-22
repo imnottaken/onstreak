@@ -372,6 +372,8 @@ export interface Store {
   updateWebhook(id: string, patch: { status: WebhookDelivery["status"]; attempts: number; nextAttemptAt: number; lastError: string | null; deliveredAt: number | null }): Promise<void>;
   /** Deliveries newest first, optionally only one status. */
   webhookDeliveries(query: { status?: WebhookDelivery["status"]; limit: number; before?: { ts: number; id: string } }): Promise<WebhookDelivery[]>;
+  /** Record `key` and queue `deliveries` in one transaction, unless `key` was recorded before. Returns whether it was new. */
+  enqueueOnce(key: string, at: number, deliveries: WebhookDelivery[]): Promise<boolean>;
   /** User ids in order, after `afterUserId`. */
   userIds(afterUserId: string | null, limit: number): Promise<string[]>;
   /** Users with a running streak (current > 0), by user id after `afterUserId`, with their saved time zone. */
