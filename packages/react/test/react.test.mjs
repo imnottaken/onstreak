@@ -15,7 +15,7 @@ const { act } = React;
 const { createRoot } = await import("react-dom/client");
 const { renderToStaticMarkup } = await import("react-dom/server");
 const lib = await import("../dist/index.js");
-const { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast } = lib;
+const { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalCard, RivalList } = lib;
 const h = React.createElement;
 
 /** Mount into the fake DOM; returns the container and an unmount function. */
@@ -221,4 +221,110 @@ test("components accept a className and render on the server without a browser A
   );
   assert.match(html, /class="os-streak os-streak--done mine"/);
   assert.match(html, /class="os-board board"/);
+});
+
+test("rivalry helpers", () => {
+  assert.equal(lib.recordText({ wins: 3, losses: 1, draws: 2 }), "3W 1L 2D");
+  assert.equal(lib.rivalScoreText({ you: 1200, them: 900, leading: "you" }, "Maya"), `You lead ${(1200).toLocaleString()} to 900`);
+  assert.equal(lib.rivalScoreText({ you: 10, them: 20, leading: "them" }, "Maya"), "Maya leads 20 to 10");
+  assert.equal(lib.rivalScoreText({ you: 10, them: 10, leading: "tied" }, "Maya"), "Tied at 10");
+  assert.equal(lib.rivalScoreText({ you: 0, them: 0, leading: "tied" }, "Maya"), "No points yet");
+  assert.equal(lib.rivalStreakText(null), null);
+  assert.equal(lib.rivalStreakText({ outcome: "won", length: 3 }), "Won 3 in a row");
+  assert.equal(lib.rivalStreakText({ outcome: "lost", length: 1 }), "Lost the last one");
+  assert.equal(lib.rivalStreakText({ outcome: "draw", length: 2 }), "2 draws in a row");
+  assert.equal(lib.rivalShare({ you: 0, them: 0 }), 0.5, "an empty round is even");
+  assert.equal(lib.rivalShare({ you: 30, them: 10 }), 0.75);
+});
+
+test("FriendsList shows friends, custom actions, and an empty state", () => {
+  const list = {
+    userId: "asha",
+    friends: [
+      { userId: "maya", displayName: "Maya", avatarUrl: null, since: "2026-11-20T10:00:00.000Z" },
+      { userId: "ravi", displayName: null, avatarUrl: "https://example.com/r.png", since: "2026-11-01T10:00:00.000Z" },
+    ],
+  };
+  const f = fragment(renderToStaticMarkup(h(FriendsList, { friends: list, title: "Friends", renderAction: (fr) => h("button", { type: "button" }, `Challenge ${fr.userId}`) })));
+  assert.equal(f.querySelector(".os-friends").getAttribute("aria-label"), "Friends");
+  const rows = [...f.querySelectorAll(".os-friend")];
+  assert.deepEqual(rows.map((r) => r.querySelector(".os-friend__name").textContent), ["Maya", "ravi"], "falls back to the user id");
+  assert.equal(rows[0].querySelector(".os-avatar--initials").textContent, "MA");
+  assert.equal(rows[1].querySelector("img").getAttribute("src"), "https://example.com/r.png");
+  assert.equal(rows[0].querySelector("time").getAttribute("datetime"), "2026-11-20T10:00:00.000Z");
+  assert.equal(rows[1].querySelector(".os-friend__action button").textContent, "Challenge ravi");
+
+  const empty = fragment(renderToStaticMarkup(h(FriendsList, { friends: { userId: "asha", friends: [] }, emptyText: "Invite someone" })));
+  assert.equal(empty.querySelector(".os-friends__empty").textContent, "Invite someone");
+});
+
+const RIVAL_NOW = Date.parse("2026-11-21T10:00:00Z");
+const rivalry = {
+  rivalryId: "weekly_duel",
+  userId: "asha",
+  round: { key: "2026-11-16", startsAt: "2026-11-16T00:00:00.000Z", endsAt: "2026-11-23T00:00:00.000Z" },
+  rivals: [
+    {
+      rivalId: "maya",
+      displayName: "Maya",
+      avatarUrl: null,
+      since: "2026-11-01T00:00:00.000Z",
+      current: { you: 30, them: 10, leading: "you" },
+      record: { wins: 3, losses: 1, draws: 0 },
+      streak: { outcome: "won", length: 2 },
+      last: { round: "2026-11-09", you: 50, them: 40, outcome: "won" },
+    },
+    {
+      rivalId: "ravi",
+      displayName: null,
+      avatarUrl: null,
+      since: "2026-11-20T00:00:00.000Z",
+      current: { you: 0, them: 0, leading: "tied" },
+      record: { wins: 0, losses: 0, draws: 0 },
+      streak: null,
+      last: null,
+    },
+  ],
+};
+
+test("RivalCard shows the live score, time left, record, streak and last round", () => {
+  const f = fragment(renderToStaticMarkup(h(RivalCard, { rival: rivalry.rivals[0], round: rivalry.round, now: RIVAL_NOW })));
+  const card = f.querySelector(".os-rival");
+  assert.ok(card.classList.contains("os-rival--you"));
+  assert.equal(card.getAttribute("aria-label"), "You vs Maya");
+  assert.equal(f.querySelector(".os-rival__ends").textContent, "Ends in 1d 14h");
+  assert.equal(f.querySelector(".os-rival__status").textContent, "You lead 30 to 10");
+  assert.equal(f.querySelector(".os-rival__bar-you").style.width, "75%");
+  const stats = [...f.querySelectorAll(".os-rival__stats dd")].map((d) => d.textContent);
+  assert.deepEqual(stats, ["3W 1L 0D", "Won 2 in a row", "Won 50 to 40"]);
+  assert.equal(f.querySelector(".os-rival__stats dd").getAttribute("aria-label"), "3 wins, 1 losses, 0 draws");
+
+  const fresh = fragment(renderToStaticMarkup(h(RivalCard, { rival: rivalry.rivals[1], round: rivalry.round, now: RIVAL_NOW })));
+  assert.equal(fresh.querySelector(".os-rival__name").textContent, "You vs ravi");
+  assert.equal(fresh.querySelector(".os-rival__status").textContent, "No points yet");
+  assert.equal(fresh.querySelector(".os-rival__bar-you").style.width, "50%");
+  assert.equal(fresh.querySelectorAll(".os-rival__stats dd").length, 1, "no streak or last round yet");
+});
+
+test("RivalList renders one card per rival, or an empty state", () => {
+  const f = fragment(renderToStaticMarkup(h(RivalList, { status: rivalry, title: "Weekly duels", unitLabel: "min", now: RIVAL_NOW })));
+  assert.equal(f.querySelector(".os-rivals__title").textContent, "Weekly duels");
+  assert.equal(f.querySelectorAll(".os-rival").length, 2);
+  assert.match(f.querySelector(".os-rival__you").textContent, /30 min/);
+  const empty = fragment(renderToStaticMarkup(h(RivalList, { status: { ...rivalry, rivals: [] }, now: RIVAL_NOW })));
+  assert.equal(empty.querySelector(".os-rivals__empty").textContent, "No rivals yet. Challenge a friend.");
+});
+
+test("RivalCard counts down live", () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.parse("2026-11-22T23:59:30Z") });
+  try {
+    const { container, unmount } = mount(h(RivalCard, { rival: rivalry.rivals[0], round: rivalry.round }));
+    const ends = () => container.querySelector(".os-rival__ends").textContent;
+    assert.equal(ends(), "Ends in less than a minute");
+    act(() => mock.timers.tick(31_000));
+    assert.equal(ends(), "Round ended");
+    unmount();
+  } finally {
+    mock.timers.reset();
+  }
 });

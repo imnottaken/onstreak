@@ -1,6 +1,6 @@
 /* onstreak components. Optional: import "@onstreak/react/styles.css", or style the os-* classes yourself.
    Theme with the --os-* variables. */
-:where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast) {
+:where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast, .os-friends, .os-rivals, .os-rival) {
   --os-fg: #1f2328;
   --os-muted: #656d76;
   --os-bg: #ffffff;
@@ -15,7 +15,7 @@
   font-family: inherit;
 }
 @media (prefers-color-scheme: dark) {
-  :where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast) {
+  :where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast, .os-friends, .os-rivals, .os-rival) {
     --os-fg: #e6edf3;
     --os-muted: #8d96a0;
     --os-bg: #0d1117;
@@ -76,3 +76,31 @@
 .os-toast__list { margin: 4px 0 0; padding-left: 1.1em; }
 .os-toast__description { color: var(--os-muted); font-size: 0.875em; }
 .os-toast__close { background: none; border: 0; font-size: 1.25rem; line-height: 1; cursor: pointer; color: var(--os-muted); padding: 0 4px; }
+
+.os-friends__title, .os-rivals__title { margin: 0 0 8px; font-size: 1rem; }
+.os-friends__list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--os-border); border-radius: var(--os-radius); overflow: hidden; }
+.os-friend { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--os-border); background: var(--os-bg); }
+.os-friend:first-child { border-top: 0; }
+.os-friend__name { flex: 1 0 auto; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.os-friend__since { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: auto; }
+.os-friend__action { flex: none; }
+.os-friend__since, .os-friends__empty, .os-rivals__empty { color: var(--os-muted); font-size: 0.875rem; }
+
+.os-rivals { display: grid; gap: 10px; }
+.os-rivals__title { margin: 0; }
+.os-rival { padding: 12px 14px; background: var(--os-bg); border: 1px solid var(--os-border); border-radius: var(--os-radius); }
+.os-rival__header { display: flex; align-items: center; gap: 10px; }
+.os-rival__name { flex: 1; margin: 0; font-size: 1rem; }
+.os-rival__ends { color: var(--os-muted); font-size: 0.875rem; }
+.os-rival__status { margin: 10px 0 4px; font-weight: 600; }
+.os-rival--you .os-rival__status { color: var(--os-up); }
+.os-rival--them .os-rival__status { color: var(--os-down); }
+.os-rival__scores { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; font-size: 0.875rem; }
+.os-rival__bar { height: 10px; margin-top: 4px; background: var(--os-surface); border: 1px solid var(--os-border); border-radius: 999px; overflow: hidden; }
+.os-rival__bar-you { height: 100%; background: var(--os-accent); transition: width 300ms ease; }
+@media (prefers-reduced-motion: reduce) { .os-rival__bar-you { transition: none; } }
+.os-rival__stats { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 10px 0 0; font-size: 0.875rem; }
+.os-rival__stats dt { color: var(--os-muted); font-size: 0.75rem; }
+.os-rival__stats dd { margin: 0; font-weight: 600; }
+.os-rival__streak--won, .os-rival__last--won { color: var(--os-up); }
+.os-rival__streak--lost, .os-rival__last--lost { color: var(--os-down); }

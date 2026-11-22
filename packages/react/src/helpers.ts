@@ -54,3 +54,29 @@ export function displayNameOf(entry: { userId: string; displayName: string | nul
 export function countdownTick(msLeft: number): number {
   return msLeft <= 60_000 ? 1000 : 30_000;
 }
+
+/** "3W 1L 2D". */
+export function recordText(record: { wins: number; losses: number; draws: number }): string {
+  return `${record.wins}W ${record.losses}L ${record.draws}D`;
+}
+
+/** Who is ahead this round, in words: "You lead 30 to 20", "Maya leads 20 to 10", "Tied at 10", "No points yet". */
+export function rivalScoreText(current: { you: number; them: number; leading: "you" | "them" | "tied" }, rivalName: string): string {
+  if (current.leading === "you") return `You lead ${current.you.toLocaleString()} to ${current.them.toLocaleString()}`;
+  if (current.leading === "them") return `${rivalName} leads ${current.them.toLocaleString()} to ${current.you.toLocaleString()}`;
+  return current.you === 0 ? "No points yet" : `Tied at ${current.you.toLocaleString()}`;
+}
+
+/** "Won 3 in a row", "Lost the last one", "2 draws in a row", or null without a streak. */
+export function rivalStreakText(streak: { outcome: "won" | "lost" | "draw"; length: number } | null): string | null {
+  if (!streak || streak.length < 1) return null;
+  if (streak.outcome === "draw") return streak.length === 1 ? "Drew the last one" : `${streak.length} draws in a row`;
+  const verb = streak.outcome === "won" ? "Won" : "Lost";
+  return streak.length === 1 ? `${verb} the last one` : `${verb} ${streak.length} in a row`;
+}
+
+/** Your share of this round's points, 0 to 1; 0.5 when nobody has scored. */
+export function rivalShare(current: { you: number; them: number }): number {
+  const total = current.you + current.them;
+  return total <= 0 ? 0.5 : Math.min(1, Math.max(0, current.you / total));
+}

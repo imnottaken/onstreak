@@ -77,3 +77,32 @@ test("reset starts over, and unknown pages are 404", async (t) => {
   assert.equal((await fetch(`${base}/nope`)).status, 404);
   assert.equal((await fetch(`${base}/do/lesson`)).status, 404, "actions only accept POST");
 });
+
+test("friends can be challenged, and a duel's week settles into a record", async (t) => {
+  const { view, press, base } = await start(t);
+  let doc = await view();
+  assert.deepEqual([...doc.querySelectorAll(".os-friend__name")].map((n) => n.textContent).sort(), ["Maya", "Ravi", "Zoe"]);
+  assert.deepEqual([...doc.querySelectorAll(".os-rival__name")].map((n) => n.textContent), ["You vs Maya"], "you start in a duel with Maya");
+  const friendsBoard = [...doc.querySelectorAll(".os-board")].find((b) => b.getAttribute("aria-label") === "Friends this week");
+  assert.ok(friendsBoard.querySelector(".os-row--you"), "you are ranked among your friends");
+
+  await press("/rival/ravi");
+  doc = await view();
+  assert.equal(doc.querySelectorAll(".os-rival").length, 2);
+  await press("/do/study");
+  doc = await view();
+  assert.match(doc.querySelector(".os-rival__you").textContent, /^15 /, "your duel score counts this week's XP");
+
+  await press("/next-week");
+  doc = await view();
+  for (const card of doc.querySelectorAll(".os-rival")) {
+    const record = card.querySelector(".os-rival__stats dd").textContent;
+    assert.match(record, /^\d+W \d+L \d+D$/);
+    assert.notEqual(record, "0W 0L 0D", "last week was settled");
+  }
+
+  await press("/unrival/ravi");
+  doc = await view();
+  assert.equal(doc.querySelectorAll(".os-rival").length, 1);
+  assert.equal((await fetch(`${base}/rival/nobody`, { method: "POST" })).status, 404, "only known players");
+});

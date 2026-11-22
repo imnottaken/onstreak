@@ -1,5 +1,5 @@
 // onstreak demo: a tiny study app showing streaks, levels, badges, a
-// leaderboard and a league, with simulated rivals and a "next day" button.
+// leaderboard, a league, friends and head-to-head rivals, with simulated players and a "next day" button.
 // Runs entirely in memory: no database, no keys.
 //
 //   npm run build && npm run demo     # then open http://localhost:3000
@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url";
 import { createElement as h, Fragment } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Engine, MemoryStore } from "@onstreak/engine";
-import { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast } from "@onstreak/react";
+import { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalList } from "@onstreak/react";
 
 const DAY = 86_400_000;
 const START = Date.parse("2026-11-16T09:00:00Z"); // a Monday morning
@@ -38,7 +38,11 @@ export const demoConfig = {
     { id: "xp_all", currency: "xp", period: "all" },
   ],
   leagues: [{ id: "weekly_league", currency: "xp", tiers: ["bronze", "silver", "gold", "sapphire", "diamond"], groupSize: 8, promote: 2, demote: 2 }],
+  rivalries: [{ id: "weekly_duel", currency: "xp", max: 3 }],
 };
+
+/** Players you start out friends with. */
+const FRIENDS = ["maya", "ravi", "zoe"];
 
 const RIVALS = [
   { id: "maya", name: "Maya", effort: 0.9 },
@@ -83,6 +87,8 @@ button.primary { background: #f97316; border-color: #f97316; color: #fff; font-w
 .stats { display: flex; align-items: center; gap: 20px; margin-bottom: 14px; }
 .toast-wrap { position: fixed; right: 16px; bottom: 16px; }
 .events { list-style: none; padding: 0; margin: 0; font-size: 0.875rem; }
+button.small { padding: 4px 10px; font-size: 0.8125rem; }
+.spaced { margin-top: 16px; }
 .events li { padding: 4px 0; border-top: 1px solid #d0d7de33; }
 </style>
 </head>
@@ -102,6 +108,8 @@ export function createDemo({ seed = 42 } = {}) {
     engine = new Engine(demoConfig, new MemoryStore(), now);
     await engine.updateUser(YOU, { displayName: "You" });
     for (const r of RIVALS) await engine.updateUser(r.id, { displayName: r.name });
+    for (const f of FRIENDS) await engine.addFriend(YOU, f);
+    await engine.addRival("weekly_duel", YOU, "maya");
     await rivalsPlay();
   }
 
@@ -116,12 +124,20 @@ export function createDemo({ seed = 42 } = {}) {
   }
 
   async function render(unlocked) {
-    const [user, weekly, league, history] = await Promise.all([
+    const [user, weekly, league, history, friends, rivals, friendsBoard] = await Promise.all([
       engine.getUser(YOU),
       engine.leaderboard("xp_weekly", { userId: YOU, limit: 10 }),
       engine.league("weekly_league", YOU),
       engine.events(YOU, { limit: 6 }),
+      engine.friends(YOU),
+      engine.rivals("weekly_duel", YOU),
+      engine.leaderboard("xp_weekly", { userId: YOU, scope: "friends" }),
     ]);
+    const rivalIds = new Set(rivals.rivals.map((r) => r.rivalId));
+    const rivalButton = (f) =>
+      rivalIds.has(f.userId)
+        ? h("form", { method: "post", action: `/unrival/${f.userId}` }, h("button", { type: "submit", className: "small" }, "End rivalry"))
+        : h("form", { method: "post", action: `/rival/${f.userId}` }, h("button", { type: "submit", className: "small" }, "Challenge"));
     const day = new Date(now()).toISOString().slice(0, 10);
     const weekday = new Date(now()).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
     const toast = unlocked.length > 0 ? demoConfig.achievements.filter((a) => unlocked.includes(a.id)) : [];
@@ -155,6 +171,13 @@ export function createDemo({ seed = 42 } = {}) {
           ),
           h("section", { className: "card" }, h(LeagueTable, { status: league, now: now() })),
           h("section", { className: "card" }, h(Leaderboard, { board: weekly, currentUserId: YOU, title: "This week" })),
+          h("section", { className: "card" }, h(RivalList, { status: rivals, title: "Weekly duels", now: now() })),
+          h(
+            "section",
+            { className: "card" },
+            h(FriendsList, { friends, title: "Friends", renderAction: rivalButton }),
+            h("div", { className: "spaced" }, h(Leaderboard, { board: friendsBoard, currentUserId: YOU, title: "Friends this week" })),
+          ),
           h(
             "section",
             { className: "card" },
@@ -212,6 +235,13 @@ export function createDemo({ seed = 42 } = {}) {
           offset += DAY;
           await rivalsPlay();
         }
+        return back();
+      }
+      const rival = /^\/(un)?rival\/([a-z]+)$/.exec(url.pathname);
+      if (req.method === "POST" && rival && RIVALS.some((r) => r.id === rival[2])) {
+        const [, un, id] = rival;
+        if (un) await engine.removeRival("weekly_duel", YOU, id);
+        else await engine.addRival("weekly_duel", YOU, id).catch((e) => { if (e.status !== 409) throw e; });
         return back();
       }
       if (req.method === "POST" && url.pathname === "/reset") {

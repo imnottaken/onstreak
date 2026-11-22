@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { LeaderboardEntry, LeaderboardResult, LeagueStatus, UserProfile } from "@onstreak/sdk";
-import { countdownTick, cx, displayNameOf, formatTimeLeft, initials, levelProgress, streakLabel } from "./helpers.js";
+import type { FriendList as FriendListData, LeaderboardEntry, LeaderboardResult, LeagueStatus, RivalryStatus, UserProfile } from "@onstreak/sdk";
+import { countdownTick, cx, displayNameOf, formatTimeLeft, initials, levelProgress, recordText, rivalScoreText, rivalShare, rivalStreakText, streakLabel } from "./helpers.js";
 
 type Streak = UserProfile["streaks"][string];
 type Level = NonNullable<UserProfile["level"]>;
@@ -328,5 +328,132 @@ export function AchievementToast({ achievements, onDismiss, durationMs = 5000, c
         </button>
       )}
     </div>
+  );
+}
+
+/* ---------- FriendsList ---------- */
+
+type Friend = FriendListData["friends"][number];
+
+export interface FriendsListProps {
+  /** The result of sdk.friends(userId). */
+  friends: FriendListData;
+  title?: string;
+  /** Extra controls per friend, e.g. a "Challenge" or "Remove" button that calls your server. */
+  renderAction?: (friend: Friend) => ReactNode;
+  emptyText?: string;
+  className?: string;
+}
+
+/** A user's friends with avatars and how long they have been friends. */
+export function FriendsList({ friends, title, renderAction, emptyText = "No friends yet.", className }: FriendsListProps) {
+  return (
+    <section className={cx("os-friends", className)} aria-label={title ?? "Friends"}>
+      {title && <h3 className="os-friends__title">{title}</h3>}
+      {friends.friends.length === 0 ? (
+        <p className="os-friends__empty">{emptyText}</p>
+      ) : (
+        <ul className="os-friends__list">
+          {friends.friends.map((f) => (
+            <li key={f.userId} className="os-friend">
+              <Avatar entry={f} />
+              <span className="os-friend__name">{displayNameOf(f)}</span>
+              <time className="os-friend__since" dateTime={f.since}>
+                since {new Date(f.since).toLocaleDateString()}
+              </time>
+              {renderAction && <span className="os-friend__action">{renderAction(f)}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/* ---------- Rivals ---------- */
+
+type Rival = RivalryStatus["rivals"][number];
+
+const LAST_TEXT = { won: "Won", lost: "Lost", draw: "Drew" } as const;
+
+export interface RivalCardProps {
+  rival: Rival;
+  /** The round the live scores belong to (status.round). */
+  round: RivalryStatus["round"];
+  unitLabel?: string;
+  formatScore?: (n: number) => string;
+  /** Clock for the first render (pass the server's time to avoid hydration differences). */
+  now?: number;
+  className?: string;
+}
+
+/** One head-to-head: this round's score bar, time left, record, streak and last result. */
+export function RivalCard({ rival, round, unitLabel = "XP", formatScore = defaultFormat, now, className }: RivalCardProps) {
+  const left = useCountdown(round.endsAt, now);
+  const name = displayNameOf({ userId: rival.rivalId, displayName: rival.displayName });
+  const pct = Math.round(rivalShare(rival.current) * 100);
+  const streak = rivalStreakText(rival.streak);
+  const r = rival.record;
+  return (
+    <article className={cx("os-rival", `os-rival--${rival.current.leading}`, className)} aria-label={`You vs ${name}`}>
+      <header className="os-rival__header">
+        <Avatar entry={{ userId: rival.rivalId, displayName: rival.displayName, avatarUrl: rival.avatarUrl }} />
+        <h3 className="os-rival__name">You vs {name}</h3>
+        <span className="os-rival__ends">{left > 0 ? `Ends in ${formatTimeLeft(left)}` : "Round ended"}</span>
+      </header>
+      <p className="os-rival__status">{rivalScoreText(rival.current, name)}</p>
+      <div className="os-rival__scores" aria-hidden="true">
+        <span className="os-rival__you">
+          {formatScore(rival.current.you)} <span className="os-row__unit">{unitLabel}</span>
+        </span>
+        <span className="os-rival__them">
+          {formatScore(rival.current.them)} <span className="os-row__unit">{unitLabel}</span>
+        </span>
+      </div>
+      <div className="os-rival__bar" aria-hidden="true">
+        <div className="os-rival__bar-you" style={{ width: `${pct}%` }} />
+      </div>
+      <dl className="os-rival__stats">
+        <div>
+          <dt>Record</dt>
+          <dd aria-label={`${r.wins} wins, ${r.losses} losses, ${r.draws} draws`}>{recordText(r)}</dd>
+        </div>
+        {streak && (
+          <div>
+            <dt>Streak</dt>
+            <dd className={`os-rival__streak--${rival.streak!.outcome}`}>{streak}</dd>
+          </div>
+        )}
+        {rival.last && (
+          <div>
+            <dt>Last round</dt>
+            <dd className={`os-rival__last--${rival.last.outcome}`}>
+              {LAST_TEXT[rival.last.outcome]} {formatScore(rival.last.you)} to {formatScore(rival.last.them)}
+            </dd>
+          </div>
+        )}
+      </dl>
+    </article>
+  );
+}
+
+export interface RivalListProps extends Omit<RivalCardProps, "rival" | "round"> {
+  /** The result of sdk.rivals(rivalryId, userId). */
+  status: RivalryStatus;
+  title?: string;
+  emptyText?: string;
+}
+
+/** Every rival in a rivalry, one card each. */
+export function RivalList({ status, title, emptyText = "No rivals yet. Challenge a friend.", className, ...card }: RivalListProps) {
+  return (
+    <section className={cx("os-rivals", className)} aria-label={title ?? "Rivals"}>
+      {title && <h3 className="os-rivals__title">{title}</h3>}
+      {status.rivals.length === 0 ? (
+        <p className="os-rivals__empty">{emptyText}</p>
+      ) : (
+        status.rivals.map((rival) => <RivalCard key={rival.rivalId} rival={rival} round={status.round} {...card} />)
+      )}
+    </section>
   );
 }
