@@ -21,7 +21,7 @@ const schemas = {
     additionalProperties: false,
     properties: {
       error: { type: "string", description: "What went wrong, in plain words." },
-      code: { type: "string", description: 'A stable reason to branch on, when there is one: "insufficient_funds", "limit_reached", "not_owned", "streak_broken".' },
+      code: { type: "string", description: 'A stable reason to branch on, when there is one: "insufficient_funds", "limit_reached", "not_owned", "streak_broken", "already_referred".' },
       requestId: { type: "string", description: "Matches the x-request-id header and the server logs." },
     },
   },
@@ -51,7 +51,7 @@ const schemas = {
   },
   TrackResult: {
     type: "object",
-    required: ["eventId", "userId", "event", "value", "duplicate", "points", "level", "streaks", "achievements", "leagues", "quests", "calendars", "multipliers"],
+    required: ["eventId", "userId", "event", "value", "duplicate", "points", "level", "streaks", "achievements", "leagues", "quests", "calendars", "referral", "multipliers"],
     additionalProperties: false,
     properties: {
       eventId: { type: "string", format: "uuid" },
@@ -122,6 +122,13 @@ const schemas = {
         required: ["day", "rewards"],
         additionalProperties: false,
         properties: { day: { type: "integer", minimum: 1 }, rewards: { type: "array", items: ref("QuestReward") } },
+      }),
+      referral: nullable({
+        type: "object",
+        description: "Set when this event qualified the user's referral. Their rewards are already in points; the referrer is paid separately.",
+        required: ["referrerId", "rewards"],
+        additionalProperties: false,
+        properties: { referrerId: { type: "string" }, rewards: { type: "array", items: ref("QuestReward") } },
       }),
       multipliers: map({
         type: "object",
@@ -276,6 +283,50 @@ const schemas = {
           },
         },
       },
+    },
+  },
+  ReferralResult: {
+    type: "object",
+    required: ["userId", "referrerId", "created", "qualified", "rewards"],
+    additionalProperties: false,
+    properties: {
+      userId: { type: "string" },
+      referrerId: { type: "string" },
+      created: { type: "boolean", description: "False if this referral was already recorded." },
+      qualified: { type: "boolean", description: "Whether both sides are paid." },
+      rewards: { type: "array", items: ref("QuestReward"), description: "What the new user was paid by this call." },
+    },
+  },
+  ReferralList: {
+    type: "object",
+    required: ["userId", "referredBy", "referred", "rewarded", "max"],
+    additionalProperties: false,
+    properties: {
+      userId: { type: "string" },
+      referredBy: nullable({
+        type: "object",
+        required: ["userId", "qualified"],
+        additionalProperties: false,
+        properties: { userId: { type: "string" }, qualified: { type: "boolean" } },
+      }),
+      referred: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["userId", "displayName", "avatarUrl", "since", "qualified", "rewarded"],
+          additionalProperties: false,
+          properties: {
+            userId: { type: "string" },
+            displayName: nullable({ type: "string" }),
+            avatarUrl: nullable({ type: "string" }),
+            since: { type: "string", format: "date-time" },
+            qualified: { type: "boolean" },
+            rewarded: { type: "boolean", description: "Whether the referrer was paid for this one (false past the limit or before qualifying)." },
+          },
+        },
+      },
+      rewarded: { type: "integer", minimum: 0 },
+      max: nullable({ type: "integer", minimum: 1 }),
     },
   },
   Boost: {
@@ -766,6 +817,28 @@ export function openapiSpec(version: string) {
           summary: "Login reward calendars with the user's place in each",
           parameters: [{ name: "timezone", in: "query", schema: { type: "string" }, description: "Override the zone that decides when days start." }],
           responses: { "200": ok("The user's calendars", ref("CalendarList")), ...authErrors },
+        },
+      },
+      "/v1/users/{userId}/referred-by/{referrerId}": {
+        parameters: [userIdParam, { name: "referrerId", in: "path", required: true, schema: { type: "string", maxLength: 128 } }],
+        put: {
+          operationId: "addReferral",
+          summary: "Record who referred a user",
+          description: "Once per user. Both sides are paid when the new user qualifies (at once without referrals.qualify).",
+          responses: {
+            "200": ok("The referral", ref("ReferralResult")),
+            ...authErrors,
+            "404": errorResponse("Referrals are not configured"),
+            "409": errorResponse('Already referred by someone else (code "already_referred")'),
+          },
+        },
+      },
+      "/v1/users/{userId}/referrals": {
+        parameters: [userIdParam],
+        get: {
+          operationId: "referrals",
+          summary: "Who referred a user and whom they referred",
+          responses: { "200": ok("The user's referrals", ref("ReferralList")), ...authErrors, "404": errorResponse("Referrals are not configured") },
         },
       },
       "/v1/users/{userId}/boosts": {

@@ -70,7 +70,7 @@ Things that would hurt early users if they were missing.
 - [ ] **Richer streak rules** (M). "At least 3 lessons a day" to count, weekends off, custom week start, monthly streaks.
 - [x] **Daily login rewards and reward calendars** (S).
 - [x] **RewardCalendar React component** (S). A row of days with claimed, today and upcoming states.
-- [ ] **Referral rewards** (S).
+- [x] **Referral rewards** (S).
 
 ## Phase 4: Deeper engine
 

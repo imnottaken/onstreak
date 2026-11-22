@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, boostSpecProblem } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
-import { FriendLimitError, RivalLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
+import { FriendLimitError, RivalLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type ReferralRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
 import { isValidTimeZone, leaderboardWindow, periodKey, periodsBetween, type LeaderboardPeriod } from "./time.js";
 
 export class EngineError extends Error {
@@ -46,6 +46,8 @@ export interface TrackResult {
   quests: Record<string, { progress: number; target: number; completed: boolean; rewards: QuestReward[] }>;
   /** Reward calendar days this event claimed. Their rewards are already in `points`. */
   calendars: Record<string, { day: number; rewards: QuestReward[] }>;
+  /** Set when this event qualified the user's referral. Their own rewards are already in `points`; the referrer is paid separately. */
+  referral: { referrerId: string; rewards: QuestReward[] } | null;
   /** Multipliers applied to this event's points from point rules (not quest rewards). Null currency means every currency. */
   multipliers: Record<string, { factor: number; currency: string | null }>;
 }
@@ -241,6 +243,27 @@ export interface CalendarList {
   calendars: CalendarStatus[];
 }
 
+export interface ReferralResult {
+  userId: string;
+  referrerId: string;
+  /** False if this referral was already recorded. */
+  created: boolean;
+  /** Whether the new user has qualified, so both sides are paid. */
+  qualified: boolean;
+  /** What the new user was paid by this call. */
+  rewards: QuestReward[];
+}
+
+export interface ReferralList {
+  userId: string;
+  referredBy: { userId: string; qualified: boolean } | null;
+  /** People this user referred, newest first. */
+  referred: Array<{ userId: string; displayName: string | null; avatarUrl: string | null; since: string; qualified: boolean; rewarded: boolean }>;
+  /** Referrals this user has been rewarded for, and the most they can be (null: no limit). */
+  rewarded: number;
+  max: number | null;
+}
+
 export interface ItemUseInput {
   /** How many to use at once. Default 1. */
   quantity?: number;
@@ -432,7 +455,7 @@ export class Engine {
     }
 
     const { config } = this;
-    return this.store.withUser(userId, async (tx) => {
+    const tracked = await this.store.withUser(userId, async (tx) => {
       if (idempotencyKey) {
         const previous = await tx.findByIdempotencyKey(idempotencyKey);
         if (previous) return { ...previous, duplicate: true };
@@ -555,6 +578,26 @@ export class Engine {
         calendars[cal.id] = { day, rewards };
       }
 
+      // Referrals: doing enough of the qualifying event pays the new user now; the referrer is paid after this transaction.
+      let referral: TrackResult["referral"] = null;
+      const qualify = config.referrals?.qualify;
+      if (qualify && qualify.event === event) {
+        const ref = await tx.getReferral();
+        const done = metrics.get(event) ?? (await tx.getMetric(event));
+        if (ref && ref.qualifiedAt === null && done >= qualify.target) {
+          await tx.qualifyReferral(recordedAt);
+          const rewards = (config.referrals!.referred ?? []).map((r) => ({ ...r }));
+          for (const r of rewards) {
+            const total = await tx.addPoints(r.currency, r.amount, ts, eventId, recordedAt);
+            const entry = points[r.currency] ?? { awarded: 0, total };
+            entry.awarded += r.amount;
+            entry.total = total;
+            points[r.currency] = entry;
+          }
+          referral = { referrerId: ref.referrerId, rewards };
+        }
+      }
+
       const achievements: TrackResult["achievements"] = [];
       if (config.achievements.length > 0) {
         const unlocked = await tx.unlockedAchievements();
@@ -593,10 +636,12 @@ export class Engine {
         }
       }
 
-      const result: TrackResult = { eventId, userId, event, value, duplicate: false, points, level, streaks, achievements, leagues, quests, calendars, multipliers };
+      const result: TrackResult = { eventId, userId, event, value, duplicate: false, points, level, streaks, achievements, leagues, quests, calendars, referral, multipliers };
       await tx.setEventResult(eventId, result);
       return result;
     });
+    if (tracked.referral && !tracked.duplicate) await this.settleReferrer(tracked.referral.referrerId);
+    return tracked;
   }
 
   async getUser(userId: string, options: { timezone?: string } = {}): Promise<UserProfile> {
@@ -777,6 +822,76 @@ export class Engine {
         };
       }),
     };
+  }
+
+  /**
+   * Record that `referrerId` brought `userId` in. Once per user: a second call
+   * with the same referrer is a no-op, another referrer is a 409 with code
+   * "already_referred". The new user is paid when they qualify (at once
+   * without `referrals.qualify`), and the referrer right after.
+   */
+  async addReferral(userId: string, referrerId: string): Promise<ReferralResult> {
+    checkUserId(userId);
+    checkUserId(referrerId);
+    const rules = this.config.referrals;
+    if (!rules) throw new EngineError("referrals are not configured", 404);
+    if (userId === referrerId) throw new EngineError("a user cannot refer themselves");
+    const theirs = (await this.store.referrals(referrerId)).referredBy;
+    if (theirs?.referrerId === userId) throw new EngineError(`${referrerId} was referred by ${userId}, so ${userId} cannot be referred by them`);
+
+    const result = await this.store.withUser(userId, async (tx): Promise<ReferralResult> => {
+      const existing = await tx.getReferral();
+      if (existing) {
+        if (existing.referrerId !== referrerId) throw new EngineError(`${userId} was already referred by someone else`, 409, "already_referred");
+        return { userId, referrerId, created: false, qualified: existing.qualifiedAt !== null, rewards: [] };
+      }
+      const now = this.now();
+      const qualified = !rules.qualify || (await tx.getMetric(rules.qualify.event)) >= rules.qualify.target;
+      const record: ReferralRecord = { id: randomUUID(), referrerId, referredId: userId, createdAt: now, qualifiedAt: qualified ? now : null, settledAt: null, rewarded: false };
+      await tx.addReferral(record);
+      const rewards = qualified ? (rules.referred ?? []).map((r) => ({ ...r })) : [];
+      for (const r of rewards) await tx.addPoints(r.currency, r.amount, now, record.id, now);
+      return { userId, referrerId, created: true, qualified, rewards };
+    });
+    if (result.created && result.qualified) await this.settleReferrer(referrerId);
+    return result;
+  }
+
+  /** Who referred a user and whom they referred. Pays the user for any referral that qualified but was not paid yet. */
+  async referrals(userId: string): Promise<ReferralList> {
+    checkUserId(userId);
+    const rules = this.config.referrals;
+    if (!rules) throw new EngineError("referrals are not configured", 404);
+    await this.settleReferrer(userId);
+    const { referredBy, referred } = await this.store.referrals(userId);
+    const profiles = await this.store.profiles(referred.map((r) => r.referredId));
+    return {
+      userId,
+      referredBy: referredBy ? { userId: referredBy.referrerId, qualified: referredBy.qualifiedAt !== null } : null,
+      referred: referred.map((r) => ({
+        userId: r.referredId,
+        displayName: profiles[r.referredId]?.displayName ?? null,
+        avatarUrl: profiles[r.referredId]?.avatarUrl ?? null,
+        since: new Date(r.createdAt).toISOString(),
+        qualified: r.qualifiedAt !== null,
+        rewarded: r.rewarded,
+      })),
+      rewarded: referred.filter((r) => r.rewarded).length,
+      max: rules.max ?? null,
+    };
+  }
+
+  /** Pay a referrer for referrals that qualified since last time, up to the limit. Safe to call any time. */
+  private async settleReferrer(referrerId: string): Promise<void> {
+    const rules = this.config.referrals;
+    if (!rules) return;
+    await this.store.withUser(referrerId, async (tx) => {
+      const now = this.now();
+      for (const r of await tx.settleReferrals(rules.max ?? null, now)) {
+        if (!r.rewarded) continue;
+        for (const reward of rules.referrer ?? []) await tx.addPoints(reward.currency, reward.amount, now, r.id, now);
+      }
+    });
   }
 
   async friends(userId: string): Promise<FriendList> {

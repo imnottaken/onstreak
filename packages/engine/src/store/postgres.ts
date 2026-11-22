@@ -11,6 +11,7 @@ import type {
   PurchaseRecord,
   ItemUseRecord,
   BoostRecord,
+  ReferralRecord,
   RivalRecord,
   WindowScoreQuery,
   EventRecord,
@@ -126,6 +127,19 @@ function rowToBoost(r: Record<string, unknown>): BoostRecord {
     endsAt: ms(r.ends_at),
     reason: String(r.reason),
     idempotencyKey: (r.idempotency_key as string | null) ?? null,
+  };
+}
+
+function rowToReferral(r: Record<string, unknown>): ReferralRecord {
+  const maybe = (v: unknown) => (v === null || v === undefined ? null : ms(v));
+  return {
+    id: String(r.id),
+    referrerId: String(r.referrer_id),
+    referredId: String(r.referred_id),
+    createdAt: ms(r.created_at),
+    qualifiedAt: maybe(r.qualified_at),
+    settledAt: maybe(r.settled_at),
+    rewarded: Boolean(r.rewarded),
   };
 }
 
@@ -311,6 +325,40 @@ export class PostgresStore implements Store {
           [userId, p.itemId, p.quantity],
         );
         return num(rows[0]?.quantity);
+      },
+      async getReferral() {
+        const { rows } = await q.query(`select * from ${t.referrals} where referred_id = $1`, [userId]);
+        return rows[0] ? rowToReferral(rows[0]) : null;
+      },
+      async addReferral(r) {
+        await q.query(`insert into ${t.users} (id) values ($1) on conflict (id) do nothing`, [r.referrerId]);
+        const { rows } = await q.query(
+          `insert into ${t.referrals} (referred_id, referrer_id, id, created_at, qualified_at) values ($1, $2, $3, $4, $5)
+           on conflict (referred_id) do nothing returning referred_id`,
+          [userId, r.referrerId, r.id, new Date(r.createdAt).toISOString(), r.qualifiedAt === null ? null : new Date(r.qualifiedAt).toISOString()],
+        );
+        return rows.length > 0;
+      },
+      async qualifyReferral(at) {
+        await q.query(`update ${t.referrals} set qualified_at = $2 where referred_id = $1 and qualified_at is null`, [userId, new Date(at).toISOString()]);
+      },
+      async settleReferrals(max, at) {
+        const { rows } = await q.query(
+          `select * from ${t.referrals} where referrer_id = $1 and qualified_at is not null and settled_at is null
+           order by qualified_at, referred_id for update`,
+          [userId],
+        );
+        if (rows.length === 0) return [];
+        const counted = await q.query(`select count(*) as n from ${t.referrals} where referrer_id = $1 and rewarded`, [userId]);
+        let rewardedSoFar = num(counted.rows[0]?.n);
+        const settled: ReferralRecord[] = [];
+        for (const row of rows) {
+          const rewarded = max === null || rewardedSoFar < max;
+          if (rewarded) rewardedSoFar++;
+          await q.query(`update ${t.referrals} set settled_at = $2, rewarded = $3 where referred_id = $1`, [row.referred_id, new Date(at).toISOString(), rewarded]);
+          settled.push({ ...rowToReferral(row), settledAt: at, rewarded });
+        }
+        return settled;
       },
       async getCalendar(id) {
         const { rows } = await q.query(`select day, last_period from ${t.calendars} where user_id = $1 and calendar_id = $2`, [userId, id]);
@@ -545,6 +593,14 @@ export class PostgresStore implements Store {
       recordedAt: ms(r.recorded_at),
       result: r.result ? json<TrackResult>(r.result) : null,
     }));
+  }
+
+  async referrals(userId: string): Promise<{ referredBy: ReferralRecord | null; referred: ReferralRecord[] }> {
+    const [by, referred] = await Promise.all([
+      this.db.query(`select * from ${this.t.referrals} where referred_id = $1`, [userId]),
+      this.db.query(`select * from ${this.t.referrals} where referrer_id = $1 order by created_at desc, referred_id desc`, [userId]),
+    ]);
+    return { referredBy: by.rows[0] ? rowToReferral(by.rows[0]) : null, referred: referred.rows.map(rowToReferral) };
   }
 
   async boosts(userId: string, after: number): Promise<BoostRecord[]> {

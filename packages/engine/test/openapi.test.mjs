@@ -199,6 +199,31 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   assert.equal(calendars.calendars[0].claimedToday, true);
   await calCall("get", "/v1/users/c/calendars?timezone=Nope", "/v1/users/{userId}/calendars"); // 400
 
+  await call("get", "/v1/users/asha/referrals", "/v1/users/{userId}/referrals"); // 404: not configured
+  await call("put", "/v1/users/asha/referred-by/ravi", "/v1/users/{userId}/referred-by/{referrerId}"); // 404: not configured
+  const refs = await serve(t, new MemoryStore(), { ...config, referrals: { referrer: [{ currency: "coins", amount: 10 }], referred: [{ currency: "coins", amount: 5 }], qualify: { event: "lesson_completed", target: 2 }, max: 1 } });
+  const refCall = async (method, path, template) => {
+    const res = await fetch(`${refs.base}${path}`, { method: method.toUpperCase(), headers: { authorization: `Bearer ${API_KEY}` } });
+    const json = await res.json();
+    c.check(method, template, res.status, json);
+    return { status: res.status, json };
+  };
+  const linked = await refCall("put", "/v1/users/new1/referred-by/host", "/v1/users/{userId}/referred-by/{referrerId}");
+  assert.deepEqual([linked.json.created, linked.json.qualified], [true, false]);
+  await refCall("put", "/v1/users/new1/referred-by/host", "/v1/users/{userId}/referred-by/{referrerId}"); // already, same referrer
+  const other = await refCall("put", "/v1/users/new1/referred-by/someone", "/v1/users/{userId}/referred-by/{referrerId}");
+  assert.deepEqual([other.status, other.json.code], [409, "already_referred"]);
+  await refCall("put", "/v1/users/host/referred-by/host", "/v1/users/{userId}/referred-by/{referrerId}"); // 400
+  for (let i = 0; i < 2; i++) {
+    const res = await fetch(`${refs.base}/v1/events`, { method: "POST", headers: { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" }, body: JSON.stringify({ userId: "new1", event: "lesson_completed" }) });
+    const json = await res.json();
+    c.check("post", "/v1/events", res.status, json);
+    if (i === 1) assert.deepEqual(json.referral, { referrerId: "host", rewards: [{ currency: "coins", amount: 5 }] });
+  }
+  const hostRefs = await refCall("get", "/v1/users/host/referrals", "/v1/users/{userId}/referrals");
+  assert.deepEqual([hostRefs.json.rewarded, hostRefs.json.referred[0].rewarded], [1, true]);
+  await refCall("get", "/v1/users/new1/referrals", "/v1/users/{userId}/referrals");
+
   await call("get", "/health", "/health", undefined, { key: null });
   store.ping = async () => {
     throw new Error("down");

@@ -179,6 +179,13 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         return send(200, await engine.calendars(id, timezone ? { timezone } : {}));
       }
 
+      if (req.method === "PUT" && resource === "users" && id && sub === "referred-by" && subId && parts.length === 5) {
+        return send(200, await engine.addReferral(id, subId));
+      }
+      if (req.method === "GET" && resource === "users" && id && sub === "referrals" && parts.length === 4) {
+        return send(200, await engine.referrals(id));
+      }
+
       if (resource === "users" && id && sub === "friends") {
         if (req.method === "GET" && parts.length === 4) return send(200, await engine.friends(id));
         if (req.method === "PUT" && subId && parts.length === 5) return send(200, await engine.addFriend(id, subId));

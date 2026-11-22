@@ -109,6 +109,20 @@ export interface CalendarState {
   lastPeriod: string;
 }
 
+/** A referral: who brought this user in, and how far it has got. */
+export interface ReferralRecord {
+  /** Also used as the event id of the points it pays. */
+  id: string;
+  referrerId: string;
+  referredId: string;
+  createdAt: number;
+  qualifiedAt: number | null;
+  /** When the referrer's side was dealt with (paid, or skipped past the limit). */
+  settledAt: number | null;
+  /** Whether the referrer was paid for it. */
+  rewarded: boolean;
+}
+
 export interface PurchasePageQuery {
   limit: number;
   /** Return purchases strictly older than this position (newest first). */
@@ -201,6 +215,17 @@ export interface UserTx {
   addBoost(boost: BoostRecord): Promise<void>;
   getCalendar(calendarId: string): Promise<CalendarState | null>;
   setCalendar(calendarId: string, state: CalendarState): Promise<void>;
+  /** Who referred this user, if anyone. */
+  getReferral(): Promise<ReferralRecord | null>;
+  /** Record who referred this user (creating the referrer if needed). Returns false if one is already recorded. */
+  addReferral(referral: ReferralRecord): Promise<boolean>;
+  qualifyReferral(at: number): Promise<void>;
+  /**
+   * Settle this user's qualified referrals that are not settled yet, as the
+   * referrer: the first ones up to `max` rewarded in total are marked
+   * rewarded, the rest only settled. Returns the ones settled now.
+   */
+  settleReferrals(max: number | null, at: number): Promise<ReferralRecord[]>;
 }
 
 export interface UserSnapshot {
@@ -275,6 +300,8 @@ export interface Store {
   windowScores(query: WindowScoreQuery): Promise<Record<string, number>>;
   /** A user's progress on these quest periods. Periods never started are left out. */
   quests(userId: string, keys: Array<{ questId: string; periodKey: string }>): Promise<QuestProgress[]>;
+  /** Who referred this user, and everyone they referred (newest first). */
+  referrals(userId: string): Promise<{ referredBy: ReferralRecord | null; referred: ReferralRecord[] }>;
   /** A user's boosts that end after `after`, soonest start first. */
   boosts(userId: string, after: number): Promise<BoostRecord[]>;
   /** A user's purchases, newest first. */

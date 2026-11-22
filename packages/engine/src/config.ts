@@ -140,6 +140,21 @@ export interface CalendarRule {
   timezone?: string;
 }
 
+/**
+ * Rewards for bringing in new users. A referral is recorded once per new user.
+ * With `qualify`, nobody is paid until the new user has done enough of an
+ * event; otherwise both sides are paid as soon as it is recorded.
+ */
+export interface ReferralConfig {
+  /** Paid to the person who referred. */
+  referrer?: QuestReward[];
+  /** Paid to the new user. */
+  referred?: QuestReward[];
+  qualify?: { event: string; target: number };
+  /** Most referrals one user is rewarded for. Default: no limit. */
+  max?: number;
+}
+
 /** A personal multiplier: `factor` on points from point rules for `minutes`. No currency means every currency. */
 export interface BoostSpec {
   factor: number;
@@ -196,6 +211,7 @@ export interface OnstreakConfig {
   multipliers?: MultiplierRule[];
   items?: ItemRule[];
   calendars?: CalendarRule[];
+  referrals?: ReferralConfig;
   friends?: {
     /** Most friends one user can have. Default 1000. */
     max?: number;
@@ -229,6 +245,8 @@ export interface ResolvedConfig {
   multipliers: ResolvedMultiplier[];
   items: ItemRule[];
   calendars: CalendarRule[];
+  /** Null when referrals are not configured. */
+  referrals: ReferralConfig | null;
   friends: { max: number };
 }
 
@@ -451,6 +469,32 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     if (c.timezone !== undefined && !isValidTimeZone(c.timezone)) throw new ConfigError(`calendar "${c.id}" has unknown timezone "${c.timezone}"`);
   }
 
+  let referrals: ReferralConfig | null = null;
+  if (input.referrals !== undefined) {
+    const r = input.referrals;
+    if (!r || typeof r !== "object" || Array.isArray(r)) throw new ConfigError("referrals must be an object");
+    for (const side of ["referrer", "referred"] as const) {
+      const list = r[side];
+      if (list === undefined) continue;
+      if (!Array.isArray(list)) throw new ConfigError(`referrals.${side} must be a list of { currency, amount }`);
+      for (const reward of list) {
+        hasCurrency(reward.currency, `referrals.${side}`);
+        if (typeof reward.amount !== "number" || !Number.isFinite(reward.amount) || reward.amount <= 0) throw new ConfigError(`referrals.${side} rewards need a positive amount`);
+      }
+    }
+    if (r.qualify !== undefined) {
+      if (!r.qualify || typeof r.qualify.event !== "string" || !ID.test(r.qualify.event)) throw new ConfigError("referrals.qualify needs { event, target }");
+      if (typeof r.qualify.target !== "number" || !Number.isFinite(r.qualify.target) || r.qualify.target <= 0) throw new ConfigError("referrals.qualify.target must be positive");
+    }
+    if (r.max !== undefined && !(Number.isInteger(r.max) && r.max >= 1)) throw new ConfigError("referrals.max must be a whole number of at least 1");
+    referrals = {
+      referrer: (r.referrer ?? []).map((x) => ({ ...x })),
+      referred: (r.referred ?? []).map((x) => ({ ...x })),
+      ...(r.qualify ? { qualify: { ...r.qualify } } : {}),
+      ...(r.max !== undefined ? { max: r.max } : {}),
+    };
+  }
+
   const maxFriends = input.friends?.max ?? 1000;
   if (!Number.isInteger(maxFriends) || maxFriends < 1 || maxFriends > 100_000) {
     throw new ConfigError("friends.max must be a whole number from 1 to 100000");
@@ -470,6 +514,7 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     multipliers,
     items,
     calendars,
+    referrals,
     friends: { max: maxFriends },
   };
 }

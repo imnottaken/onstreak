@@ -31,6 +31,7 @@ export interface Tables {
   itemUses: string;
   boosts: string;
   calendars: string;
+  referrals: string;
 }
 
 export function tableNames(prefix: string): Tables {
@@ -54,6 +55,7 @@ export function tableNames(prefix: string): Tables {
     itemUses: `${prefix}item_uses`,
     boosts: `${prefix}boosts`,
     calendars: `${prefix}calendar_progress`,
+    referrals: `${prefix}referrals`,
   };
 }
 
@@ -292,6 +294,24 @@ export const MIGRATIONS: readonly Migration[] = [
          last_period text not null,
          primary key (user_id, calendar_id)
        )`,
+    ],
+  },
+  {
+    version: 12,
+    name: "referrals",
+    statements: (t) => [
+      // One row per referred user. The referrer is paid once settled_at is set.
+      `create table if not exists ${t.referrals} (
+         referred_id text primary key references ${t.users}(id),
+         referrer_id text not null references ${t.users}(id),
+         id uuid not null,
+         created_at timestamptz not null,
+         qualified_at timestamptz,
+         settled_at timestamptz,
+         rewarded boolean not null default false,
+         check (referred_id <> referrer_id)
+       )`,
+      `create index if not exists ${t.prefix}referrals_referrer on ${t.referrals} (referrer_id, created_at desc)`,
     ],
   },
 ];

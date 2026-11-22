@@ -24,6 +24,8 @@ export interface TrackResult {
   quests: Record<string, { progress: number; target: number; completed: boolean; rewards: QuestReward[] }>;
   /** Reward calendar days this event claimed. Their rewards are already in `points`. */
   calendars: Record<string, { day: number; rewards: QuestReward[] }>;
+  /** Set when this event qualified the user's referral. The referrer is paid separately. */
+  referral: { referrerId: string; rewards: QuestReward[] } | null;
   /** Multipliers applied to points from point rules. A null currency means every currency. */
   multipliers: Record<string, { factor: number; currency: string | null }>;
 }
@@ -184,6 +186,25 @@ export interface CalendarList {
     days: Array<{ day: number; rewards: QuestReward[]; status: "claimed" | "today" | "upcoming" }>;
     nextClaimAt: string;
   }>;
+}
+
+export interface ReferralResult {
+  userId: string;
+  referrerId: string;
+  /** False if this referral was already recorded. */
+  created: boolean;
+  /** Whether both sides are paid. */
+  qualified: boolean;
+  /** What the new user was paid by this call. */
+  rewards: QuestReward[];
+}
+
+export interface ReferralList {
+  userId: string;
+  referredBy: { userId: string; qualified: boolean } | null;
+  referred: Array<{ userId: string; displayName: string | null; avatarUrl: string | null; since: string; qualified: boolean; rewarded: boolean }>;
+  rewarded: number;
+  max: number | null;
 }
 
 export interface Boost {
@@ -353,6 +374,10 @@ export function createClient(options: ClientOptions) {
     /** Login reward calendars with the user's place in each. Track the calendar's event to claim a day. */
     calendars: (userId: string, options: { timezone?: string } = {}) =>
       call<CalendarList>("GET", `${user(userId)}/calendars${options.timezone ? `?timezone=${encodeURIComponent(options.timezone)}` : ""}`),
+    /** Record that `referrerId` brought `userId` in. Throws 409 "already_referred" for a different referrer. */
+    addReferral: (userId: string, referrerId: string) => call<ReferralResult>("PUT", `${user(userId)}/referred-by/${encodeURIComponent(referrerId)}`),
+    /** Who referred a user and whom they referred. */
+    referrals: (userId: string) => call<ReferralList>("GET", `${user(userId)}/referrals`),
     /** Give a user a personal multiplier for some minutes, e.g. 2x XP for an hour. */
     grantBoost: (userId: string, input: BoostInput) =>
       call<{ userId: string; boost: Boost; duplicate: boolean; boosts: Boost[] }>("POST", `${user(userId)}/boosts`, input),

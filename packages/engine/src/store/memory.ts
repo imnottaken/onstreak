@@ -23,6 +23,7 @@ import type {
   ItemUseRecord,
   BoostRecord,
   CalendarState,
+  ReferralRecord,
   UserTx,
 } from "./types.js";
 
@@ -71,6 +72,8 @@ export class MemoryStore implements Store {
   /** Keyed by "rivalryId|userA|userB" with userA < userB. */
   private rivals = new Map<string, { rivalryId: string; a: string; b: string; startedRound: string; since: number; rounds: Map<string, [number, number]> }>();
   private locks = new Map<string, Promise<unknown>>();
+  /** Keyed by the referred user's id. */
+  private referralRows = new Map<string, ReferralRecord>();
 
   async migrate(): Promise<MigrationReport> {
     return { applied: [], version: 0 };
@@ -159,6 +162,31 @@ export class MemoryStore implements Store {
         const owned = (d.inventory.get(p.itemId) ?? 0) + p.quantity;
         d.inventory.set(p.itemId, owned);
         return owned;
+      },
+      getReferral: async () => {
+        const r = this.referralRows.get(userId);
+        return r ? { ...r } : null;
+      },
+      addReferral: async (r) => {
+        if (this.referralRows.has(userId)) return false;
+        this.data(r.referrerId);
+        this.referralRows.set(userId, { ...r, referredId: userId });
+        return true;
+      },
+      qualifyReferral: async (at) => {
+        const r = this.referralRows.get(userId);
+        if (r && r.qualifiedAt === null) r.qualifiedAt = at;
+      },
+      settleReferrals: async (max, at) => {
+        const mine = [...this.referralRows.values()].filter((r) => r.referrerId === userId);
+        let rewardedSoFar = mine.filter((r) => r.rewarded).length;
+        const due = mine.filter((r) => r.qualifiedAt !== null && r.settledAt === null).sort((a, b) => a.qualifiedAt! - b.qualifiedAt! || (a.referredId < b.referredId ? -1 : 1));
+        for (const r of due) {
+          r.settledAt = at;
+          r.rewarded = max === null || rewardedSoFar < max;
+          if (r.rewarded) rewardedSoFar++;
+        }
+        return due.map((r) => ({ ...r }));
       },
       getCalendar: async (id) => {
         const c = d.calendars.get(id);
@@ -302,6 +330,15 @@ export class MemoryStore implements Store {
       .filter((e) => !before || e.ts < before.ts || (e.ts === before.ts && e.id < before.id))
       .slice(0, q.limit)
       .map((e) => ({ id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result }));
+  }
+
+  async referrals(userId: string): Promise<{ referredBy: ReferralRecord | null; referred: ReferralRecord[] }> {
+    const by = this.referralRows.get(userId);
+    const referred = [...this.referralRows.values()]
+      .filter((r) => r.referrerId === userId)
+      .sort((a, b) => b.createdAt - a.createdAt || (a.referredId < b.referredId ? 1 : -1))
+      .map((r) => ({ ...r }));
+    return { referredBy: by ? { ...by } : null, referred };
   }
 
   async boosts(userId: string, after: number): Promise<BoostRecord[]> {
