@@ -123,3 +123,52 @@ test("unknown leagues are a 404", async () => {
   const engine = new Engine(config, new MemoryStore());
   await assert.rejects(engine.league("nope", "a"), (e) => e.status === 404);
 });
+
+const seasonal = (seasonReset) => ({
+  currencies: ["xp"],
+  points: [{ event: "win", currency: "xp", amount: 1, multiplyByValue: true }],
+  leagues: [{ id: "arena", currency: "xp", tiers: ["bronze", "silver", "gold", "diamond"], groupSize: 2, promote: 1, demote: 0, period: "weekly", seasonReset }],
+  seasons: [{ id: "s2", name: "Season 2", currency: "xp", from: "2026-11-30T00:00:00Z", to: "2027-03-01T00:00:00Z" }],
+});
+
+/** Week 1: u1 beats u2 and u3 beats u4, so u1 and u3 go up to silver. Week 2: u1 beats u3 and reaches gold. */
+async function climb(engine, clock) {
+  clock.now = monday;
+  for (const [u, v] of [["u1", 10], ["u2", 5], ["u3", 8], ["u4", 2]]) await engine.track({ userId: u, event: "win", value: v });
+  clock.now = monday + 7 * DAY;
+  for (const [u, v] of [["u1", 10], ["u3", 5]]) await engine.track({ userId: u, event: "win", value: v });
+}
+
+for (const [name, makeStore] of Object.entries(storeFactories)) {
+  test(`${name}: a new season sends everyone back to the first tier`, async (t) => {
+    const clock = { now: monday };
+    const engine = new Engine(seasonal(true), await makeStore(t), () => clock.now);
+    await climb(engine, clock);
+    clock.now = monday + 13 * DAY; // still before the season
+    assert.equal((await engine.league("arena", "u1")).tier, "silver");
+    clock.now = monday + 14 * DAY; // Monday the 30th: season 2 starts
+    const status = await engine.league("arena", "u1");
+    assert.deepEqual([status.tier, status.previous.nextTier], ["bronze", "gold"], "earned gold, but the season reset wins");
+    const r = await engine.track({ userId: "u1", event: "win", value: 1 });
+    assert.equal(r.leagues.arena.tier, "bronze");
+    clock.now = monday + 21 * DAY; // the week after: no new season, so no reset
+    assert.equal((await engine.league("arena", "u1")).tier, "bronze", "alone in the group, so no promotion either");
+  });
+
+  test(`${name}: a soft reset drops a set number of tiers`, async (t) => {
+    const clock = { now: monday };
+    const engine = new Engine(seasonal({ dropTiers: 1 }), await makeStore(t), () => clock.now);
+    await climb(engine, clock);
+    clock.now = monday + 14 * DAY;
+    assert.equal((await engine.league("arena", "u1")).tier, "silver", "gold minus one");
+    assert.equal((await engine.league("arena", "u3")).tier, "bronze", "silver minus one");
+  });
+}
+
+test("seasonReset is validated", () => {
+  const cfg = (seasonReset, seasons = seasonal(true).seasons) => () => resolveConfig({ ...seasonal(seasonReset), seasons });
+  assert.throws(cfg(true, []), /needs seasons/);
+  assert.throws(cfg({ dropTiers: 0 }), /seasonReset must be/);
+  assert.throws(cfg("yes"), /seasonReset must be/);
+  assert.deepEqual(resolveConfig(seasonal({ dropTiers: 2 })).leagues[0].seasonReset, { dropTiers: 2 });
+});

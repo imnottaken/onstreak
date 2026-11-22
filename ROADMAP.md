@@ -64,7 +64,7 @@ Things that would hurt early users if they were missing.
 - [x] **Time-limited events** (M). "Double XP weekend" (multiplier windows), global community goals ("everyone together: 1M minutes").
 - [x] **Limited-time quests** (S). Quests that only run between two dates, for seasonal challenges.
 - [x] **Seasons** (M). Seasonal standings with a fixed archive and rank awards (titles and points).
-- [ ] **Season resets for leagues** (S). Start every league tier over when a season begins.
+- [x] **Season resets for leagues** (S). Start every league tier over (or drop some tiers) when a season begins.
 - [x] **Multipliers and boosts** (M). Streak-based XP multiplier, event-wide boosts.
 - [x] **Personal boosts** (S). A boost given to one user with an expiry ("2x XP for 1 hour"), e.g. bought in the reward store.
 - [x] **Spendable currencies and a reward store** (L). Spend coins on items, inventory, purchase history, balance checks.

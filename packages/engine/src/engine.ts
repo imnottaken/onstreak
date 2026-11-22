@@ -1919,7 +1919,15 @@ export class Engine {
     }
 
     const previous = latest ? await this.settle(tx, userId, league, latest) : null;
-    const tier = previous ? previous.nextTier : (league.tiers[0] as string);
+    let tier = previous ? previous.nextTier : (league.tiers[0] as string);
+    // A season that started since the user's last round moves them back.
+    if (latest && league.seasonReset) {
+      const lastStart = roundFromKey(league, latest.roundKey).from;
+      if (this.config.seasons.some((s) => s.from > lastStart && s.from <= round.from)) {
+        const drop = league.seasonReset.dropTiers;
+        tier = league.tiers[drop === null ? 0 : Math.max(0, league.tiers.indexOf(tier) - drop)] as string;
+      }
+    }
     if (joinAt === null) return { round, tier, current: null, previous, joined: false };
 
     const group = await tx.joinLeague(league.id, round.key, tier, league.groupSize, joinAt);

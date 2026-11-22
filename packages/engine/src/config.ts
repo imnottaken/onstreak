@@ -76,6 +76,11 @@ export interface LeagueRule {
   period?: StreakPeriod;
   /** Time zone where rounds start and end. Default UTC. */
   timezone?: string;
+  /**
+   * When a season (from `seasons`) starts, move everyone back: to the first
+   * tier, or down `dropTiers` tiers for a soft reset.
+   */
+  seasonReset?: true | { dropTiers: number };
 }
 
 export interface RivalryRule {
@@ -323,6 +328,8 @@ export interface ResolvedLeague {
   demote: number;
   period: StreakPeriod;
   timezone: string;
+  /** Tiers to drop when a season starts: null drops to the first tier. Absent: no reset. */
+  seasonReset?: { dropTiers: number | null };
 }
 
 /** Normalized config with every optional list present. */
@@ -484,6 +491,13 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     }
     if (!STREAK_PERIODS.includes(resolved.period)) throw new ConfigError(`league "${l.id}" period must be daily or weekly`);
     if (!isValidTimeZone(resolved.timezone)) throw new ConfigError(`league "${l.id}" has unknown timezone "${resolved.timezone}"`);
+    if (l.seasonReset !== undefined) {
+      if (!(input.seasons ?? []).length) throw new ConfigError(`league "${l.id}" seasonReset needs seasons to be configured`);
+      if (l.seasonReset === true) resolved.seasonReset = { dropTiers: null };
+      else if (l.seasonReset && typeof l.seasonReset === "object" && Number.isInteger(l.seasonReset.dropTiers) && l.seasonReset.dropTiers >= 1) {
+        resolved.seasonReset = { dropTiers: l.seasonReset.dropTiers };
+      } else throw new ConfigError(`league "${l.id}" seasonReset must be true or { dropTiers: 1 or more }`);
+    }
     leagues.push(resolved);
   }
 
