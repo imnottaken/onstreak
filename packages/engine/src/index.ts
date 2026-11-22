@@ -34,6 +34,8 @@ export type {
   ResolvedLeague,
   RivalryRule,
   QuestRule,
+  MultiplierRule,
+  ResolvedMultiplier,
   QuestReward,
   ResolvedRivalry,
 } from "./config.js";

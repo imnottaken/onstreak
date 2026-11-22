@@ -87,6 +87,7 @@ Everything is declared in one JSON file. See [examples/onstreak.config.json](exa
 | `leagues` | `{ id, currency, tiers, groupSize?, promote?, demote?, period?, timezone? }` (defaults: 30 per group, 7 up, 5 down, weekly) |
 | `rivalries` | `{ id, currency, period?, timezone?, max? }` (defaults: weekly, UTC, 10 rivals each) |
 | `quests` | `{ id, name, description?, period: daily \| weekly, goal: { event, target } \| { points, target }, rewards?: [{ currency, amount }], timezone? }`. Days start in each user's zone unless the quest sets one |
+| `multipliers` | `{ id, currency?, factor, from, to }` for a time window ("double XP weekend"), or `{ id, currency?, streak, steps: [{ gte, factor }] }` for a streak bonus. They scale points from point rules (not quest rewards) and multiply together; track results list the ones applied |
 | `friends` | `{ max? }` (default 1000) |
 
 Mistakes (unknown currency, duplicate ids, a typo in a time zone) fail at startup with a clear message.

@@ -21,6 +21,7 @@ All notable changes to onstreak. The format follows [Keep a Changelog](https://k
 - `npm run demo`: a study app with simulated rivals and time travel, running in memory.
 - Friends: mutual friendships with a configurable limit (`friends.max`, default 1000), safe under concurrent requests.
 - Friends leaderboards: `scope=friends` ranks a user against their friends, including friends with no points yet.
+- Multipliers: time-window boosts ("double XP weekend") and streak bonuses with steps (1.5x from 3 days, 2x from 7). They multiply together, apply to one currency or all, and are listed in track results.
 - Quests: daily and weekly goals ("finish 3 lessons", "earn 50 XP") with point rewards paid once on completion. Track results report quest progress; `GET /v1/users/:id/quests` lists progress for the current period. Only events in the running period count.
 - Rivalries: configurable head-to-head matchups (`rivalries`, daily or weekly rounds in any time zone). Each rival shows the live score, a win/loss/draw record, the current streak and the last result. Finished rounds are settled once, only count points recorded before the round ended, and rounds where neither side scored are skipped.
 - Docker image (non-root, with health check) and docker compose setup.

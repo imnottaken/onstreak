@@ -79,6 +79,10 @@ export interface RivalryRule {
   max?: number;
 }
 
+export type ResolvedMultiplier =
+  | { id: string; currency: string | null; kind: "window"; factor: number; from: number; to: number }
+  | { id: string; currency: string | null; kind: "streak"; streak: string; steps: Array<{ gte: number; factor: number }> };
+
 export interface ResolvedRivalry {
   id: string;
   currency: string;
@@ -109,6 +113,15 @@ export interface QuestRule {
   timezone?: string;
 }
 
+/**
+ * Scales points from point rules. A window applies to events that happen
+ * between `from` and `to` ("double XP weekend"); a streak multiplier applies
+ * the highest step the user's streak has reached. Several multipliers multiply.
+ */
+export type MultiplierRule =
+  | { id: string; currency?: string; factor: number; from: string; to: string }
+  | { id: string; currency?: string; streak: string; steps: Array<{ gte: number; factor: number }> };
+
 export interface OnstreakConfig {
   /** Time zone used for streaks when an event does not say. Default UTC. */
   defaultTimezone?: string;
@@ -121,6 +134,7 @@ export interface OnstreakConfig {
   leagues?: LeagueRule[];
   rivalries?: RivalryRule[];
   quests?: QuestRule[];
+  multipliers?: MultiplierRule[];
   friends?: {
     /** Most friends one user can have. Default 1000. */
     max?: number;
@@ -151,6 +165,7 @@ export interface ResolvedConfig {
   leagues: ResolvedLeague[];
   rivalries: ResolvedRivalry[];
   quests: QuestRule[];
+  multipliers: ResolvedMultiplier[];
   friends: { max: number };
 }
 
@@ -311,6 +326,29 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     if (q.timezone !== undefined && !isValidTimeZone(q.timezone)) throw new ConfigError(`quest "${q.id}" has unknown timezone "${q.timezone}"`);
   }
 
+  const multipliers: ResolvedMultiplier[] = [];
+  uniqueIds("multiplier", (input.multipliers ?? []).map((m) => m.id));
+  const goodFactor = (f: unknown) => typeof f === "number" && Number.isFinite(f) && f > 0 && f <= 100;
+  for (const m of input.multipliers ?? []) {
+    if (m.currency !== undefined) hasCurrency(m.currency, `multiplier "${m.id}"`);
+    const currency = m.currency ?? null;
+    if ("streak" in m) {
+      if (!streaks.some((s) => s.id === m.streak)) throw new ConfigError(`multiplier "${m.id}" refers to unknown streak "${m.streak}"`);
+      if (!Array.isArray(m.steps) || m.steps.length === 0) throw new ConfigError(`multiplier "${m.id}" needs steps: [{ gte, factor }]`);
+      for (const s of m.steps) {
+        if (!isNonNegative(s.gte) || !goodFactor(s.factor)) throw new ConfigError(`multiplier "${m.id}" steps need gte >= 0 and a factor above 0 (at most 100)`);
+      }
+      const steps = [...m.steps].sort((a, b) => a.gte - b.gte).map((s) => ({ gte: s.gte, factor: s.factor }));
+      multipliers.push({ id: m.id, currency, kind: "streak", streak: m.streak, steps });
+    } else {
+      if (!goodFactor(m.factor)) throw new ConfigError(`multiplier "${m.id}" factor must be above 0 and at most 100`);
+      const from = Date.parse(m.from as string);
+      const to = Date.parse(m.to as string);
+      if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) throw new ConfigError(`multiplier "${m.id}" needs ISO dates with from before to`);
+      multipliers.push({ id: m.id, currency, kind: "window", factor: m.factor, from, to });
+    }
+  }
+
   const maxFriends = input.friends?.max ?? 1000;
   if (!Number.isInteger(maxFriends) || maxFriends < 1 || maxFriends > 100_000) {
     throw new ConfigError("friends.max must be a whole number from 1 to 100000");
@@ -327,6 +365,7 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     leagues,
     rivalries,
     quests,
+    multipliers,
     friends: { max: maxFriends },
   };
 }

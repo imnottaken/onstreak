@@ -60,7 +60,8 @@ Things that would hurt early users if they were missing.
 - [ ] **Multi-step quests** (M). Quest chains and missions with several goals, one-off (non-repeating) quests.
 - [ ] **Time-limited events** (M). "Double XP weekend", seasonal challenges, global community goals ("everyone together: 1M minutes").
 - [ ] **Seasons** (M). Reset or soft-reset points and leagues each season, keep an archive and award season badges.
-- [ ] **Multipliers and boosts** (M). Streak-based XP multiplier, event-wide boosts, personal boosts with an expiry.
+- [x] **Multipliers and boosts** (M). Streak-based XP multiplier, event-wide boosts.
+- [ ] **Personal boosts** (S). A boost given to one user with an expiry ("2x XP for 1 hour"), e.g. bought in the reward store.
 - [ ] **Spendable currencies and a reward store** (L). Spend coins on items, inventory, purchase history, balance checks.
 - [ ] **Streak shields and streak repair** (M). Buy a freeze with coins, repair a broken streak within N hours.
 - [ ] **Richer streak rules** (M). "At least 3 lessons a day" to count, weekends off, custom week start, monthly streaks.

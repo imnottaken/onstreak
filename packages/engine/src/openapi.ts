@@ -50,7 +50,7 @@ const schemas = {
   },
   TrackResult: {
     type: "object",
-    required: ["eventId", "userId", "event", "value", "duplicate", "points", "level", "streaks", "achievements", "leagues", "quests"],
+    required: ["eventId", "userId", "event", "value", "duplicate", "points", "level", "streaks", "achievements", "leagues", "quests", "multipliers"],
     additionalProperties: false,
     properties: {
       eventId: { type: "string", format: "uuid" },
@@ -114,6 +114,13 @@ const schemas = {
           completed: { type: "boolean", description: "True only on the event that completed the quest." },
           rewards: { type: "array", items: ref("QuestReward") },
         },
+      }),
+      multipliers: map({
+        type: "object",
+        description: "Multipliers applied to points from point rules. A null currency means every currency.",
+        required: ["factor", "currency"],
+        additionalProperties: false,
+        properties: { factor: { type: "number" }, currency: nullable({ type: "string" }) },
       }),
     },
   },

@@ -42,6 +42,8 @@ export interface TrackResult {
   leagues: Record<string, { tier: string; group: number; joined: boolean; previous: LeaguePrevious | null }>;
   /** Quests this event moved forward. `completed` is true on the event that finished one; its rewards are already in `points`. */
   quests: Record<string, { progress: number; target: number; completed: boolean; rewards: QuestReward[] }>;
+  /** Multipliers applied to this event's points from point rules (not quest rewards). Null currency means every currency. */
+  multipliers: Record<string, { factor: number; currency: string | null }>;
 }
 
 /** How the user's last finished round of a league ended. */
@@ -275,10 +277,48 @@ export class Engine {
 
       const levelBefore = config.levels ? levelFor(config.levels, await tx.getBalance(config.levels.currency)) : null;
 
+      const streaks: TrackResult["streaks"] = {};
+      const streakStates = new Map<string, StreakState>();
+      for (const rule of config.streaks) {
+        if (rule.event !== event) continue;
+        const prev = (await tx.getStreak(rule.id)) ?? initialStreak(rule);
+        const update = recordActivity(rule, prev, periodKey(ts, rule.period, timezone));
+        if (update.extended) await tx.setStreak(rule.id, update.state);
+        streakStates.set(rule.id, update.state);
+        streaks[rule.id] = {
+          current: update.state.current,
+          longest: update.state.longest,
+          freezes: update.state.freezes,
+          extended: update.extended,
+          freezesUsed: update.freezesUsed,
+          reset: update.reset,
+        };
+      }
+
+      // Multipliers that apply to this event: time windows it falls in, and
+      // streak steps reached (counting this event's activity).
+      const multipliers: TrackResult["multipliers"] = {};
+      for (const m of config.multipliers) {
+        let factor: number | null = null;
+        if (m.kind === "window") {
+          if (ts >= m.from && ts < m.to) factor = m.factor;
+        } else {
+          // A streak this event did not touch may have lapsed since; count it as it stands now.
+          const rule = config.streaks.find((r) => r.id === m.streak)!;
+          const state = streakStates.get(m.streak) ?? (await tx.getStreak(m.streak));
+          const current = state ? streakStatus(rule, state, periodKey(ts, rule.period, timezone)).current : 0;
+          factor = [...m.steps].reverse().find((step) => current >= step.gte)?.factor ?? null;
+        }
+        if (factor !== null && factor !== 1) multipliers[m.id] = { factor, currency: m.currency };
+      }
+      const factorFor = (currency: string) =>
+        Object.values(multipliers).reduce((f, m) => (m.currency === null || m.currency === currency ? f * m.factor : f), 1);
+
       const points: TrackResult["points"] = {};
       for (const rule of config.points) {
         if (rule.event !== event) continue;
-        const amount = rule.multiplyByValue ? rule.amount * value : rule.amount;
+        const base = rule.multiplyByValue ? rule.amount * value : rule.amount;
+        const amount = Math.round(base * factorFor(rule.currency) * 1e6) / 1e6;
         if (amount === 0) continue;
         const total = await tx.addPoints(rule.currency, amount, ts, eventId, recordedAt);
         const entry = points[rule.currency] ?? { awarded: 0, total };
@@ -313,24 +353,6 @@ export class Engine {
           points[r.currency] = entry;
         }
         quests[quest.id] = { progress, target, completed, rewards };
-      }
-
-      const streaks: TrackResult["streaks"] = {};
-      const streakStates = new Map<string, StreakState>();
-      for (const rule of config.streaks) {
-        if (rule.event !== event) continue;
-        const prev = (await tx.getStreak(rule.id)) ?? initialStreak(rule);
-        const update = recordActivity(rule, prev, periodKey(ts, rule.period, timezone));
-        if (update.extended) await tx.setStreak(rule.id, update.state);
-        streakStates.set(rule.id, update.state);
-        streaks[rule.id] = {
-          current: update.state.current,
-          longest: update.state.longest,
-          freezes: update.state.freezes,
-          extended: update.extended,
-          freezesUsed: update.freezesUsed,
-          reset: update.reset,
-        };
       }
 
       const achievements: TrackResult["achievements"] = [];
@@ -371,7 +393,7 @@ export class Engine {
         }
       }
 
-      const result: TrackResult = { eventId, userId, event, value, duplicate: false, points, level, streaks, achievements, leagues, quests };
+      const result: TrackResult = { eventId, userId, event, value, duplicate: false, points, level, streaks, achievements, leagues, quests, multipliers };
       await tx.setEventResult(eventId, result);
       return result;
     });

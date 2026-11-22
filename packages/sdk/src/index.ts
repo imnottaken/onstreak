@@ -22,6 +22,8 @@ export interface TrackResult {
   leagues: Record<string, { tier: string; group: number; joined: boolean; previous: LeaguePrevious | null }>;
   /** Quests this event moved forward. Rewards of a quest it completed are already in `points`. */
   quests: Record<string, { progress: number; target: number; completed: boolean; rewards: QuestReward[] }>;
+  /** Multipliers applied to points from point rules. A null currency means every currency. */
+  multipliers: Record<string, { factor: number; currency: string | null }>;
 }
 
 export interface LeaguePrevious {
