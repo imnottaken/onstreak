@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, boostSpecProblem } from "./config.js";
+import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, boostSpecProblem, questRunsAt } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
 import { FriendLimitError, RivalLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type ReferralRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
@@ -146,6 +146,8 @@ export interface QuestStatus {
   /** The current period: progress resets at endsAt. */
   startsAt: string;
   endsAt: string;
+  /** When a limited-time quest stops running, or null if it always runs. */
+  until: string | null;
 }
 
 export interface QuestList {
@@ -577,6 +579,7 @@ export class Engine {
       const quests: TrackResult["quests"] = {};
       const earned = new Map(Object.entries(points).map(([c, p]) => [c, p.awarded]));
       for (const quest of config.quests) {
+        if (!questRunsAt(quest, ts)) continue;
         const gain = "event" in quest.goal ? (quest.goal.event === event ? value : 0) : (earned.get(quest.goal.points) ?? 0);
         if (gain <= 0) continue;
         const rule = { period: quest.period, timezone: quest.timezone ?? timezone };
@@ -802,18 +805,19 @@ export class Engine {
     if (options.timezone !== undefined && !isValidTimeZone(options.timezone)) throw new EngineError(`unknown timezone "${options.timezone}"`);
     const now = this.now();
     let userZone = options.timezone;
-    if (userZone === undefined && this.config.quests.some((q) => !q.timezone)) {
+    if (userZone === undefined && this.config.quests.some((q) => !q.timezone && questRunsAt(q, now))) {
       userZone = (await this.store.snapshot(userId)).profile.timezone ?? this.config.defaultTimezone;
     }
-    const rounds = this.config.quests.map((q) => currentRound({ period: q.period, timezone: q.timezone ?? userZone! }, now));
+    const running = this.config.quests.filter((q) => questRunsAt(q, now));
+    const rounds = running.map((q) => currentRound({ period: q.period, timezone: q.timezone ?? userZone! }, now));
     const stored = await this.store.quests(
       userId,
-      this.config.quests.map((q, i) => ({ questId: q.id, periodKey: rounds[i]!.key })),
+      running.map((q, i) => ({ questId: q.id, periodKey: rounds[i]!.key })),
     );
     const byId = new Map(stored.map((s) => [s.questId, s]));
     return {
       userId,
-      quests: this.config.quests.map((q, i) => {
+      quests: running.map((q, i) => {
         const s = byId.get(q.id);
         const round = rounds[i]!;
         return {
@@ -829,6 +833,7 @@ export class Engine {
           rewards: (q.rewards ?? []).map((r) => ({ ...r })),
           startsAt: new Date(round.from).toISOString(),
           endsAt: new Date(round.to).toISOString(),
+          until: q.to === undefined ? null : new Date(Date.parse(q.to)).toISOString(),
         };
       }),
     };

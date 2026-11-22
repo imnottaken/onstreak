@@ -38,7 +38,7 @@ export type {
 export { FriendLimitError, RivalLimitError } from "./store/types.js";
 export { zoneFor, outcomeFor, nextTier, currentRound, roundFromKey, nextRoundKey } from "./leagues.js";
 export type { LeagueOutcome, LeagueZone, LeagueRound, RoundRule } from "./leagues.js";
-export { resolveConfig, levelFor, ConfigError, MAX_BOOST_MINUTES } from "./config.js";
+export { resolveConfig, levelFor, ConfigError, MAX_BOOST_MINUTES, questRunsAt } from "./config.js";
 export type {
   OnstreakConfig,
   ResolvedConfig,

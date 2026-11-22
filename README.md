@@ -86,7 +86,7 @@ Everything is declared in one JSON file. See [examples/onstreak.config.json](exa
 | `leaderboards` | `{ id, currency, period: daily \| weekly \| monthly \| all, timezone? }` |
 | `leagues` | `{ id, currency, tiers, groupSize?, promote?, demote?, period?, timezone? }` (defaults: 30 per group, 7 up, 5 down, weekly) |
 | `rivalries` | `{ id, currency, period?, timezone?, max? }` (defaults: weekly, UTC, 10 rivals each) |
-| `quests` | `{ id, name, description?, period: daily \| weekly, goal: { event, target } \| { points, target }, rewards?: [{ currency, amount }], timezone? }`. Days start in each user's zone unless the quest sets one |
+| `quests` | `{ id, name, description?, period: daily \| weekly, goal: { event, target } \| { points, target }, rewards?: [{ currency, amount }], timezone?, from?, to? }`. Days start in each user's zone unless the quest sets one. `from`/`to` (ISO dates) make it a limited-time quest |
 | `calendars` | `{ id, name?, event, days: [{ rewards: [{ currency, amount }] }], missed?: reset \| continue, afterLast?: repeat \| stay, timezone? }`: login rewards. The first `event` each day claims the next day's rewards; a missed day starts over unless `missed` is `continue` |
 | `referrals` | `{ referrer?: [{ currency, amount }], referred?: [...], qualify?: { event, target }, max? }`. Both sides are paid once the new user has done `target` of `event` (at once without `qualify`); `max` caps how many referrals one user is rewarded for |
 | `communityGoals` | `{ id, name, description?, goal: { event, target } \| { points, target }, from, to, rewards?, minContribution? }`: everyone together ("1M minutes this month"). Contributors who gave at least `minContribution` share the rewards once it is reached |

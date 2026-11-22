@@ -155,7 +155,7 @@ const schemas = {
         type: "array",
         items: {
           type: "object",
-          required: ["id", "name", "period", "goal", "progress", "target", "completed", "completedAt", "rewards", "startsAt", "endsAt"],
+          required: ["id", "name", "period", "goal", "progress", "target", "completed", "completedAt", "rewards", "startsAt", "endsAt", "until"],
           additionalProperties: false,
           properties: {
             id: { type: "string" },
@@ -175,6 +175,7 @@ const schemas = {
             rewards: { type: "array", items: ref("QuestReward") },
             startsAt: { type: "string", format: "date-time" },
             endsAt: { type: "string", format: "date-time" },
+            until: nullable({ type: "string", format: "date-time", description: "When a limited-time quest stops running." }),
           },
         },
       },

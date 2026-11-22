@@ -111,6 +111,9 @@ export interface QuestRule {
   rewards?: QuestReward[];
   /** Fix where days start for everyone. Default: each user's own time zone. */
   timezone?: string;
+  /** Only run between these ISO dates (a seasonal challenge). Default: always. */
+  from?: string;
+  to?: string;
 }
 
 /**
@@ -431,6 +434,9 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
       if (typeof r.amount !== "number" || !Number.isFinite(r.amount) || r.amount <= 0) throw new ConfigError(`quest "${q.id}" rewards need a positive amount`);
     }
     if (q.timezone !== undefined && !isValidTimeZone(q.timezone)) throw new ConfigError(`quest "${q.id}" has unknown timezone "${q.timezone}"`);
+    const from = q.from === undefined ? -Infinity : Date.parse(q.from);
+    const to = q.to === undefined ? Infinity : Date.parse(q.to);
+    if (Number.isNaN(from) || Number.isNaN(to) || to <= from) throw new ConfigError(`quest "${q.id}" from and to must be ISO dates with from before to`);
   }
 
   const multipliers: ResolvedMultiplier[] = [];
@@ -566,6 +572,11 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     communityGoals,
     friends: { max: maxFriends },
   };
+}
+
+/** Whether a quest runs at `ms` (inside its optional from/to window). */
+export function questRunsAt(quest: QuestRule, ms: number): boolean {
+  return (quest.from === undefined || ms >= Date.parse(quest.from)) && (quest.to === undefined || ms < Date.parse(quest.to));
 }
 
 /** Level for a points total: 1 plus every threshold reached. */

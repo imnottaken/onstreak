@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Engine, MemoryStore, PostgresStore, fromPgPool } from "../dist/index.js";
+import { Engine, MemoryStore, PostgresStore, fromPgPool, resolveConfig } from "../dist/index.js";
 import { config as base } from "./fixtures.mjs";
 import { PG_URL, freshSchema, poolFor, storeFactories } from "./helpers.mjs";
 
@@ -118,4 +118,42 @@ test("pg: concurrent events complete a quest and pay its reward exactly once", {
   assert.equal(results.filter((r) => r.quests.three_lessons?.completed).length, 1);
   const user = await engine.getUser("fast");
   assert.equal(user.points.coins, 10 + 5 + 1, "10 lessons, the three-lesson reward, and the 50 XP reward");
+});
+
+for (const [name, makeStore] of Object.entries(storeFactories)) {
+  test(`${name}: limited-time quests only run between their dates`, async (t) => {
+    let now = Date.parse("2026-11-18T06:00:00Z");
+    const seasonal = {
+      ...base,
+      quests: [
+        { id: "winter", name: "Winter sprint", period: "daily", goal: { event: "lesson_completed", target: 1 }, rewards: [{ currency: "coins", amount: 7 }], from: "2026-11-20T00:00:00Z", to: "2026-11-22T00:00:00Z" },
+        { id: "always", name: "Always on", period: "daily", goal: { event: "lesson_completed", target: 5 } },
+      ],
+    };
+    const engine = new Engine(seasonal, await makeStore(t), () => now);
+    let list = await engine.quests("asha");
+    assert.deepEqual(list.quests.map((q) => [q.id, q.until]), [["always", null]], "not started yet");
+    let r = await engine.track({ userId: "asha", event: "lesson_completed" });
+    assert.deepEqual(Object.keys(r.quests), ["always"]);
+
+    now = Date.parse("2026-11-20T06:00:00Z");
+    list = await engine.quests("asha");
+    assert.deepEqual(list.quests.map((q) => [q.id, q.until]), [["winter", "2026-11-22T00:00:00.000Z"], ["always", null]]);
+    r = await engine.track({ userId: "asha", event: "lesson_completed", timestamp: Date.parse("2026-11-19T23:00:00Z") });
+    assert.equal(r.quests.winter, undefined, "an event from before the window does not count");
+    r = await engine.track({ userId: "asha", event: "lesson_completed" });
+    assert.deepEqual(r.quests.winter, { progress: 1, target: 1, completed: true, rewards: [{ currency: "coins", amount: 7 }] });
+
+    now = Date.parse("2026-11-22T06:00:00Z");
+    assert.deepEqual((await engine.quests("asha")).quests.map((q) => q.id), ["always"], "over");
+    r = await engine.track({ userId: "asha", event: "lesson_completed" });
+    assert.equal(r.quests.winter, undefined);
+  });
+}
+
+test("quest windows are validated", () => {
+  const q = { id: "q", name: "Q", period: "daily", goal: { event: "x", target: 1 } };
+  assert.throws(() => resolveConfig({ ...base, quests: [{ ...q, from: "2026-02-01", to: "2026-01-01" }] }), /from before to/);
+  assert.throws(() => resolveConfig({ ...base, quests: [{ ...q, from: "someday" }] }), /ISO dates/);
+  assert.doesNotThrow(() => resolveConfig({ ...base, quests: [{ ...q, to: "2026-01-01" }] }));
 });

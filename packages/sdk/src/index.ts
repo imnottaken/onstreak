@@ -123,6 +123,8 @@ export interface QuestList {
     rewards: QuestReward[];
     startsAt: string;
     endsAt: string;
+    /** When a limited-time quest stops running, or null if it always runs. */
+    until: string | null;
   }>;
 }
 
