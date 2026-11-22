@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { FriendList as FriendListData, LeaderboardEntry, LeaderboardResult, LeagueStatus, RivalryStatus, UserProfile } from "@onstreak/sdk";
-import { countdownTick, cx, displayNameOf, formatTimeLeft, initials, levelProgress, recordText, rivalScoreText, rivalShare, rivalStreakText, streakLabel } from "./helpers.js";
+import type { FriendList as FriendListData, LeaderboardEntry, LeaderboardResult, LeagueStatus, QuestList as QuestListData, RivalryStatus, UserProfile } from "@onstreak/sdk";
+import { countdownTick, cx, displayNameOf, formatTimeLeft, initials, levelProgress, questProgressText, recordText, rewardText, rivalScoreText, rivalShare, rivalStreakText, streakLabel } from "./helpers.js";
 
 type Streak = UserProfile["streaks"][string];
 type Level = NonNullable<UserProfile["level"]>;
@@ -453,6 +453,87 @@ export function RivalList({ status, title, emptyText = "No rivals yet. Challenge
         <p className="os-rivals__empty">{emptyText}</p>
       ) : (
         status.rivals.map((rival) => <RivalCard key={rival.rivalId} rival={rival} round={status.round} {...card} />)
+      )}
+    </section>
+  );
+}
+
+/* ---------- Quests ---------- */
+
+type Quest = QuestListData["quests"][number];
+
+function QuestItem({ quest, now, unitLabel, formatScore }: { quest: Quest; now?: number; unitLabel?: (quest: Quest) => string | undefined; formatScore: (n: number) => string }) {
+  const left = useCountdown(quest.endsAt, now);
+  const pct = Math.round(Math.min(1, quest.progress / quest.target) * 100);
+  const unit = unitLabel?.(quest) ?? ("points" in quest.goal ? quest.goal.points : undefined);
+  const reward = rewardText(quest.rewards);
+  return (
+    <li className={cx("os-quest", quest.completed && "os-quest--done")}>
+      <span className="os-quest__check" aria-hidden="true">
+        {quest.completed ? "✓" : ""}
+      </span>
+      <div className="os-quest__body">
+        <div className="os-quest__header">
+          <span className="os-quest__name">{quest.name}</span>
+          {reward && <span className="os-quest__reward">{reward}</span>}
+        </div>
+        {quest.description && <p className="os-quest__description">{quest.description}</p>}
+        <div
+          className="os-quest__track"
+          role="progressbar"
+          aria-label={quest.name}
+          aria-valuemin={0}
+          aria-valuemax={quest.target}
+          aria-valuenow={quest.progress}
+          aria-valuetext={quest.completed ? "Done" : questProgressText(quest, formatScore, unit)}
+        >
+          <div className="os-quest__fill" style={{ width: `${pct}%` }} />
+        </div>
+        <div className="os-quest__meta">
+          <span className="os-quest__progress">{quest.completed ? "Done" : questProgressText(quest, formatScore, unit)}</span>
+          <span className="os-quest__ends">{left > 0 ? `${quest.completed ? "New quest" : "Ends"} in ${formatTimeLeft(left)}` : "Ended"}</span>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+export interface QuestListProps {
+  /** The result of sdk.quests(userId). */
+  quests: QuestListData;
+  title?: string;
+  /** Only show quests of one period. */
+  period?: "daily" | "weekly";
+  /** Unit after the numbers, e.g. "min" for a minutes goal. Default: the currency for points goals, none for event goals. */
+  unitLabel?: (quest: Quest) => string | undefined;
+  formatScore?: (n: number) => string;
+  /** Clock for the first render (pass the server's time to avoid hydration differences). */
+  now?: number;
+  emptyText?: string;
+  className?: string;
+}
+
+/** Quests with progress bars, rewards and when each one resets. Finished quests move to the end. */
+export function QuestList({ quests, title, period, unitLabel, formatScore = defaultFormat, now, emptyText = "No quests right now.", className }: QuestListProps) {
+  const shown = quests.quests.filter((q) => !period || q.period === period);
+  const ordered = [...shown.filter((q) => !q.completed), ...shown.filter((q) => q.completed)];
+  const done = shown.length - ordered.filter((q) => !q.completed).length;
+  return (
+    <section className={cx("os-quests", className)} aria-label={title ?? "Quests"}>
+      {title && (
+        <header className="os-quests__header">
+          <h3 className="os-quests__title">{title}</h3>
+          {shown.length > 0 && <span className="os-quests__count">{done} / {shown.length} done</span>}
+        </header>
+      )}
+      {ordered.length === 0 ? (
+        <p className="os-quests__empty">{emptyText}</p>
+      ) : (
+        <ul className="os-quests__list">
+          {ordered.map((q) => (
+            <QuestItem key={q.id} quest={q} now={now} unitLabel={unitLabel} formatScore={formatScore} />
+          ))}
+        </ul>
       )}
     </section>
   );

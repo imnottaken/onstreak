@@ -1,6 +1,6 @@
 /* onstreak components. Optional: import "@onstreak/react/styles.css", or style the os-* classes yourself.
    Theme with the --os-* variables. */
-:where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast, .os-friends, .os-rivals, .os-rival) {
+:where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast, .os-friends, .os-rivals, .os-rival, .os-quests) {
   --os-fg: #1f2328;
   --os-muted: #656d76;
   --os-bg: #ffffff;
@@ -15,7 +15,7 @@
   font-family: inherit;
 }
 @media (prefers-color-scheme: dark) {
-  :where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast, .os-friends, .os-rivals, .os-rival) {
+  :where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast, .os-friends, .os-rivals, .os-rival, .os-quests) {
     --os-fg: #e6edf3;
     --os-muted: #8d96a0;
     --os-bg: #0d1117;
@@ -104,3 +104,22 @@
 .os-rival__stats dd { margin: 0; font-weight: 600; }
 .os-rival__streak--won, .os-rival__last--won { color: var(--os-up); }
 .os-rival__streak--lost, .os-rival__last--lost { color: var(--os-down); }
+
+.os-quests__header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.os-quests__title { margin: 0; font-size: 1rem; }
+.os-quests__count, .os-quests__empty { color: var(--os-muted); font-size: 0.875rem; }
+.os-quests__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.os-quest { display: flex; gap: 10px; padding: 10px 12px; background: var(--os-bg); border: 1px solid var(--os-border); border-radius: var(--os-radius); }
+.os-quest__check { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--os-border); display: grid; place-items: center; font-size: 0.75rem; font-weight: 700; }
+.os-quest--done .os-quest__check { background: var(--os-up); border-color: var(--os-up); color: #fff; }
+.os-quest__body { flex: 1; min-width: 0; }
+.os-quest__header { display: flex; justify-content: space-between; gap: 8px; }
+.os-quest__name { font-weight: 600; }
+.os-quest--done .os-quest__name { color: var(--os-muted); }
+.os-quest__reward { flex: none; color: var(--os-accent); font-size: 0.8125rem; font-weight: 600; }
+.os-quest__description { margin: 2px 0 0; color: var(--os-muted); font-size: 0.8125rem; }
+.os-quest__track { height: 8px; margin-top: 8px; background: var(--os-surface); border: 1px solid var(--os-border); border-radius: 999px; overflow: hidden; }
+.os-quest__fill { height: 100%; background: var(--os-accent); transition: width 300ms ease; }
+.os-quest--done .os-quest__fill { background: var(--os-up); }
+@media (prefers-reduced-motion: reduce) { .os-quest__fill { transition: none; } }
+.os-quest__meta { display: flex; justify-content: space-between; margin-top: 4px; color: var(--os-muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }

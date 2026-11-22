@@ -106,3 +106,26 @@ test("friends can be challenged, and a duel's week settles into a record", async
   assert.equal(doc.querySelectorAll(".os-rival").length, 1);
   assert.equal((await fetch(`${base}/rival/nobody`, { method: "POST" })).status, 404, "only known players");
 });
+
+test("quests fill up as you study, pay out, and the daily ones reset", async (t) => {
+  const { view, press } = await start(t);
+  const quest = (doc, name) => [...doc.querySelectorAll(".os-quest")].find((q) => q.querySelector(".os-quest__name").textContent === name);
+  let doc = await view();
+  assert.equal(doc.querySelector(".os-quests__count").textContent, "0 / 3 done");
+  await press("/do/lesson");
+  await press("/do/lesson");
+  doc = await view();
+  assert.ok(quest(doc, "Two lessons").classList.contains("os-quest--done"));
+  assert.equal(doc.querySelector(".stats .muted").textContent, "5 coins", "2 from lessons plus the 3 coin reward");
+  await press("/do/study");
+  doc = await view();
+  assert.equal(quest(doc, "Earn 40 XP").querySelector(".os-quest__progress").textContent, "35 / 40 xp", "two lessons and 15 minutes");
+  await press("/do/lesson");
+  doc = await view();
+  assert.ok(quest(doc, "Earn 40 XP").classList.contains("os-quest--done"), "a third lesson passes 40");
+  assert.equal(quest(doc, "Study for an hour").querySelector(".os-quest__progress").textContent, "15 / 60 min");
+  await press("/next-day");
+  doc = await view();
+  assert.equal(doc.querySelector(".os-quests__count").textContent, "0 / 3 done", "daily quests start over");
+  assert.equal(quest(doc, "Study for an hour").querySelector(".os-quest__progress").textContent, "15 / 60 min", "the weekly one carries on");
+});

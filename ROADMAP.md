@@ -39,7 +39,7 @@ Things that would hurt early users if they were missing.
 
 - [x] **Live demo app** (M). `npm run demo`: a study app with simulated rivals and a next-day button, in memory.
 - [ ] **Demo GIF** (S). Record the demo for the README and Twitter; host the demo publicly.
-- [x] **React components** (L). `StreakFlame`, `LevelBar`, `BadgeGrid`, `Leaderboard`, `LeagueTable`, `AchievementToast`, `FriendsList`, `RivalCard`, `RivalList`, unstyled and themeable.
+- [x] **React components** (L). `StreakFlame`, `LevelBar`, `BadgeGrid`, `Leaderboard`, `LeagueTable`, `AchievementToast`, `FriendsList`, `RivalCard`, `RivalList`, `QuestList`, unstyled and themeable.
 - [ ] **React hooks** (M). `useUser`, `useStreak`, `useLeague`, with optimistic updates after `track()`.
 - [ ] **Docs site** (M). Concepts, config reference, API reference, recipes.
 - [x] **OpenAPI spec** (M). Generated from the routes, so other languages can generate clients.

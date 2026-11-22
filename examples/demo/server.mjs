@@ -1,5 +1,5 @@
 // onstreak demo: a tiny study app showing streaks, levels, badges, a
-// leaderboard, a league, friends and head-to-head rivals, with simulated players and a "next day" button.
+// leaderboard, a league, quests, friends and head-to-head rivals, with simulated players and a "next day" button.
 // Runs entirely in memory: no database, no keys.
 //
 //   npm run build && npm run demo     # then open http://localhost:3000
@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url";
 import { createElement as h, Fragment } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Engine, MemoryStore } from "@onstreak/engine";
-import { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalList } from "@onstreak/react";
+import { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalList, QuestList } from "@onstreak/react";
 
 const DAY = 86_400_000;
 const START = Date.parse("2026-11-16T09:00:00Z"); // a Monday morning
@@ -39,6 +39,11 @@ export const demoConfig = {
   ],
   leagues: [{ id: "weekly_league", currency: "xp", tiers: ["bronze", "silver", "gold", "sapphire", "diamond"], groupSize: 8, promote: 2, demote: 2 }],
   rivalries: [{ id: "weekly_duel", currency: "xp", max: 3 }],
+  quests: [
+    { id: "two_lessons", name: "Two lessons", description: "Finish 2 lessons today", period: "daily", goal: { event: "lesson_completed", target: 2 }, rewards: [{ currency: "coins", amount: 3 }] },
+    { id: "daily_xp", name: "Earn 40 XP", period: "daily", goal: { points: "xp", target: 40 }, rewards: [{ currency: "xp", amount: 10 }] },
+    { id: "study_hour", name: "Study for an hour", description: "Across the week", period: "weekly", goal: { event: "minutes_studied", target: 60 }, rewards: [{ currency: "coins", amount: 10 }, { currency: "xp", amount: 50 }] },
+  ],
 };
 
 /** Players you start out friends with. */
@@ -124,7 +129,7 @@ export function createDemo({ seed = 42 } = {}) {
   }
 
   async function render(unlocked) {
-    const [user, weekly, league, history, friends, rivals, friendsBoard] = await Promise.all([
+    const [user, weekly, league, history, friends, rivals, friendsBoard, quests] = await Promise.all([
       engine.getUser(YOU),
       engine.leaderboard("xp_weekly", { userId: YOU, limit: 10 }),
       engine.league("weekly_league", YOU),
@@ -132,6 +137,7 @@ export function createDemo({ seed = 42 } = {}) {
       engine.friends(YOU),
       engine.rivals("weekly_duel", YOU),
       engine.leaderboard("xp_weekly", { userId: YOU, scope: "friends" }),
+      engine.quests(YOU),
     ]);
     const rivalIds = new Set(rivals.rivals.map((r) => r.rivalId));
     const rivalButton = (f) =>
@@ -168,6 +174,11 @@ export function createDemo({ seed = 42 } = {}) {
             h("h2", null, "Your progress"),
             h("div", { className: "stats" }, h(StreakFlame, { streak: user.streaks.daily_lesson }), h("span", { className: "muted" }, `${user.points.coins} coins`)),
             user.level && h(LevelBar, { level: user.level }),
+          ),
+          h(
+            "section",
+            { className: "card" },
+            h(QuestList, { quests, title: "Quests", now: now(), unitLabel: (q) => (q.id === "study_hour" ? "min" : undefined) }),
           ),
           h("section", { className: "card" }, h(LeagueTable, { status: league, now: now() })),
           h("section", { className: "card" }, h(Leaderboard, { board: weekly, currentUserId: YOU, title: "This week" })),

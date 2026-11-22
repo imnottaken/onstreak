@@ -15,7 +15,7 @@ const { act } = React;
 const { createRoot } = await import("react-dom/client");
 const { renderToStaticMarkup } = await import("react-dom/server");
 const lib = await import("../dist/index.js");
-const { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalCard, RivalList } = lib;
+const { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalCard, RivalList, QuestList } = lib;
 const h = React.createElement;
 
 /** Mount into the fake DOM; returns the container and an unmount function. */
@@ -327,4 +327,47 @@ test("RivalCard counts down live", () => {
   } finally {
     mock.timers.reset();
   }
+});
+
+const questData = {
+  userId: "asha",
+  quests: [
+    { id: "three", name: "Three lessons", description: "Finish 3 lessons today", period: "daily", goal: { event: "lesson_completed", target: 3 }, progress: 3, target: 3, completed: true, completedAt: "2026-11-21T08:00:00.000Z", rewards: [{ currency: "coins", amount: 5 }], startsAt: "2026-11-21T00:00:00.000Z", endsAt: "2026-11-22T00:00:00.000Z" },
+    { id: "xp", name: "Earn XP", period: "daily", goal: { points: "xp", target: 50 }, progress: 20, target: 50, completed: false, completedAt: null, rewards: [], startsAt: "2026-11-21T00:00:00.000Z", endsAt: "2026-11-22T00:00:00.000Z" },
+    { id: "hour", name: "Study an hour", period: "weekly", goal: { event: "minutes_studied", target: 60 }, progress: 75, target: 60, completed: false, completedAt: null, rewards: [{ currency: "xp", amount: 1000 }, { currency: "coins", amount: 2 }], startsAt: "2026-11-16T00:00:00.000Z", endsAt: "2026-11-23T00:00:00.000Z" },
+  ],
+};
+
+test("quest helpers", () => {
+  assert.equal(lib.rewardText([]), null);
+  assert.equal(lib.rewardText([{ currency: "xp", amount: 1000 }, { currency: "coins", amount: 2 }]), `+${(1000).toLocaleString()} xp, +2 coins`);
+  assert.equal(lib.questProgressText({ progress: 2, target: 3 }), "2 / 3");
+  assert.equal(lib.questProgressText({ progress: 75, target: 60 }, undefined, "min"), "60 / 60 min", "never shows more than the target");
+});
+
+test("QuestList shows progress, rewards and reset time, open quests first", () => {
+  const f = fragment(renderToStaticMarkup(h(QuestList, { quests: questData, title: "Quests", now: NOW, unitLabel: (q) => (q.id === "hour" ? "min" : undefined) })));
+  assert.equal(f.querySelector(".os-quests__count").textContent, "1 / 3 done");
+  const items = [...f.querySelectorAll(".os-quest")];
+  assert.deepEqual(items.map((i) => i.querySelector(".os-quest__name").textContent), ["Earn XP", "Study an hour", "Three lessons"], "finished quests go last");
+  const [xp, hour, three] = items;
+  assert.equal(xp.querySelector(".os-quest__progress").textContent, "20 / 50 xp", "points goals show the currency");
+  assert.equal(xp.querySelector(".os-quest__fill").style.width, "40%");
+  assert.equal(xp.querySelector(".os-quest__reward"), null);
+  assert.equal(xp.querySelector(".os-quest__ends").textContent, "Ends in 14h");
+  const bar = hour.querySelector("[role=progressbar]");
+  assert.equal(bar.getAttribute("aria-valuetext"), "60 / 60 min");
+  assert.equal(hour.querySelector(".os-quest__fill").style.width, "100%", "capped at full");
+  assert.equal(hour.querySelector(".os-quest__ends").textContent, "Ends in 1d 14h");
+  assert.ok(three.classList.contains("os-quest--done"));
+  assert.equal(three.querySelector(".os-quest__progress").textContent, "Done");
+  assert.equal(three.querySelector(".os-quest__reward").textContent, "+5 coins");
+  assert.equal(three.querySelector(".os-quest__description").textContent, "Finish 3 lessons today");
+  assert.equal(three.querySelector(".os-quest__ends").textContent, "New quest in 14h");
+
+  const weekly = fragment(renderToStaticMarkup(h(QuestList, { quests: questData, period: "weekly", now: NOW })));
+  assert.equal(weekly.querySelectorAll(".os-quest").length, 1);
+  const none = fragment(renderToStaticMarkup(h(QuestList, { quests: { userId: "a", quests: [] }, title: "Quests", now: NOW })));
+  assert.equal(none.querySelector(".os-quests__empty").textContent, "No quests right now.");
+  assert.equal(none.querySelector(".os-quests__count"), null);
 });

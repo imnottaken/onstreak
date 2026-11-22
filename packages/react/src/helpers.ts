@@ -80,3 +80,14 @@ export function rivalShare(current: { you: number; them: number }): number {
   const total = current.you + current.them;
   return total <= 0 ? 0.5 : Math.min(1, Math.max(0, current.you / total));
 }
+
+/** "+5 coins, +20 xp", or null without rewards. */
+export function rewardText(rewards: Array<{ currency: string; amount: number }>): string | null {
+  if (rewards.length === 0) return null;
+  return rewards.map((r) => `+${r.amount.toLocaleString()} ${r.currency}`).join(", ");
+}
+
+/** "2 / 3", or "40 / 60 min" with a unit. */
+export function questProgressText(quest: { progress: number; target: number }, format: (n: number) => string = (n) => n.toLocaleString(), unit?: string): string {
+  return `${format(Math.min(quest.progress, quest.target))} / ${format(quest.target)}${unit ? ` ${unit}` : ""}`;
+}

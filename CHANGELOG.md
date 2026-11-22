@@ -17,7 +17,7 @@ All notable changes to onstreak. The format follows [Keep a Changelog](https://k
 - TypeScript SDK covering every route.
 - OpenAPI 3.1 description at `GET /openapi.json`, checked against real responses in tests.
 - `level.startsAt` on user profiles, so progress bars know where the current level began.
-- `@onstreak/react`: StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalCard and RivalList, accessible and themeable.
+- `@onstreak/react`: StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalCard, RivalList and QuestList, accessible and themeable.
 - `npm run demo`: a study app with simulated rivals and time travel, running in memory.
 - Friends: mutual friendships with a configurable limit (`friends.max`, default 1000), safe under concurrent requests.
 - Friends leaderboards: `scope=friends` ranks a user against their friends, including friends with no points yet.

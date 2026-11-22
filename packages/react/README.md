@@ -1,6 +1,6 @@
 # @onstreak/react
 
-Accessible React components for [onstreak](https://github.com/imnottaken/onstreak): `StreakFlame`, `LevelBar`, `BadgeGrid`, `Leaderboard`, `LeagueTable`, `AchievementToast`, `FriendsList`, `RivalCard` and `RivalList`.
+Accessible React components for [onstreak](https://github.com/imnottaken/onstreak): `StreakFlame`, `LevelBar`, `BadgeGrid`, `Leaderboard`, `LeagueTable`, `AchievementToast`, `FriendsList`, `RivalCard`, `RivalList` and `QuestList`.
 
 They render data from `@onstreak/sdk`. Fetch it on your server (the API key must never reach a browser) and pass it as props.
 
