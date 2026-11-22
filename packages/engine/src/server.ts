@@ -219,6 +219,11 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         );
       }
 
+      if (req.method === "GET" && resource === "community-goals" && parts.length === 2) {
+        const userId = url.searchParams.get("userId") ?? undefined;
+        return send(200, await engine.communityGoals(userId ? { userId } : {}));
+      }
+
       if (req.method === "GET" && resource === "leagues" && id && sub === "users" && subId && parts.length === 5) {
         return send(200, await engine.league(id, subId));
       }

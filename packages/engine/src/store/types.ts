@@ -125,6 +125,16 @@ export interface ReferralRecord {
   rewarded: boolean;
 }
 
+/** Sum an event's values, or points in a currency, over a window: for everyone, or one user. */
+export interface CommunityTotalQuery {
+  kind: "event" | "points";
+  /** Event key or currency. */
+  key: string;
+  from: number;
+  to: number;
+  userId?: string;
+}
+
 export interface PurchasePageQuery {
   limit: number;
   /** Return purchases strictly older than this position (newest first). */
@@ -231,6 +241,8 @@ export interface UserTx {
    * rewarded, the rest only settled. Returns the ones settled now.
    */
   settleReferrals(max: number | null, at: number): Promise<ReferralRecord[]>;
+  /** Record that the user took a community goal's rewards. Returns false if they already had. */
+  claimCommunityReward(goalId: string, at: number): Promise<boolean>;
 }
 
 export interface UserSnapshot {
@@ -305,6 +317,9 @@ export interface Store {
   windowScores(query: WindowScoreQuery): Promise<Record<string, number>>;
   /** A user's progress on these quest periods. Periods never started are left out. */
   quests(userId: string, keys: Array<{ questId: string; periodKey: string }>): Promise<QuestProgress[]>;
+  communityTotal(query: CommunityTotalQuery): Promise<number>;
+  /** Community goals whose rewards this user has claimed. */
+  communityClaims(userId: string): Promise<Set<string>>;
   /** Who referred this user, and everyone they referred (newest first). */
   referrals(userId: string): Promise<{ referredBy: ReferralRecord | null; referred: ReferralRecord[] }>;
   /** A user's boosts that end after `after`, soonest start first. */

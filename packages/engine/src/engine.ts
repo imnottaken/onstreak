@@ -266,6 +266,37 @@ export interface ReferralList {
   max: number | null;
 }
 
+export interface CommunityGoalStatus {
+  id: string;
+  name: string;
+  description?: string;
+  goal: { event: string; target: number } | { points: string; target: number };
+  /** Everyone's total so far. */
+  progress: number;
+  target: number;
+  completed: boolean;
+  status: "upcoming" | "active" | "ended";
+  startsAt: string;
+  endsAt: string;
+  rewards: QuestReward[];
+  /** Least a user must contribute to share the rewards (0 means anything above 0). */
+  minContribution: number;
+  /** The asking user's part, when a userId was given. */
+  you: {
+    contribution: number;
+    /** Contributed enough to share the rewards once the goal is reached. */
+    eligible: boolean;
+    /** Has received the rewards (now or earlier). */
+    rewarded: boolean;
+    /** What this request paid (rewards are paid the first time an eligible user looks after the goal is reached). */
+    paidNow: QuestReward[];
+  } | null;
+}
+
+export interface CommunityGoalList {
+  goals: CommunityGoalStatus[];
+}
+
 export interface ItemUseInput {
   /** How many to use at once. Default 1. */
   quantity?: number;
@@ -904,6 +935,61 @@ export class Engine {
         for (const reward of rules.referrer ?? []) await tx.addPoints(reward.currency, reward.amount, now, r.id, now);
       }
     });
+  }
+
+  /**
+   * Community goals with everyone's progress. With a userId, also that user's
+   * contribution; an eligible user is paid the rewards the first time they
+   * look after the goal is reached.
+   */
+  async communityGoals(options: { userId?: string } = {}): Promise<CommunityGoalList> {
+    const userId = options.userId;
+    if (userId !== undefined) checkUserId(userId);
+    const now = this.now();
+    const claimed = userId ? await this.store.communityClaims(userId) : new Set<string>();
+    const goals: CommunityGoalStatus[] = [];
+    for (const g of this.config.communityGoals) {
+      const kind = "event" in g.goal ? "event" : "points";
+      const key = "event" in g.goal ? g.goal.event : g.goal.points;
+      const progress = round6(await this.store.communityTotal({ kind, key, from: g.from, to: g.to }));
+      const target = g.goal.target;
+      const completed = progress >= target;
+      const rewards = (g.rewards ?? []).map((r) => ({ ...r }));
+      let you: CommunityGoalStatus["you"] = null;
+      if (userId) {
+        const contribution = round6(await this.store.communityTotal({ kind, key, from: g.from, to: g.to, userId }));
+        const eligible = g.minContribution === undefined ? contribution > 0 : contribution >= g.minContribution;
+        let rewarded = claimed.has(g.id);
+        let paidNow: QuestReward[] = [];
+        if (completed && eligible && !rewarded) {
+          const won = await this.store.withUser(userId, async (tx) => {
+            if (!(await tx.claimCommunityReward(g.id, now))) return false;
+            const eventId = randomUUID();
+            for (const r of rewards) await tx.addPoints(r.currency, r.amount, now, eventId, now);
+            return true;
+          });
+          rewarded = true;
+          if (won) paidNow = rewards.map((r) => ({ ...r }));
+        }
+        you = { contribution, eligible, rewarded, paidNow };
+      }
+      goals.push({
+        id: g.id,
+        name: g.name,
+        ...(g.description ? { description: g.description } : {}),
+        goal: { ...g.goal },
+        progress,
+        target,
+        completed,
+        status: now < g.from ? "upcoming" : now < g.to ? "active" : "ended",
+        startsAt: new Date(g.from).toISOString(),
+        endsAt: new Date(g.to).toISOString(),
+        rewards,
+        minContribution: g.minContribution ?? 0,
+        you,
+      });
+    }
+    return { goals };
   }
 
   async friends(userId: string): Promise<FriendList> {

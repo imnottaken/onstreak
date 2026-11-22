@@ -209,6 +209,24 @@ export interface ReferralList {
   max: number | null;
 }
 
+export interface CommunityGoalList {
+  goals: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    goal: { event: string; target: number } | { points: string; target: number };
+    progress: number;
+    target: number;
+    completed: boolean;
+    status: "upcoming" | "active" | "ended";
+    startsAt: string;
+    endsAt: string;
+    rewards: QuestReward[];
+    minContribution: number;
+    you: { contribution: number; eligible: boolean; rewarded: boolean; paidNow: QuestReward[] } | null;
+  }>;
+}
+
 export interface Boost {
   id: string;
   factor: number;
@@ -388,6 +406,9 @@ export function createClient(options: ClientOptions) {
     addReferral: (userId: string, referrerId: string) => call<ReferralResult>("PUT", `${user(userId)}/referred-by/${encodeURIComponent(referrerId)}`),
     /** Who referred a user and whom they referred. */
     referrals: (userId: string) => call<ReferralList>("GET", `${user(userId)}/referrals`),
+    /** Community goals with everyone's progress; with userId, that user's part (and their rewards, once reached). */
+    communityGoals: (opts: { userId?: string } = {}) =>
+      call<CommunityGoalList>("GET", `/v1/community-goals${opts.userId ? `?userId=${encodeURIComponent(opts.userId)}` : ""}`),
     /** Give a user a personal multiplier for some minutes, e.g. 2x XP for an hour. */
     grantBoost: (userId: string, input: BoostInput) =>
       call<{ userId: string; boost: Boost; duplicate: boolean; boosts: Boost[] }>("POST", `${user(userId)}/boosts`, input),

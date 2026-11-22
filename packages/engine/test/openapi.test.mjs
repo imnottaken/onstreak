@@ -233,6 +233,20 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   assert.deepEqual([hostRefs.json.rewarded, hostRefs.json.referred[0].rewarded], [1, true]);
   await refCall("get", "/v1/users/new1/referrals", "/v1/users/{userId}/referrals");
 
+  await call("get", "/v1/community-goals", "/v1/community-goals"); // none configured
+  const together = await serve(t, new MemoryStore(), { ...config, communityGoals: [{ id: "minutes", name: "A thousand minutes", description: "Together", goal: { event: "minutes_studied", target: 50 }, from: "2020-01-01T00:00:00Z", to: "2099-01-01T00:00:00Z", rewards: [{ currency: "coins", amount: 3 }] }] });
+  const goalCall = async (path, body) => {
+    const res = await fetch(`${together.base}${path}`, { method: body ? "POST" : "GET", headers: { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const json = await res.json();
+    c.check(body ? "post" : "get", body ? "/v1/events" : "/v1/community-goals", res.status, json);
+    return json;
+  };
+  await goalCall("/v1/events", { userId: "g", event: "minutes_studied", value: 60 });
+  const goals = await goalCall("/v1/community-goals?userId=g");
+  assert.deepEqual([goals.goals[0].completed, goals.goals[0].you.paidNow], [true, [{ currency: "coins", amount: 3 }]]);
+  await goalCall("/v1/community-goals");
+  await goalCall("/v1/community-goals?userId=bad%20id"); // 400
+
   await call("get", "/health", "/health", undefined, { key: null });
   store.ping = async () => {
     throw new Error("down");

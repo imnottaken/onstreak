@@ -155,6 +155,30 @@ export interface ReferralConfig {
   max?: number;
 }
 
+/**
+ * A goal everyone works toward together in a time window ("1M minutes this
+ * month"). Event goals sum event values, points goals sum points earned.
+ * Once reached, everyone who contributed at least `minContribution` can
+ * claim `rewards`.
+ */
+export interface CommunityGoalRule {
+  id: string;
+  name: string;
+  description?: string;
+  goal: { event: string; target: number } | { points: string; target: number };
+  /** ISO dates: events from `from` up to (not including) `to` count. */
+  from: string;
+  to: string;
+  rewards?: QuestReward[];
+  /** Least a user must contribute to share the rewards. Default: anything above 0. */
+  minContribution?: number;
+}
+
+export interface ResolvedCommunityGoal extends Omit<CommunityGoalRule, "from" | "to"> {
+  from: number;
+  to: number;
+}
+
 /** A personal multiplier: `factor` on points from point rules for `minutes`. No currency means every currency. */
 export interface BoostSpec {
   factor: number;
@@ -212,6 +236,7 @@ export interface OnstreakConfig {
   items?: ItemRule[];
   calendars?: CalendarRule[];
   referrals?: ReferralConfig;
+  communityGoals?: CommunityGoalRule[];
   friends?: {
     /** Most friends one user can have. Default 1000. */
     max?: number;
@@ -247,6 +272,7 @@ export interface ResolvedConfig {
   calendars: CalendarRule[];
   /** Null when referrals are not configured. */
   referrals: ReferralConfig | null;
+  communityGoals: ResolvedCommunityGoal[];
   friends: { max: number };
 }
 
@@ -495,6 +521,28 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     };
   }
 
+  const communityGoals: ResolvedCommunityGoal[] = [];
+  uniqueIds("community goal", (input.communityGoals ?? []).map((g) => g.id));
+  for (const g of input.communityGoals ?? []) {
+    if (typeof g.name !== "string" || g.name.length === 0) throw new ConfigError(`community goal "${g.id}" needs a name`);
+    const goal = g.goal as Record<string, unknown> | undefined;
+    const kinds = goal ? ["event", "points"].filter((k) => k in goal) : [];
+    if (kinds.length !== 1 || typeof goal?.target !== "number" || !Number.isFinite(goal.target) || goal.target <= 0) {
+      throw new ConfigError(`community goal "${g.id}" needs goal: { event | points, target } with a positive target`);
+    }
+    if ("event" in g.goal && (typeof g.goal.event !== "string" || !ID.test(g.goal.event))) throw new ConfigError(`community goal "${g.id}" has bad event "${g.goal.event}"`);
+    if ("points" in g.goal) hasCurrency(g.goal.points, `community goal "${g.id}"`);
+    const from = Date.parse(g.from);
+    const to = Date.parse(g.to);
+    if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) throw new ConfigError(`community goal "${g.id}" needs ISO dates with from before to`);
+    for (const r of g.rewards ?? []) {
+      hasCurrency(r.currency, `community goal "${g.id}" reward`);
+      if (typeof r.amount !== "number" || !Number.isFinite(r.amount) || r.amount <= 0) throw new ConfigError(`community goal "${g.id}" rewards need a positive amount`);
+    }
+    if (g.minContribution !== undefined && !(isNonNegative(g.minContribution) && g.minContribution > 0)) throw new ConfigError(`community goal "${g.id}" minContribution must be positive`);
+    communityGoals.push({ ...g, goal: { ...g.goal }, rewards: (g.rewards ?? []).map((r) => ({ ...r })), from, to });
+  }
+
   const maxFriends = input.friends?.max ?? 1000;
   if (!Number.isInteger(maxFriends) || maxFriends < 1 || maxFriends > 100_000) {
     throw new ConfigError("friends.max must be a whole number from 1 to 100000");
@@ -515,6 +563,7 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     items,
     calendars,
     referrals,
+    communityGoals,
     friends: { max: maxFriends },
   };
 }

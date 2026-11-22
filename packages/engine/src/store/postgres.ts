@@ -12,6 +12,7 @@ import type {
   ItemUseRecord,
   BoostRecord,
   ReferralRecord,
+  CommunityTotalQuery,
   RivalRecord,
   WindowScoreQuery,
   EventRecord,
@@ -372,6 +373,13 @@ export class PostgresStore implements Store {
         }
         return settled;
       },
+      async claimCommunityReward(goalId, at) {
+        const { rows } = await q.query(
+          `insert into ${t.communityRewards} (user_id, goal_id, claimed_at) values ($1, $2, $3) on conflict do nothing returning goal_id`,
+          [userId, goalId, new Date(at).toISOString()],
+        );
+        return rows.length > 0;
+      },
       async getCalendar(id) {
         const { rows } = await q.query(`select day, last_period from ${t.calendars} where user_id = $1 and calendar_id = $2`, [userId, id]);
         return rows[0] ? { day: num(rows[0].day), lastPeriod: String(rows[0].last_period) } : null;
@@ -605,6 +613,20 @@ export class PostgresStore implements Store {
       recordedAt: ms(r.recorded_at),
       result: r.result ? json<TrackResult>(r.result) : null,
     }));
+  }
+
+  async communityTotal(q: CommunityTotalQuery): Promise<number> {
+    const sql =
+      q.kind === "points"
+        ? `select coalesce(sum(amount), 0) as total from ${this.t.ledger} where currency = $1 and ts >= $2 and ts < $3 and ($4::text is null or user_id = $4)`
+        : `select coalesce(sum(value), 0) as total from ${this.t.events} where key = $1 and ts >= $2 and ts < $3 and ($4::text is null or user_id = $4)`;
+    const { rows } = await this.db.query(sql, [q.key, new Date(q.from).toISOString(), new Date(q.to).toISOString(), q.userId ?? null]);
+    return num(rows[0]?.total);
+  }
+
+  async communityClaims(userId: string): Promise<Set<string>> {
+    const { rows } = await this.db.query(`select goal_id from ${this.t.communityRewards} where user_id = $1`, [userId]);
+    return new Set(rows.map((r) => String(r.goal_id)));
   }
 
   async referrals(userId: string): Promise<{ referredBy: ReferralRecord | null; referred: ReferralRecord[] }> {

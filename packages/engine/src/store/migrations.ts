@@ -32,6 +32,7 @@ export interface Tables {
   boosts: string;
   calendars: string;
   referrals: string;
+  communityRewards: string;
 }
 
 export function tableNames(prefix: string): Tables {
@@ -56,6 +57,7 @@ export function tableNames(prefix: string): Tables {
     boosts: `${prefix}boosts`,
     calendars: `${prefix}calendar_progress`,
     referrals: `${prefix}referrals`,
+    communityRewards: `${prefix}community_rewards`,
   };
 }
 
@@ -318,6 +320,20 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 13,
     name: "refunds",
     statements: (t) => [`alter table ${t.purchases} add column if not exists refunded integer not null default 0`],
+  },
+  {
+    version: 14,
+    name: "community goals",
+    statements: (t) => [
+      // Summing an event across everyone in a window.
+      `create index if not exists ${t.prefix}events_key_ts on ${t.events} (key, ts)`,
+      `create table if not exists ${t.communityRewards} (
+         user_id text not null references ${t.users}(id),
+         goal_id text not null,
+         claimed_at timestamptz not null,
+         primary key (user_id, goal_id)
+       )`,
+    ],
   },
 ];
 

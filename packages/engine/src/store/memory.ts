@@ -24,6 +24,7 @@ import type {
   BoostRecord,
   CalendarState,
   ReferralRecord,
+  CommunityTotalQuery,
   UserTx,
 } from "./types.js";
 
@@ -74,6 +75,8 @@ export class MemoryStore implements Store {
   private locks = new Map<string, Promise<unknown>>();
   /** Keyed by the referred user's id. */
   private referralRows = new Map<string, ReferralRecord>();
+  /** Keyed by "userId|goalId". */
+  private communityClaimRows = new Set<string>();
 
   async migrate(): Promise<MigrationReport> {
     return { applied: [], version: 0 };
@@ -197,6 +200,12 @@ export class MemoryStore implements Store {
           if (r.rewarded) rewardedSoFar++;
         }
         return due.map((r) => ({ ...r }));
+      },
+      claimCommunityReward: async (goalId) => {
+        const key = `${userId}|${goalId}`;
+        if (this.communityClaimRows.has(key)) return false;
+        this.communityClaimRows.add(key);
+        return true;
       },
       getCalendar: async (id) => {
         const c = d.calendars.get(id);
@@ -340,6 +349,23 @@ export class MemoryStore implements Store {
       .filter((e) => !before || e.ts < before.ts || (e.ts === before.ts && e.id < before.id))
       .slice(0, q.limit)
       .map((e) => ({ id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result }));
+  }
+
+  async communityTotal(q: CommunityTotalQuery): Promise<number> {
+    let total = 0;
+    if (q.kind === "points") {
+      for (const l of this.ledger) {
+        if (l.currency === q.key && l.ts >= q.from && l.ts < q.to && (!q.userId || l.userId === q.userId)) total += l.amount;
+      }
+      return total;
+    }
+    const users = q.userId ? [this.users.get(q.userId)].filter((d): d is UserData => !!d) : [...this.users.values()];
+    for (const d of users) for (const e of d.events.values()) if (e.key === q.key && e.ts >= q.from && e.ts < q.to) total += e.value;
+    return total;
+  }
+
+  async communityClaims(userId: string): Promise<Set<string>> {
+    return new Set([...this.communityClaimRows].filter((k) => k.startsWith(`${userId}|`)).map((k) => k.slice(userId.length + 1)));
   }
 
   async referrals(userId: string): Promise<{ referredBy: ReferralRecord | null; referred: ReferralRecord[] }> {

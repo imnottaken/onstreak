@@ -58,7 +58,8 @@ Things that would hurt early users if they were missing.
 - [ ] **Teams, guilds and clubs** (L). Members, team points, team leaderboards, team leagues.
 - [x] **Quests and missions** (L). Daily and weekly quests ("finish 3 lessons today", "earn 50 XP"), rewards on completion.
 - [ ] **Multi-step quests** (M). Quest chains and missions with several goals, one-off (non-repeating) quests.
-- [ ] **Time-limited events** (M). "Double XP weekend", seasonal challenges, global community goals ("everyone together: 1M minutes").
+- [x] **Time-limited events** (M). "Double XP weekend" (multiplier windows), global community goals ("everyone together: 1M minutes").
+- [ ] **Limited-time quests** (S). Quests that only run between two dates, for seasonal challenges.
 - [ ] **Seasons** (M). Reset or soft-reset points and leagues each season, keep an archive and award season badges.
 - [x] **Multipliers and boosts** (M). Streak-based XP multiplier, event-wide boosts.
 - [x] **Personal boosts** (S). A boost given to one user with an expiry ("2x XP for 1 hour"), e.g. bought in the reward store.

@@ -347,6 +347,51 @@ const schemas = {
       max: nullable({ type: "integer", minimum: 1 }),
     },
   },
+  CommunityGoalList: {
+    type: "object",
+    required: ["goals"],
+    additionalProperties: false,
+    properties: {
+      goals: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id", "name", "goal", "progress", "target", "completed", "status", "startsAt", "endsAt", "rewards", "minContribution", "you"],
+          additionalProperties: false,
+          properties: {
+            id: { type: "string" },
+            name: { type: "string" },
+            description: { type: "string" },
+            goal: {
+              oneOf: [
+                { type: "object", required: ["event", "target"], additionalProperties: false, properties: { event: { type: "string" }, target: { type: "number" } } },
+                { type: "object", required: ["points", "target"], additionalProperties: false, properties: { points: { type: "string" }, target: { type: "number" } } },
+              ],
+            },
+            progress: { type: "number", description: "Everyone's total so far." },
+            target: { type: "number" },
+            completed: { type: "boolean" },
+            status: { enum: ["upcoming", "active", "ended"] },
+            startsAt: { type: "string", format: "date-time" },
+            endsAt: { type: "string", format: "date-time" },
+            rewards: { type: "array", items: ref("QuestReward") },
+            minContribution: { type: "number", minimum: 0 },
+            you: nullable({
+              type: "object",
+              required: ["contribution", "eligible", "rewarded", "paidNow"],
+              additionalProperties: false,
+              properties: {
+                contribution: { type: "number" },
+                eligible: { type: "boolean" },
+                rewarded: { type: "boolean" },
+                paidNow: { type: "array", items: ref("QuestReward"), description: "Rewards this request paid." },
+              },
+            }),
+          },
+        },
+      },
+    },
+  },
   Boost: {
     type: "object",
     required: ["id", "factor", "currency", "startsAt", "endsAt", "reason"],
@@ -872,6 +917,15 @@ export function openapiSpec(version: string) {
           operationId: "referrals",
           summary: "Who referred a user and whom they referred",
           responses: { "200": ok("The user's referrals", ref("ReferralList")), ...authErrors, "404": errorResponse("Referrals are not configured") },
+        },
+      },
+      "/v1/community-goals": {
+        get: {
+          operationId: "communityGoals",
+          summary: "Goals everyone works toward together, with progress",
+          description: "With userId, also that user's contribution. An eligible user is paid the rewards the first time they look after the goal is reached.",
+          parameters: [{ name: "userId", in: "query", schema: { type: "string", maxLength: 128 } }],
+          responses: { "200": ok("Every community goal", ref("CommunityGoalList")), ...authErrors },
         },
       },
       "/v1/users/{userId}/boosts": {
