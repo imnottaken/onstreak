@@ -22,7 +22,7 @@ const schemas = {
     additionalProperties: false,
     properties: {
       error: { type: "string", description: "What went wrong, in plain words." },
-      code: { type: "string", description: 'A stable reason to branch on, when there is one: "insufficient_funds", "limit_reached", "not_owned", "streak_broken", "already_referred", "already_refunded", "not_broken", "repair_expired", "team_full", "already_in_team", "not_max_level".' },
+      code: { type: "string", description: 'A stable reason to branch on, when there is one: "insufficient_funds", "limit_reached", "not_owned", "streak_broken", "already_referred", "already_refunded", "not_broken", "repair_expired", "team_full", "already_in_team", "not_max_level", "already_reversed".' },
       requestId: { type: "string", description: "Matches the x-request-id header and the server logs." },
     },
   },
@@ -859,6 +859,23 @@ const schemas = {
       nextCursor: nullable({ type: "string" }),
     },
   },
+  ReversalResult: {
+    type: "object",
+    required: ["userId", "eventId", "points", "totals"],
+    additionalProperties: false,
+    properties: {
+      userId: { type: "string" },
+      eventId: { type: "string", format: "uuid" },
+      points: map({ type: "number", description: "Points taken back." }),
+      totals: map({ type: "number" }),
+    },
+  },
+  Revoked: {
+    type: "object",
+    required: ["userId", "achievementId", "revoked"],
+    additionalProperties: false,
+    properties: { userId: { type: "string" }, achievementId: { type: "string" }, revoked: { type: "boolean" } },
+  },
   PrestigeResult: {
     type: "object",
     required: ["userId", "prestige", "level", "rewards"],
@@ -953,7 +970,7 @@ const schemas = {
         type: "array",
         items: {
           type: "object",
-          required: ["id", "event", "value", "timestamp", "recordedAt", "properties", "result"],
+          required: ["id", "event", "value", "timestamp", "recordedAt", "properties", "reversedAt", "result"],
           additionalProperties: false,
           properties: {
             id: { type: "string", format: "uuid" },
@@ -961,6 +978,7 @@ const schemas = {
             value: { type: "number" },
             timestamp: { type: "string", format: "date-time" },
             recordedAt: { type: "string", format: "date-time" },
+            reversedAt: nullable({ type: "string", format: "date-time" }),
             properties: { type: "object", additionalProperties: { anyOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }] } },
             result: nullable(ref("TrackResult")),
           },
@@ -1308,6 +1326,28 @@ export function openapiSpec(version: string) {
           operationId: "removeTeamMember",
           summary: "Take a user out of a team",
           responses: { "200": ok("Whether they were removed", ref("TeamMembership")), ...authErrors, "404": errorResponse("Unknown team") },
+        },
+      },
+      "/v1/users/{userId}/events/{eventId}/reverse": {
+        parameters: [userIdParam, { name: "eventId", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        post: {
+          operationId: "reverseEvent",
+          summary: "Take back the points an event awarded",
+          description: "Dated at the event's own time, so leaderboard windows and league rounds correct themselves. Streaks, quests and achievements are left as they are.",
+          responses: {
+            "200": ok("What was taken back", ref("ReversalResult")),
+            ...authErrors,
+            "404": errorResponse("No such event for this user"),
+            "409": errorResponse('Already reversed ("already_reversed")'),
+          },
+        },
+      },
+      "/v1/users/{userId}/achievements/{achievementId}": {
+        parameters: [userIdParam, { name: "achievementId", in: "path", required: true, schema: { type: "string" }, description: 'An achievement id, or "id#2" for one tier.' }],
+        delete: {
+          operationId: "revokeAchievement",
+          summary: "Take back an achievement or one of its tiers",
+          responses: { "200": ok("Whether it was unlocked", ref("Revoked")), ...authErrors, "404": errorResponse("Unknown achievement") },
         },
       },
       "/v1/users/{userId}/prestige": {

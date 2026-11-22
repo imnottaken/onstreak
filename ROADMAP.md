@@ -89,7 +89,7 @@ Things that would hurt early users if they were missing.
 - [x] **Prestige** (S). Start levels over with a prestige rank once the top level is reached.
 - [x] **Leaderboard views** (M). Around-me (my rank plus or minus N), by segment (country, school, company), past winners archive.
 - [ ] **League upgrades** (M). Fill small groups with ghost players, skill-based grouping, rewards for finishing top 3.
-- [ ] **Corrections** (M). Reverse an event, revoke points or an achievement, with everything recalculated.
+- [x] **Corrections** (M). Reverse an event's points and counts, revoke an achievement. (Recomputing streaks and quests is part of replay.)
 - [ ] **Replay and backfill** (L). Rebuild every user's state from the event log after a config change, with a dry run showing what would change.
 - [ ] **Config preview and simulation** (M). "If I change level thresholds, how many users change level?"
 - [x] **"Streak at risk" list** (M). Users who have not done today's activity yet, for reminders.

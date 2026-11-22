@@ -250,6 +250,12 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         if (req.method === "PUT") return send(200, await engine.addTeamMember(id, subId));
         if (req.method === "DELETE") return send(200, await engine.removeTeamMember(id, subId));
       }
+      if (req.method === "POST" && resource === "users" && id && sub === "events" && subId && subSub === "reverse" && parts.length === 6) {
+        return send(200, await engine.reverseEvent(id, subId));
+      }
+      if (req.method === "DELETE" && resource === "users" && id && sub === "achievements" && subId && parts.length === 5) {
+        return send(200, await engine.revokeAchievement(id, subId));
+      }
       if (req.method === "POST" && resource === "users" && id && sub === "prestige" && parts.length === 4) {
         return send(200, await engine.prestige(id));
       }

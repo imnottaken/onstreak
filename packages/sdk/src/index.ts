@@ -100,7 +100,17 @@ export interface LeaderboardEntry {
 }
 
 export interface EventHistory {
-  events: Array<{ id: string; event: string; value: number; timestamp: string; recordedAt: string; properties: Record<string, string | number | boolean>; result: TrackResult | null }>;
+  events: Array<{
+    id: string;
+    event: string;
+    value: number;
+    timestamp: string;
+    recordedAt: string;
+    properties: Record<string, string | number | boolean>;
+    /** When the event was reversed, or null. */
+    reversedAt: string | null;
+    result: TrackResult | null;
+  }>;
   /** Pass as `cursor` for the next (older) page; null on the last page. */
   nextCursor: string | null;
 }
@@ -534,6 +544,12 @@ export function createClient(options: ClientOptions) {
     /** Take a user out of a team. */
     removeTeamMember: (teamId: string, userId: string) =>
       call<{ teamId: string; userId: string; removed: boolean }>("DELETE", `/v1/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`),
+    /** Take back the points an event awarded. Throws 409 "already_reversed" on repeat. */
+    reverseEvent: (userId: string, eventId: string) =>
+      call<{ userId: string; eventId: string; points: Record<string, number>; totals: Record<string, number> }>("POST", `${user(userId)}/events/${encodeURIComponent(eventId)}/reverse`),
+    /** Take back an achievement, or one tier with "id#2". */
+    revokeAchievement: (userId: string, achievementId: string) =>
+      call<{ userId: string; achievementId: string; revoked: boolean }>("DELETE", `${user(userId)}/achievements/${encodeURIComponent(achievementId)}`),
     /** Start levels over at the top level, with a higher prestige rank. Throws 409 "not_max_level" before then. */
     prestige: (userId: string) => call<{ userId: string; prestige: number; level: number; rewards: QuestReward[] }>("POST", `${user(userId)}/prestige`),
     /** Every achievement with the user's progress; hidden ones stay secret until unlocked. */

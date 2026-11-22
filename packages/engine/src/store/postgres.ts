@@ -495,6 +495,29 @@ export class PostgresStore implements Store {
         const { rows } = await q.query(`select achievement_id from ${t.achievements} where user_id = $1`, [userId]);
         return new Set(rows.map((r) => String(r.achievement_id)));
       },
+      async revokeAchievement(id) {
+        const { rows } = await q.query(`delete from ${t.achievements} where user_id = $1 and achievement_id = $2 returning achievement_id`, [userId, id]);
+        return rows.length > 0;
+      },
+      async getEvent(eventId) {
+        if (!/^[0-9a-f-]{36}$/i.test(eventId)) return null;
+        const { rows } = await q.query(`select * from ${t.events} where user_id = $1 and id = $2`, [userId, eventId]);
+        const r = rows[0];
+        if (!r) return null;
+        return {
+          id: String(r.id),
+          key: String(r.key),
+          value: num(r.value),
+          ts: ms(r.ts),
+          recordedAt: ms(r.recorded_at),
+          result: r.result ? json<TrackResult>(r.result) : null,
+          properties: r.properties ? json<EventProperties>(r.properties) : null,
+          reversedAt: r.reversed_at ? ms(r.reversed_at) : null,
+        };
+      },
+      async markReversed(eventId, at) {
+        await q.query(`update ${t.events} set reversed_at = $3 where user_id = $1 and id = $2`, [userId, eventId, new Date(at).toISOString()]);
+      },
       async unlock(id, ts) {
         await q.query(
           `insert into ${t.achievements} (user_id, achievement_id, unlocked_at) values ($1, $2, $3) on conflict do nothing`,
@@ -656,7 +679,7 @@ export class PostgresStore implements Store {
 
   async events(userId: string, query: EventPageQuery): Promise<EventRecord[]> {
     const { rows } = await this.db.query(
-      `select id, key, value, ts, recorded_at, result, properties from ${this.t.events}
+      `select id, key, value, ts, recorded_at, result, properties, reversed_at from ${this.t.events}
        where user_id = $1
          and ($2::timestamptz is null or (ts, id) < ($2::timestamptz, $3::uuid))
        order by ts desc, id desc
@@ -671,6 +694,7 @@ export class PostgresStore implements Store {
       recordedAt: ms(r.recorded_at),
       result: r.result ? json<TrackResult>(r.result) : null,
       properties: r.properties ? json<EventProperties>(r.properties) : null,
+      reversedAt: r.reversed_at ? ms(r.reversed_at) : null,
     }));
   }
 

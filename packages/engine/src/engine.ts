@@ -156,6 +156,15 @@ export interface StreaksAtRisk {
   nextCursor: string | null;
 }
 
+export interface ReversalResult {
+  userId: string;
+  eventId: string;
+  /** Points taken back, per currency (the event's awards, quest and achievement rewards included). */
+  points: Record<string, number>;
+  /** Totals after the reversal. */
+  totals: Record<string, number>;
+}
+
 export interface LeaderboardHistory {
   id: string;
   currency: string;
@@ -172,6 +181,8 @@ export interface EventHistory {
     timestamp: string;
     recordedAt: string;
     properties: Record<string, string | number | boolean>;
+    /** When the event was reversed, or null. */
+    reversedAt: string | null;
     /** What the event awarded, as returned by track(). */
     result: TrackResult | null;
   }>;
@@ -1170,6 +1181,43 @@ export class Engine {
       entries: entries.map((e) => withProfile(e, names)),
       user: user ? withProfile(user, names) : null,
     };
+  }
+
+  /**
+   * Reverse an event (a mistake, fraud, a refunded lesson): take back every
+   * point it awarded, dated at the event's own time so leaderboard windows
+   * and league rounds correct themselves, and undo its count in metrics.
+   * Streaks, quests and achievements it unlocked are left as they are (revoke
+   * achievements separately). 409 with code "already_reversed" on repeat.
+   */
+  async reverseEvent(userId: string, eventId: string): Promise<ReversalResult> {
+    checkUserId(userId);
+    return this.store.withUser(userId, async (tx) => {
+      const e = typeof eventId === "string" ? await tx.getEvent(eventId) : null;
+      if (!e) throw new EngineError(`${userId} has no event "${String(eventId)}"`, 404);
+      if (e.reversedAt != null) throw new EngineError("this event was already reversed", 409, "already_reversed");
+      const now = this.now();
+      const taken: Record<string, number> = {};
+      const totals: Record<string, number> = {};
+      for (const [currency, p] of Object.entries(e.result?.points ?? {})) {
+        if (p.awarded === 0) continue;
+        totals[currency] = await tx.addPoints(currency, -p.awarded, e.ts, e.id, now);
+        taken[currency] = p.awarded;
+      }
+      if (e.result && !e.result.duplicate) await tx.addMetric(e.key, -e.value);
+      await tx.markReversed(e.id, now);
+      for (const c of this.config.currencies) totals[c] ??= await tx.getBalance(c);
+      return { userId, eventId: e.id, points: taken, totals };
+    });
+  }
+
+  /** Take back an achievement (or one tier, "id#2"). Returns whether it was unlocked. Points it paid stay unless you reverse them. */
+  async revokeAchievement(userId: string, achievementId: string): Promise<{ userId: string; achievementId: string; revoked: boolean }> {
+    checkUserId(userId);
+    const [id, level] = String(achievementId).split("#");
+    const rule = this.config.achievements.find((a) => a.id === id);
+    if (!rule || (level !== undefined && !rule.tiers?.[Number(level) - 1])) throw new EngineError(`unknown achievement "${String(achievementId)}"`, 404);
+    return this.store.withUser(userId, async (tx) => ({ userId, achievementId, revoked: await tx.revokeAchievement(achievementId) }));
   }
 
   /**
@@ -2204,6 +2252,7 @@ export class Engine {
         timestamp: new Date(e.ts).toISOString(),
         recordedAt: new Date(e.recordedAt).toISOString(),
         properties: e.properties ?? {},
+        reversedAt: e.reversedAt ? new Date(e.reversedAt).toISOString() : null,
         result: e.result,
       })),
       nextCursor: rows.length > limit && last ? encodeCursor(last) : null,

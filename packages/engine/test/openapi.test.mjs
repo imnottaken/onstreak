@@ -258,6 +258,13 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   await call("get", "/v1/teams/owls", "/v1/teams/{teamId}");
   await call("get", "/v1/teams/nope", "/v1/teams/{teamId}"); // 404
   await call("get", "/v1/users/asha/achievements", "/v1/users/{userId}/achievements");
+  const toReverse = await call("post", "/v1/events", "/v1/events", { userId: "rev", event: "lesson_completed" });
+  await call("post", `/v1/users/rev/events/${toReverse.json.eventId}/reverse`, "/v1/users/{userId}/events/{eventId}/reverse");
+  await call("post", `/v1/users/rev/events/${toReverse.json.eventId}/reverse`, "/v1/users/{userId}/events/{eventId}/reverse"); // 409
+  await call("post", "/v1/users/rev/events/00000000-0000-4000-8000-000000000000/reverse", "/v1/users/{userId}/events/{eventId}/reverse"); // 404
+  await call("get", "/v1/users/rev/events", "/v1/users/{userId}/events");
+  await call("delete", "/v1/users/rev/achievements/first_lesson", "/v1/users/{userId}/achievements/{achievementId}");
+  await call("delete", "/v1/users/rev/achievements/nope", "/v1/users/{userId}/achievements/{achievementId}"); // 404
   await call("post", "/v1/users/asha/prestige", "/v1/users/{userId}/prestige"); // 404: not configured here
   const prestigious = await serve(t, new MemoryStore(), { ...config, levels: { currency: "xp", thresholds: [5], prestige: {} } });
   const pres = async (path, method = "POST", body) => {

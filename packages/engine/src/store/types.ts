@@ -184,6 +184,8 @@ export interface EventRecord {
   recordedAt: number;
   result: TrackResult | null;
   properties: EventProperties | null;
+  /** When the event was reversed, or null. */
+  reversedAt?: number | null;
 }
 
 export interface EventPageQuery {
@@ -207,6 +209,11 @@ export interface UserTx {
   setStreak(id: string, state: StreakState): Promise<void>;
   unlockedAchievements(): Promise<Set<string>>;
   unlock(id: string, ts: number): Promise<void>;
+  /** Remove an unlocked achievement (or tier key). Returns false if it was not unlocked. */
+  revokeAchievement(id: string): Promise<boolean>;
+  /** One of this user's events, or null. */
+  getEvent(eventId: string): Promise<(EventRecord & { reversedAt: number | null }) | null>;
+  markReversed(eventId: string, at: number): Promise<void>;
   /** The user's most recent rounds in a league, newest first. */
   getMemberships(leagueId: string, limit: number): Promise<Membership[]>;
   /** Seat the user in the first group of their tier with room, opening a new one if all are full. */

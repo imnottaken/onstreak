@@ -287,6 +287,16 @@ export class MemoryStore implements Store {
         d.quests.set(`${q.questId}|${q.periodKey}`, { ...q });
       },
       unlockedAchievements: async () => new Set(d.achievements.keys()),
+      revokeAchievement: async (id) => d.achievements.delete(id),
+      getEvent: async (eventId) => {
+        const e = d.events.get(eventId);
+        if (!e) return null;
+        return { id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result, properties: e.properties ?? null, reversedAt: (e as { reversedAt?: number | null }).reversedAt ?? null };
+      },
+      markReversed: async (eventId, at) => {
+        const e = d.events.get(eventId) as { reversedAt?: number | null } | undefined;
+        if (e) e.reversedAt = at;
+      },
       unlock: async (id, ts) => {
         if (!d.achievements.has(id)) d.achievements.set(id, ts);
       },
@@ -395,7 +405,7 @@ export class MemoryStore implements Store {
       .sort((a, b) => b.ts - a.ts || (a.id < b.id ? 1 : -1))
       .filter((e) => !before || e.ts < before.ts || (e.ts === before.ts && e.id < before.id))
       .slice(0, q.limit)
-      .map((e) => ({ id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result, properties: e.properties ? { ...e.properties } : null }));
+      .map((e) => ({ id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result, properties: e.properties ? { ...e.properties } : null, reversedAt: (e as { reversedAt?: number | null }).reversedAt ?? null }));
   }
 
   async activeStreaks(streakId: string, afterUserId: string | null, limit: number) {
