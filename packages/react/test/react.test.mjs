@@ -491,3 +491,43 @@ test("QuestList shows a mission's goals", () => {
   assert.deepEqual(goals.map((g) => g.textContent), ["lesson completed3 / 3", "xp20 / 50 xp"]);
   assert.ok(goals[0].classList.contains("os-quest__goal--done"));
 });
+
+test("BadgeGrid shows tiers, progress and secret achievements from sdk.achievements", () => {
+  const list = {
+    userId: "a",
+    achievements: [
+      {
+        id: "bookworm", name: "Bookworm", description: "Finish lessons", hidden: false, unlocked: true, completed: false, unlockedAt: "2026-11-20T10:00:00.000Z",
+        progress: { current: 5, target: 10, percent: 50 },
+        tiers: [{ level: 1, name: "Bronze", gte: 2, unlockedAt: "2026-11-20T10:00:00.000Z" }, { level: 2, name: "Silver", gte: 10, unlockedAt: null }],
+      },
+      { id: "first", name: "First steps", hidden: false, unlocked: true, completed: true, unlockedAt: "2026-11-19T10:00:00.000Z", progress: { current: 1, target: 1, percent: 100 } },
+      { id: "owl", name: null, hidden: true, unlocked: false, completed: false, unlockedAt: null, progress: null },
+      { id: "rich", name: "Rich", hidden: false, unlocked: false, completed: false, unlockedAt: null, progress: { current: 3, target: 10, percent: 30 } },
+    ],
+  };
+  const f = fragment(renderToStaticMarkup(h(BadgeGrid, { achievements: list })));
+  const [book, first, owl, rich] = [...f.querySelectorAll(".os-badge")];
+  assert.equal(book.querySelector(".os-badge__tier").textContent, "Bronze");
+  assert.equal(book.querySelector(".os-badge__progress").textContent, "Silver: 5 / 10");
+  assert.equal(book.querySelector(".os-badge__fill").style.width, "50%");
+  assert.equal(book.querySelector("[role=progressbar]").getAttribute("aria-label"), "Bookworm: progress to Silver");
+  assert.ok(book.classList.contains("os-badge--unlocked"));
+  assert.equal(first.querySelector(".os-badge__track"), null, "a completed badge shows its date instead");
+  assert.ok(first.querySelector("time"));
+  assert.equal(owl.querySelector(".os-badge__name").textContent, "Secret achievement");
+  assert.equal(owl.getAttribute("aria-label"), "Secret achievement (locked)");
+  assert.ok(rich.classList.contains("os-badge--locked"));
+  assert.equal(rich.querySelector(".os-badge__progress").textContent, "3 / 10");
+});
+
+test("BadgeGrid shows a tiered badge once, at its highest tier", () => {
+  const unlocked = [
+    { id: "bookworm", name: "Bookworm", tier: { level: 1, name: "Bronze" }, unlockedAt: "2026-11-19T10:00:00.000Z" },
+    { id: "bookworm", name: "Bookworm", tier: { level: 2, name: "Silver" }, unlockedAt: "2026-11-20T10:00:00.000Z" },
+  ];
+  const f = fragment(renderToStaticMarkup(h(BadgeGrid, { unlocked })));
+  const badges = [...f.querySelectorAll(".os-badge")];
+  assert.equal(badges.length, 1);
+  assert.equal(badges[0].querySelector(".os-badge__tier").textContent, "Silver");
+});

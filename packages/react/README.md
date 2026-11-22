@@ -10,6 +10,7 @@ import "@onstreak/react/styles.css"; // optional
 
 <LevelBar level={user.level} />
 <Leaderboard board={board} currentUserId={user.userId} />
+<BadgeGrid achievements={await sdk.achievements(userId)} /> // tiers, progress, secrets
 <RivalList status={await sdk.rivals("weekly_duel", userId)} />
 <RewardStore store={await sdk.store(userId)} renderAction={(item) => <BuyButton item={item} />} />
 <FriendsList friends={friends} renderAction={(f) => <ChallengeButton friendId={f.userId} />} />

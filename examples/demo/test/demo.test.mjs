@@ -55,7 +55,7 @@ test("finishing lessons day after day builds a streak and unlocks badges", async
   assert.match(third, /streak_3/, "three days in a row");
   doc = await view();
   assert.equal(streakLabel(doc), "3 day streak, done today, 1 freeze left");
-  assert.equal(doc.querySelectorAll(".os-badge--unlocked").length, 2);
+  assert.equal(doc.querySelectorAll(".os-badge--unlocked").length, 3, "first lesson, on fire, and Dedicated bronze");
   assert.equal(doc.querySelectorAll(".events li").length, 3, "recent activity lists the lessons");
 });
 
@@ -207,4 +207,17 @@ test("the daily check-in pays once a day and moves to the next day", async (t) =
   doc = await view();
   assert.equal(doc.querySelector(".os-calendar__next").textContent, "Today: +3 coins");
   assert.equal(doc.querySelector(".os-calendar__cell--today .os-calendar__number").textContent, "2");
+});
+
+test("badges show tiers, progress and a secret", async (t) => {
+  const { view, press } = await start(t);
+  const badge = (doc, name) => [...doc.querySelectorAll(".os-badge")].find((b) => b.querySelector(".os-badge__name").textContent === name);
+  let doc = await view();
+  assert.ok(badge(doc, "Secret achievement"), "Week warrior is hidden");
+  assert.equal(badge(doc, "Dedicated").querySelector(".os-badge__progress").textContent, "Bronze: 0 / 3");
+  for (let i = 0; i < 3; i++) await press("/do/lesson");
+  doc = await view();
+  const dedicated = badge(doc, "Dedicated");
+  assert.equal(dedicated.querySelector(".os-badge__tier").textContent, "Bronze");
+  assert.equal(dedicated.querySelector(".os-badge__progress").textContent, "Silver: 3 / 10");
 });

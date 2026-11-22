@@ -28,8 +28,18 @@ export const demoConfig = {
   achievements: [
     { id: "first_lesson", name: "First steps", description: "Finish a lesson", when: { metric: "lesson_completed", gte: 1 } },
     { id: "streak_3", name: "On fire", description: "3 days in a row", when: { streak: "daily_lesson", gte: 3 } },
-    { id: "streak_7", name: "Week warrior", description: "7 days in a row", when: { streak: "daily_lesson", gte: 7 } },
-    { id: "lessons_10", name: "Dedicated", description: "Finish 10 lessons", when: { metric: "lesson_completed", gte: 10 } },
+    { id: "streak_7", name: "Week warrior", description: "7 days in a row", when: { streak: "daily_lesson", gte: 7 }, hidden: true },
+    {
+      id: "lessons_10",
+      name: "Dedicated",
+      description: "Finish lessons",
+      when: { metric: "lesson_completed" },
+      tiers: [
+        { name: "Bronze", gte: 3, rewards: [{ currency: "coins", amount: 2 }] },
+        { name: "Silver", gte: 10, rewards: [{ currency: "coins", amount: 5 }] },
+        { name: "Gold", gte: 25, rewards: [{ currency: "coins", amount: 10 }] },
+      ],
+    },
     { id: "xp_100", name: "Centurion", description: "Earn 100 XP", when: { points: "xp", gte: 100 } },
     { id: "xp_500", name: "Scholar", description: "Earn 500 XP", when: { points: "xp", gte: 500 } },
   ],
@@ -147,7 +157,7 @@ export function createDemo({ seed = 42 } = {}) {
   }
 
   async function render(unlocked) {
-    const [user, weekly, league, history, friends, rivals, friendsBoard, quests, shop, calendars] = await Promise.all([
+    const [user, weekly, league, history, friends, rivals, friendsBoard, quests, shop, calendars, badges] = await Promise.all([
       engine.getUser(YOU),
       engine.leaderboard("xp_weekly", { userId: YOU, limit: 10 }),
       engine.league("weekly_league", YOU),
@@ -158,6 +168,7 @@ export function createDemo({ seed = 42 } = {}) {
       engine.quests(YOU),
       engine.rewardStore(YOU),
       engine.calendars(YOU),
+      engine.achievements(YOU),
     ]);
     const freezesFull = user.streaks.daily_lesson.freezes >= demoConfig.streaks[0].freezes.max;
     const buyButton = (item) =>
@@ -180,7 +191,7 @@ export function createDemo({ seed = 42 } = {}) {
         : h("form", { method: "post", action: `/rival/${f.userId}` }, h("button", { type: "submit", className: "small" }, "Challenge"));
     const day = new Date(now()).toISOString().slice(0, 10);
     const weekday = new Date(now()).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
-    const toast = unlocked.length > 0 ? demoConfig.achievements.filter((a) => unlocked.includes(a.id)) : [];
+    const toast = unlocked.length > 0 ? demoConfig.achievements.filter((a) => unlocked.includes(a.id)).map(({ id, name, description }) => ({ id, name, description })) : [];
     const markup = renderToStaticMarkup(
       h(
         Fragment,
@@ -247,7 +258,7 @@ export function createDemo({ seed = 42 } = {}) {
             "section",
             { className: "card" },
             h("h2", null, "Achievements"),
-            h(BadgeGrid, { unlocked: user.achievements, all: demoConfig.achievements }),
+            h(BadgeGrid, { achievements: badges }),
           ),
           h(
             "section",

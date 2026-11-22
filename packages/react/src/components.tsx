@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { FriendList as FriendListData, LeaderboardEntry, LeaderboardResult, LeagueStatus, CalendarList, QuestList as QuestListData, RewardStore as RewardStoreData, RivalryStatus, UserProfile } from "@onstreak/sdk";
+import type { AchievementList, FriendList as FriendListData, LeaderboardEntry, LeaderboardResult, LeagueStatus, CalendarList, QuestList as QuestListData, RewardStore as RewardStoreData, RivalryStatus, UserProfile } from "@onstreak/sdk";
 import { countdownTick, cx, displayNameOf, formatTimeLeft, initials, levelProgress, ownedText, priceText, questProgressText, storeItemBlocker, recordText, rewardText, rivalScoreText, rivalShare, rivalStreakText, streakLabel } from "./helpers.js";
 
 type Streak = UserProfile["streaks"][string];
@@ -81,7 +81,12 @@ export interface BadgeInfo {
 
 export interface BadgeGridProps {
   /** Achievements the user has, e.g. profile.achievements. */
-  unlocked: UserProfile["achievements"];
+  unlocked?: UserProfile["achievements"];
+  /**
+   * The result of sdk.achievements(userId). When given, it replaces `unlocked`
+   * and `all`, and adds tiers, progress bars and hidden placeholders.
+   */
+  achievements?: AchievementList;
   /** Every achievement your app offers. Those not unlocked are shown locked. */
   all?: BadgeInfo[];
   /** Custom icon per achievement. Default 🏅 (and 🔒 when locked). */
@@ -89,7 +94,15 @@ export interface BadgeGridProps {
   className?: string;
 }
 
-export function BadgeGrid({ unlocked, all = [], renderIcon, className }: BadgeGridProps) {
+export function BadgeGrid({ unlocked = [], achievements, all = [], renderIcon, className }: BadgeGridProps) {
+  if (achievements) return <AchievementGrid list={achievements} renderIcon={renderIcon} className={className} />;
+  // A tiered badge appears once per tier in the profile: show only its highest tier.
+  const best = new Map<string, UserProfile["achievements"][number]>();
+  for (const a of unlocked) {
+    const prev = best.get(a.id);
+    if (!prev || (a.tier?.level ?? 0) > (prev.tier?.level ?? 0)) best.set(a.id, a);
+  }
+  unlocked = [...best.values()];
   const have = new Set(unlocked.map((a) => a.id));
   const locked = all.filter((a) => !have.has(a.id));
   if (unlocked.length === 0 && locked.length === 0) {
@@ -103,6 +116,7 @@ export function BadgeGrid({ unlocked, all = [], renderIcon, className }: BadgeGr
             {renderIcon ? renderIcon(a, true) : "🏅"}
           </span>
           <span className="os-badge__name">{a.name}</span>
+          {a.tier && <span className="os-badge__tier">{a.tier.name}</span>}
           {a.description && <span className="os-badge__description">{a.description}</span>}
           <time className="os-badge__date" dateTime={a.unlockedAt}>
             {new Date(a.unlockedAt).toLocaleDateString()}
@@ -118,6 +132,63 @@ export function BadgeGrid({ unlocked, all = [], renderIcon, className }: BadgeGr
           {a.description && <span className="os-badge__description">{a.description}</span>}
         </li>
       ))}
+    </ul>
+  );
+}
+
+function AchievementGrid({ list, renderIcon, className }: { list: AchievementList; renderIcon?: BadgeGridProps["renderIcon"]; className?: string }) {
+  if (list.achievements.length === 0) return <p className={cx("os-badges__empty", className)}>No achievements yet.</p>;
+  return (
+    <ul className={cx("os-badges", className)} aria-label="Achievements">
+      {list.achievements.map((a) => {
+        if (a.name === null) {
+          return (
+            <li key={a.id} className="os-badge os-badge--locked os-badge--hidden" aria-label="Secret achievement (locked)">
+              <span className="os-badge__icon" aria-hidden="true">
+                ❓
+              </span>
+              <span className="os-badge__name">Secret achievement</span>
+            </li>
+          );
+        }
+        const info: BadgeInfo = { id: a.id, name: a.name, ...(a.description ? { description: a.description } : {}) };
+        const tiersDone = a.tiers?.filter((t) => t.unlockedAt !== null) ?? [];
+        const tier = tiersDone[tiersDone.length - 1];
+        const next = a.tiers?.find((t) => t.unlockedAt === null);
+        return (
+          <li key={a.id} className={cx("os-badge", a.unlocked ? "os-badge--unlocked" : "os-badge--locked")} aria-label={a.unlocked ? undefined : `${a.name} (locked)`}>
+            <span className="os-badge__icon" aria-hidden="true">
+              {renderIcon ? renderIcon(info, a.unlocked) : a.unlocked ? "🏅" : "🔒"}
+            </span>
+            <span className="os-badge__name">{a.name}</span>
+            {tier && <span className="os-badge__tier">{tier.name}</span>}
+            {a.description && <span className="os-badge__description">{a.description}</span>}
+            {a.progress && !a.completed && (
+              <>
+                <div
+                  className="os-badge__track"
+                  role="progressbar"
+                  aria-label={next ? `${a.name}: progress to ${next.name}` : `${a.name}: progress`}
+                  aria-valuemin={0}
+                  aria-valuemax={a.progress.target}
+                  aria-valuenow={Math.min(a.progress.current, a.progress.target)}
+                >
+                  <div className="os-badge__fill" style={{ width: `${a.progress.percent}%` }} />
+                </div>
+                <span className="os-badge__progress">
+                  {next ? `${next.name}: ` : ""}
+                  {questProgressText({ progress: a.progress.current, target: a.progress.target })}
+                </span>
+              </>
+            )}
+            {a.unlockedAt && a.completed && (
+              <time className="os-badge__date" dateTime={a.unlockedAt}>
+                {new Date(a.unlockedAt).toLocaleDateString()}
+              </time>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
