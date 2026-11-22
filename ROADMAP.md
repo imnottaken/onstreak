@@ -127,7 +127,7 @@ Things that would hurt early users if they were missing.
 - [ ] **Leaderboard rollups and caching** (M). Pre-summed totals so boards stay fast with millions of users.
 - [ ] **Optional Redis** (M). Sorted sets for very hot leaderboards.
 - [ ] **Ledger retention and compaction** (M). Roll old points rows into totals.
-- [ ] **Metrics endpoint** (M). Prometheus counters for events, latency, errors.
+- [x] **Metrics endpoint** (M). Prometheus counters for events, latency, errors.
 - [ ] **Load tests** (M).
 - [ ] **Helm chart** (M).
 

@@ -4,6 +4,7 @@ import { Engine, EngineError } from "./engine.js";
 import { silentLogger, type Logger } from "./logger.js";
 import { openapiSpec } from "./openapi.js";
 import { packageVersion } from "./version.js";
+import { Metrics, routeLabel } from "./metrics.js";
 import { deriveTokenSecret, isUserToken, signUserToken, verifyUserToken } from "./tokens.js";
 
 const MAX_BODY = 256 * 1024;
@@ -33,6 +34,10 @@ export interface ServerOptions {
   rateLimit?: { perMinute: number; burst?: number; trustProxy?: boolean };
   /** Origins allowed to call the API from a browser ("*" for any). Default: none (no CORS headers). */
   corsOrigins?: string[];
+  /** Where request counts and timings go (GET /metrics). Default: a new registry. */
+  metrics?: Metrics;
+  /** A separate secret a Prometheus scraper may use for GET /metrics instead of an API key. */
+  metricsToken?: string;
   /** Secret that signs user tokens (POST /v1/tokens). Default: derived from the first key, so rotating that key ends all tokens. */
   tokenSecret?: string;
 }
@@ -162,6 +167,7 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
   if (keys.some((k) => k.key.length < 16)) throw new Error("apiKey must be at least 16 characters");
   if (options.tokenSecret !== undefined && options.tokenSecret.length < 32) throw new Error("tokenSecret must be at least 32 characters");
   const tokenSecret = options.tokenSecret ?? deriveTokenSecret(keys[0]!.key.toString());
+  const metrics = options.metrics ?? new Metrics();
   const logger = options.logger ?? silentLogger;
   const healthTimeoutMs = options.healthTimeoutMs ?? 2000;
   const spec = openapiSpec(packageVersion());
@@ -198,6 +204,9 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
       });
       res.end(json);
       const durationMs = Number(process.hrtime.bigint() - started) / 1e6;
+      const route = routeLabel(url.pathname.split("/").filter(Boolean));
+      metrics.requests.inc({ method: req.method ?? "?", route, status: String(status) });
+      metrics.duration.observe({ method: req.method ?? "?", route }, durationMs / 1000);
       const fields = { requestId, method: req.method, path: url.pathname, status, durationMs: Math.round(durationMs * 10) / 10 };
       if (status >= 500) logger.error("request", fields);
       else logger.info("request", fields);
@@ -220,6 +229,17 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
       }
 
       if (req.method === "GET" && url.pathname === "/openapi.json") return send(200, spec);
+      if (req.method === "GET" && url.pathname === "/metrics") {
+        // Any API key, or a metrics token, may scrape. User tokens may not.
+        const bearer = (req.headers.authorization ?? "").startsWith("Bearer ") ? (req.headers.authorization as string).slice(7) : "";
+        const metricsOk = options.metricsToken !== undefined && bearer.length === options.metricsToken.length && timingSafeEqual(Buffer.from(bearer), Buffer.from(options.metricsToken));
+        if (!metricsOk && scopeOf(req, keys) === null) throw new HttpError(401, "missing or wrong API key");
+        const text = metrics.render();
+        res.writeHead(200, { "content-type": "text/plain; version=0.0.4; charset=utf-8", "x-request-id": requestId });
+        res.end(text);
+        metrics.requests.inc({ method: "GET", route: "/metrics", status: "200" });
+        return;
+      }
 
       if (req.method === "OPTIONS") {
         // CORS preflight. Without an allowed origin, browsers block the call.
@@ -281,13 +301,18 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
       if (req.method === "POST" && resource === "events" && parts.length === 2) {
         const body = await readJson(req);
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "body must be a JSON object");
-        return send(200, await engine.track(body as Parameters<Engine["track"]>[0]));
+        const tracked = await engine.track(body as Parameters<Engine["track"]>[0]);
+        if (!tracked.duplicate) metrics.events.inc();
+        return send(200, tracked);
       }
 
       if (req.method === "POST" && resource === "events" && id === "batch" && parts.length === 3) {
         const body = (await readJson(req)) as { events?: unknown } | null;
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, 'body must be { "events": [...] }');
-        return send(200, { results: await engine.trackBatch(body.events) });
+        const results = await engine.trackBatch(body.events);
+        const fresh = results.filter((r) => r.ok && !r.result.duplicate).length;
+        if (fresh) metrics.events.inc({}, fresh);
+        return send(200, { results });
       }
 
       const locale = url.searchParams.get("locale") ?? undefined;
@@ -487,6 +512,8 @@ export function createHandler(engine: Engine, options: ServerOptions) {
 }
 
 export interface OnstreakServer extends Server {
+  /** The registry behind GET /metrics, for counting things outside requests (e.g. webhook deliveries). */
+  metrics: Metrics;
   /**
    * Stop accepting connections, let in-flight requests finish, then close the
    * engine's database connections. Connections still busy after `timeoutMs`
@@ -497,8 +524,10 @@ export interface OnstreakServer extends Server {
 
 export function createOnstreakServer(engine: Engine, options: ServerOptions): OnstreakServer {
   const state: ServerState = { shuttingDown: false };
-  const handler = buildHandler(engine, options, state);
+  const registry = options.metrics ?? new Metrics();
+  const handler = buildHandler(engine, { ...options, metrics: registry }, state);
   const server = createServer((req, res) => void handler(req, res)) as OnstreakServer;
+  server.metrics = registry;
   let closing: Promise<{ forced: boolean }> | null = null;
 
   server.shutdown = ({ timeoutMs = 10_000 } = {}) => {

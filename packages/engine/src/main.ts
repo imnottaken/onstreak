@@ -57,6 +57,7 @@ async function serve(env: NodeJS.ProcessEnv): Promise<void> {
     ...(perMinute !== null ? { rateLimit: { perMinute, trustProxy: env.ONSTREAK_TRUST_PROXY === "true" } } : {}),
     ...(corsOrigins.length ? { corsOrigins } : {}),
     ...(env.ONSTREAK_TOKEN_SECRET ? { tokenSecret: env.ONSTREAK_TOKEN_SECRET } : {}),
+    ...(env.ONSTREAK_METRICS_TOKEN ? { metricsToken: env.ONSTREAK_METRICS_TOKEN } : {}),
   });
   server.listen(port, () => {
     const address = server.address();
@@ -76,6 +77,10 @@ async function serve(env: NodeJS.ProcessEnv): Promise<void> {
         .deliverWebhooks()
         .then((r) => {
           if (r.attempted > 0) logger.info("webhooks", r);
+          if (r.delivered) server.metrics.webhooks.inc({ result: "delivered" }, r.delivered);
+          if (r.failed) server.metrics.webhooks.inc({ result: "failed" }, r.failed);
+          const retry = r.attempted - r.delivered - r.failed;
+          if (retry > 0) server.metrics.webhooks.inc({ result: "retry" }, retry);
         })
         .catch((err) => logger.error("webhook delivery failed", { err }))
         .finally(() => {

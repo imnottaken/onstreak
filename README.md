@@ -73,6 +73,7 @@ The server migrates the schema on start. Set `ONSTREAK_AUTO_MIGRATE=false` to ma
 | `ONSTREAK_LOG_FORMAT` | `json` | `pretty` for readable local logs |
 | `ONSTREAK_SHUTDOWN_TIMEOUT_MS` | `10000` | How long requests may finish on SIGTERM |
 | `ONSTREAK_TOKEN_SECRET` | derived from the first key | Secret (32+ characters) that signs user tokens. Set it so rotating keys does not end every token |
+| `ONSTREAK_METRICS_TOKEN` | none | A separate secret Prometheus may use to scrape `GET /metrics` (any API key works too) |
 | `ONSTREAK_RATE_LIMIT_PER_MINUTE` | off | Limit each client (by IP) to this many API requests a minute; over it, 429 with `retry-after`. Health checks are never limited |
 | `ONSTREAK_TRUST_PROXY` | `false` | With `true`, tell clients apart by the first `x-forwarded-for` address (only behind a proxy you control) |
 | `ONSTREAK_CORS_ORIGINS` | none | Comma-separated origins allowed to call the API from a browser, or `*` |
@@ -159,6 +160,7 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 | `GET /v1/leagues/:id/users/:userId` | The user's tier, their group's live standings with promotion and demotion zones, and how last round ended |
 | `GET /health` | Ready: the process and the database are up (503 otherwise). No key needed |
 | `GET /health/live` | Alive: the process is up. No key needed |
+| `GET /metrics` | Prometheus metrics: requests by method, route and status, latency histograms, events tracked, webhook deliveries, memory and uptime. Needs an API key or `ONSTREAK_METRICS_TOKEN` |
 | `GET /openapi.json` | OpenAPI 3.1 description of this API. No key needed |
 
 Achievements (and their tiers), quests, items and calendars take `translations: { es: { name, description }, "pt-BR": { ... } }`. `GET` routes for users, achievements, quests, the store and calendars take `?locale=`, falling back from `pt-BR` to `pt` to the default text.
