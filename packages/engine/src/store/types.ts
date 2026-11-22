@@ -213,6 +213,8 @@ export interface UserTx {
   setQuest(progress: QuestProgress): Promise<void>;
   /** Points spent so far in a currency. Spendable balance is getBalance minus this. */
   getSpent(currency: string): Promise<number>;
+  /** Take points from the wallet for something other than an item (e.g. a streak repair). */
+  spend(currency: string, amount: number): Promise<void>;
   /** How many of an item the user owns. */
   getInventory(itemId: string): Promise<number>;
   findPurchase(idempotencyKey: string): Promise<PurchaseRecord | null>;

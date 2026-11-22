@@ -247,6 +247,24 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   await goalCall("/v1/community-goals");
   await goalCall("/v1/community-goals?userId=bad%20id"); // 400
 
+  await call("post", "/v1/users/asha/streaks/daily_lesson/repair", "/v1/users/{userId}/streaks/{streakId}/repair"); // 400: no repair rule
+  const fixable = await serve(t, new MemoryStore(), { ...config, streaks: [{ ...config.streaks[0], repair: { withinHours: 72, cost: { currency: "coins", amount: 1 } } }] });
+  const fixCall = async (method, path, template, body) => {
+    const res = await fetch(`${fixable.base}${path}`, { method: method.toUpperCase(), headers: { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const json = await res.json();
+    c.check(method, template, res.status, json);
+    return { status: res.status, json };
+  };
+  await fixCall("post", "/v1/events", "/v1/events", { userId: "f", event: "lesson_completed", timestamp: Date.now() - 5 * 86_400_000 });
+  const brokenUser = await fixCall("get", "/v1/users/f", "/v1/users/{userId}");
+  assert.equal(brokenUser.json.streaks.daily_lesson.status, "broken");
+  assert.ok(brokenUser.json.streaks.daily_lesson.repairableUntil);
+  const fixed = await fixCall("post", "/v1/users/f/streaks/daily_lesson/repair", "/v1/users/{userId}/streaks/{streakId}/repair");
+  assert.deepEqual([fixed.json.status, fixed.json.cost], ["pending", { currency: "coins", amount: 1 }]);
+  const again = await fixCall("post", "/v1/users/f/streaks/daily_lesson/repair", "/v1/users/{userId}/streaks/{streakId}/repair");
+  assert.deepEqual([again.status, again.json.code], [409, "not_broken"]);
+  await fixCall("post", "/v1/users/f/streaks/nope/repair", "/v1/users/{userId}/streaks/{streakId}/repair"); // 404
+
   await call("get", "/health", "/health", undefined, { key: null });
   store.ping = async () => {
     throw new Error("down");

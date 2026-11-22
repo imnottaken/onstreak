@@ -23,6 +23,7 @@ export type {
   PurchaseResult,
   PurchaseHistory,
   RefundResult,
+  StreakRepairResult,
   ItemUseInput,
   ItemUseResult,
   Boost,

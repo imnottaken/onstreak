@@ -21,6 +21,11 @@ export interface StreakRule {
     /** Earn one freeze every N periods of streak. */
     earnEvery?: number;
   };
+  /**
+   * Let users repair the streak within `withinHours` of it breaking, before
+   * they start a new one, optionally for a price taken from their wallet.
+   */
+  repair?: { withinHours: number; cost?: { currency: string; amount: number } };
 }
 
 export type AchievementCondition =
@@ -346,6 +351,16 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
         }
       }
       if ((f.start ?? 0) > (f.max ?? 0)) throw new ConfigError(`streak "${s.id}" freezes.start cannot exceed freezes.max`);
+    }
+    const repair = s.repair as { withinHours?: unknown; cost?: { currency?: unknown; amount?: unknown } } | undefined;
+    if (repair !== undefined) {
+      if (!repair || typeof repair.withinHours !== "number" || !(repair.withinHours > 0) || repair.withinHours > 720) {
+        throw new ConfigError(`streak "${s.id}" repair.withinHours must be above 0 and at most 720`);
+      }
+      if (repair.cost !== undefined) {
+        hasCurrency(String(repair.cost?.currency), `streak "${s.id}" repair`);
+        if (!isNonNegative(repair.cost.amount)) throw new ConfigError(`streak "${s.id}" repair cost must be zero or more`);
+      }
     }
   }
 

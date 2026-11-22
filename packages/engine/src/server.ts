@@ -150,6 +150,10 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         return send(200, await engine.quests(id, timezone ? { timezone } : {}));
       }
 
+      if (req.method === "POST" && resource === "users" && id && sub === "streaks" && subId && subSub === "repair" && parts.length === 6) {
+        return send(200, await engine.repairStreak(id, subId));
+      }
+
       if (req.method === "GET" && resource === "users" && id && sub === "store" && parts.length === 4) {
         return send(200, await engine.rewardStore(id));
       }

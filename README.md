@@ -81,7 +81,7 @@ Everything is declared in one JSON file. See [examples/onstreak.config.json](exa
 | `currencies` | Point types, e.g. `xp`, `coins` |
 | `points` | Which event awards how much: `{ event, currency, amount, multiplyByValue? }` |
 | `levels` | Level thresholds for one currency |
-| `streaks` | `{ id, event, period: daily \| weekly, freezes?: { start, max, earnEvery } }` |
+| `streaks` | `{ id, event, period: daily \| weekly, freezes?: { start, max, earnEvery }, repair?: { withinHours, cost?: { currency, amount } } }`. With `repair`, a broken streak can be repaired within `withinHours` of breaking (before a new one starts), paid from the wallet |
 | `achievements` | Unlock when a metric, streak or point total reaches `gte` |
 | `leaderboards` | `{ id, currency, period: daily \| weekly \| monthly \| all, timezone? }` |
 | `leagues` | `{ id, currency, tiers, groupSize?, promote?, demote?, period?, timezone? }` (defaults: 30 per group, 7 up, 5 down, weekly) |
@@ -108,6 +108,7 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 | `PATCH /v1/users/:id` | Set `displayName`, `avatarUrl`, `metadata` (JSON, max 8 KB) or `timezone`. `null` clears a field |
 | `GET /v1/users/:id/events?limit=&cursor=` | The user's events, newest first, with what each one awarded |
 | `GET /v1/users/:id/quests?timezone=` | Every quest for the current day or week with the user's progress, completion time and when it resets |
+| `POST /v1/users/:id/streaks/:streakId/repair` | Repair a recently broken streak; it resumes as if yesterday was done. While repairable, the user's streak shows `repairableUntil`. 409 `not_broken`, `repair_expired` or `insufficient_funds` |
 | `GET /v1/users/:id/store` | The reward store for this user: spendable balances, every item with its price, how many they own and whether they can buy one |
 | `POST /v1/users/:id/purchases` | Buy an item: `{ item, quantity?, idempotencyKey? }`. 409 with `code: "insufficient_funds"` or `"limit_reached"` when refused |
 | `GET /v1/users/:id/purchases?limit=&cursor=` | The user's purchases, newest first, with how many were refunded |
@@ -136,7 +137,7 @@ Spending never lowers earned points. `points` on a user is what they earned (lev
 
 The full machine-readable description is served at `GET /openapi.json` (OpenAPI 3.1, no key needed), so you can generate a client for any language. Tests check every response against it, so it stays accurate.
 
-The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `calendars`, `communityGoals`, `addReferral`, `referrals`, `store`, `purchase`, `purchases`, `useItem`, `refundPurchase`, `grantBoost`, `leaderboard`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
+The SDK mirrors these: `track`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `calendars`, `communityGoals`, `addReferral`, `referrals`, `store`, `purchase`, `purchases`, `useItem`, `refundPurchase`, `repairStreak`, `grantBoost`, `leaderboard`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
 
 ## React components
 

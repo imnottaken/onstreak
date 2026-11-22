@@ -80,7 +80,8 @@ export interface UserProfile {
   /** startsAt: points where the current level began; nextAt: points for the next one (null at max). */
   level: { current: number; points: number; startsAt: number; nextAt: number | null } | null;
   metrics: Record<string, number>;
-  streaks: Record<string, { current: number; longest: number; freezes: number; lastPeriod: string | null; status: "none" | "done" | "pending" | "broken" }>;
+  /** `repairableUntil` is set while a broken streak can still be repaired. */
+  streaks: Record<string, { current: number; longest: number; freezes: number; lastPeriod: string | null; status: "none" | "done" | "pending" | "broken"; repairableUntil?: string }>;
   achievements: Array<{ id: string; name: string; description?: string; unlockedAt: string }>;
 }
 
@@ -414,6 +415,12 @@ export function createClient(options: ClientOptions) {
     /** Give a user a personal multiplier for some minutes, e.g. 2x XP for an hour. */
     grantBoost: (userId: string, input: BoostInput) =>
       call<{ userId: string; boost: Boost; duplicate: boolean; boosts: Boost[] }>("POST", `${user(userId)}/boosts`, input),
+    /** Repair a recently broken streak. Throws 409 "not_broken", "repair_expired" or "insufficient_funds". */
+    repairStreak: (userId: string, streakId: string) =>
+      call<{ userId: string; streak: string; current: number; status: "none" | "done" | "pending" | "broken"; cost: Price | null; wallet: Record<string, number> }>(
+        "POST",
+        `${user(userId)}/streaks/${encodeURIComponent(streakId)}/repair`,
+      ),
     /** Refund some or all of a purchase. Throws 409 "not_owned" or "already_refunded". */
     refundPurchase: (userId: string, purchaseId: string, opts: { quantity?: number } = {}) =>
       call<RefundResult>("POST", `${user(userId)}/purchases/${encodeURIComponent(purchaseId)}/refund`, opts),

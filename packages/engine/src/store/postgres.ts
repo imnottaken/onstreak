@@ -301,6 +301,13 @@ export class PostgresStore implements Store {
         const { rows } = await q.query(`select spent from ${t.balances} where user_id = $1 and currency = $2`, [userId, currency]);
         return rows[0] ? num(rows[0].spent) : 0;
       },
+      async spend(currency, amount) {
+        await q.query(
+          `insert into ${t.balances} (user_id, currency, total, spent) values ($1, $2, 0, $3)
+           on conflict (user_id, currency) do update set spent = ${t.balances}.spent + excluded.spent`,
+          [userId, currency, amount],
+        );
+      },
       async getInventory(itemId) {
         const { rows } = await q.query(`select quantity from ${t.inventory} where user_id = $1 and item_id = $2`, [userId, itemId]);
         return rows[0] ? num(rows[0].quantity) : 0;

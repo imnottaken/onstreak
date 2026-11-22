@@ -21,7 +21,7 @@ const schemas = {
     additionalProperties: false,
     properties: {
       error: { type: "string", description: "What went wrong, in plain words." },
-      code: { type: "string", description: 'A stable reason to branch on, when there is one: "insufficient_funds", "limit_reached", "not_owned", "streak_broken", "already_referred", "already_refunded".' },
+      code: { type: "string", description: 'A stable reason to branch on, when there is one: "insufficient_funds", "limit_reached", "not_owned", "streak_broken", "already_referred", "already_refunded", "not_broken", "repair_expired".' },
       requestId: { type: "string", description: "Matches the x-request-id header and the server logs." },
     },
   },
@@ -236,6 +236,19 @@ const schemas = {
       cost: ref("Price"),
       purchasedAt: { type: "string", format: "date-time" },
       refunded: { type: "integer", minimum: 0, description: "How many of quantity were refunded." },
+    },
+  },
+  StreakRepairResult: {
+    type: "object",
+    required: ["userId", "streak", "current", "status", "cost", "wallet"],
+    additionalProperties: false,
+    properties: {
+      userId: { type: "string" },
+      streak: { type: "string" },
+      current: { type: "integer" },
+      status: { enum: ["none", "done", "pending", "broken"] },
+      cost: nullable(ref("Price")),
+      wallet: map({ type: "number" }),
     },
   },
   RefundResult: {
@@ -537,6 +550,7 @@ const schemas = {
           freezes: { type: "integer" },
           lastPeriod: nullable({ type: "string" }),
           status: { enum: ["none", "done", "pending", "broken"] },
+          repairableUntil: { type: "string", format: "date-time", description: "Set while a broken streak can still be repaired." },
         },
       }),
       achievements: {
@@ -881,6 +895,20 @@ export function openapiSpec(version: string) {
           summary: "Login reward calendars with the user's place in each",
           parameters: [{ name: "timezone", in: "query", schema: { type: "string" }, description: "Override the zone that decides when days start." }],
           responses: { "200": ok("The user's calendars", ref("CalendarList")), ...authErrors },
+        },
+      },
+      "/v1/users/{userId}/streaks/{streakId}/repair": {
+        parameters: [userIdParam, { name: "streakId", in: "path", required: true, schema: { type: "string" } }],
+        post: {
+          operationId: "repairStreak",
+          summary: "Repair a recently broken streak",
+          description: "Allowed within the streak's repair.withinHours of breaking, before a new streak starts. The user still needs today's activity.",
+          responses: {
+            "200": ok("The repaired streak", ref("StreakRepairResult")),
+            ...authErrors,
+            "404": errorResponse("Unknown streak"),
+            "409": errorResponse('Not broken ("not_broken"), too late ("repair_expired") or not enough points ("insufficient_funds")'),
+          },
         },
       },
       "/v1/users/{userId}/purchases/{purchaseId}/refund": {

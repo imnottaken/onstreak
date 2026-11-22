@@ -67,7 +67,7 @@ Things that would hurt early users if they were missing.
 - [x] **Using items** (S). Consume an owned item (`POST /v1/users/:id/inventory/:item/use`); a streak-freeze effect.
 - [x] **Refunds** (S). Refund a purchase (back to the wallet, out of the inventory).
 - [x] **RewardStore React component** (S). Item grid with prices, owned counts and a buy button that calls your server.
-- [ ] **Streak repair** (M). Repair a broken streak within N hours, e.g. by paying coins. (Buying freezes with coins works through items with a `streakFreeze` effect.)
+- [x] **Streak repair** (M). Repair a broken streak within N hours, e.g. by paying coins. (Buying freezes with coins works through items with a `streakFreeze` effect.)
 - [ ] **Richer streak rules** (M). "At least 3 lessons a day" to count, weekends off, custom week start, monthly streaks.
 - [x] **Daily login rewards and reward calendars** (S).
 - [x] **RewardCalendar React component** (S). A row of days with claimed, today and upcoming states.
