@@ -1,3 +1,3 @@
-export { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalCard, RivalList, QuestList, RewardStore, useCountdown } from "./components.js";
-export type { StreakFlameProps, LevelBarProps, BadgeGridProps, BadgeInfo, LeaderboardProps, LeagueTableProps, AchievementToastProps, FriendsListProps, RivalCardProps, RivalListProps, QuestListProps, RewardStoreProps } from "./components.js";
+export { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalCard, RivalList, QuestList, RewardStore, RewardCalendar, useCountdown } from "./components.js";
+export type { StreakFlameProps, LevelBarProps, BadgeGridProps, BadgeInfo, LeaderboardProps, LeagueTableProps, AchievementToastProps, FriendsListProps, RivalCardProps, RivalListProps, QuestListProps, RewardStoreProps, RewardCalendarProps } from "./components.js";
 export { levelProgress, initials, formatTimeLeft, streakLabel, displayNameOf, countdownTick, cx, recordText, rivalScoreText, rivalStreakText, rivalShare, rewardText, questProgressText, priceText, ownedText, storeItemBlocker } from "./helpers.js";

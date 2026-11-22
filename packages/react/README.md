@@ -1,6 +1,6 @@
 # @onstreak/react
 
-Accessible React components for [onstreak](https://github.com/imnottaken/onstreak): `StreakFlame`, `LevelBar`, `BadgeGrid`, `Leaderboard`, `LeagueTable`, `AchievementToast`, `FriendsList`, `RivalCard`, `RivalList`, `QuestList` and `RewardStore`.
+Accessible React components for [onstreak](https://github.com/imnottaken/onstreak): `StreakFlame`, `LevelBar`, `BadgeGrid`, `Leaderboard`, `LeagueTable`, `AchievementToast`, `FriendsList`, `RivalCard`, `RivalList`, `QuestList`, `RewardStore` and `RewardCalendar`.
 
 They render data from `@onstreak/sdk`. Fetch it on your server (the API key must never reach a browser) and pass it as props.
 
@@ -15,7 +15,7 @@ import "@onstreak/react/styles.css"; // optional
 <FriendsList friends={friends} renderAction={(f) => <ChallengeButton friendId={f.userId} />} />
 ```
 
-`FriendsList` and `RewardStore` take a `renderAction` so you can add your own buttons (challenge, remove, buy). They should call your server, which calls the SDK. `RewardStore` passes each item, so you can disable the button when `item.canBuy` is false; it already explains why ("Need 3 more coins", "Limit reached").
+`FriendsList`, `RewardStore` and `RewardCalendar` take a `renderAction` so you can add your own buttons (challenge, remove, buy, claim). They should call your server, which calls the SDK. `RewardStore` passes each item, so you can disable the button when `item.canBuy` is false; it already explains why ("Need 3 more coins", "Limit reached").
 
 Every component takes a `className`. The optional stylesheet uses `os-*` classes and `--os-*` CSS variables, follows the system dark mode, and respects reduced motion.
 

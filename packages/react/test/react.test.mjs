@@ -15,7 +15,7 @@ const { act } = React;
 const { createRoot } = await import("react-dom/client");
 const { renderToStaticMarkup } = await import("react-dom/server");
 const lib = await import("../dist/index.js");
-const { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalCard, RivalList, QuestList, RewardStore } = lib;
+const { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalCard, RivalList, QuestList, RewardStore, RewardCalendar } = lib;
 const h = React.createElement;
 
 /** Mount into the fake DOM; returns the container and an unmount function. */
@@ -430,4 +430,42 @@ test("RewardStore shows prices, owned counts, blockers and your buttons", () => 
   assert.equal(empty.querySelector(".os-store__empty").textContent, "Nothing to buy yet.");
   assert.equal(empty.querySelector(".os-store__header"), null);
   assert.equal(empty.querySelector("section").getAttribute("aria-label"), "Reward store");
+});
+
+const calendarData = (claimedToday) => ({
+  id: "login",
+  name: "Daily login",
+  event: "app_opened",
+  day: 2,
+  claimedToday,
+  days: [
+    { day: 1, rewards: [{ currency: "coins", amount: 5 }], status: "claimed" },
+    { day: 2, rewards: [{ currency: "coins", amount: 10 }], status: claimedToday ? "claimed" : "today" },
+    { day: 3, rewards: [], status: "upcoming" },
+  ],
+  nextClaimAt: new Date(NOW + 5 * 3_600_000).toISOString(),
+});
+
+test("RewardCalendar ticks claimed days, highlights today and offers a claim", () => {
+  const f = fragment(renderToStaticMarkup(h(RewardCalendar, { calendar: calendarData(false), now: NOW, renderAction: () => h("button", null, "Claim") })));
+  assert.equal(f.querySelector("section").getAttribute("aria-label"), "Daily login");
+  assert.equal(f.querySelector(".os-calendar__day").textContent, "Day 2 of 3");
+  const cells = [...f.querySelectorAll(".os-calendar__cell")];
+  assert.deepEqual(cells.map((c) => c.querySelector(".os-calendar__number").textContent), ["✓", "2", "3"]);
+  assert.deepEqual(cells.map((c) => c.querySelector(".os-calendar__reward").textContent), ["+5 coins", "+10 coins", "–"]);
+  assert.equal(cells[1].getAttribute("aria-current"), "date");
+  assert.equal(cells[1].getAttribute("aria-label"), "Day 2: +10 coins, ready to claim");
+  assert.equal(cells[2].getAttribute("aria-label"), "Day 3: nothing, upcoming");
+  assert.ok(cells[0].classList.contains("os-calendar__cell--claimed"));
+  assert.equal(f.querySelector(".os-calendar__next").textContent, "Today: +10 coins");
+  assert.equal(f.querySelector(".os-calendar__action button").textContent, "Claim");
+
+  const done = fragment(renderToStaticMarkup(h(RewardCalendar, { calendar: calendarData(true), title: "Check in", now: NOW, renderAction: () => h("button", null, "Claim") })));
+  assert.equal(done.querySelector("h3").textContent, "Check in");
+  assert.equal(done.querySelector(".os-calendar__next").textContent, "Next reward in 5h");
+  assert.equal(done.querySelector("button"), null, "no claim button once claimed");
+  assert.equal(done.querySelector("[aria-current]"), null);
+
+  const unnamed = fragment(renderToStaticMarkup(h(RewardCalendar, { calendar: { ...calendarData(true), name: undefined }, now: NOW })));
+  assert.equal(unnamed.querySelector("h3").textContent, "Daily rewards");
 });

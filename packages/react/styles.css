@@ -1,6 +1,6 @@
 /* onstreak components. Optional: import "@onstreak/react/styles.css", or style the os-* classes yourself.
    Theme with the --os-* variables. */
-:where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast, .os-friends, .os-rivals, .os-rival, .os-quests, .os-store) {
+:where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast, .os-friends, .os-rivals, .os-rival, .os-quests, .os-store, .os-calendar) {
   --os-fg: #1f2328;
   --os-muted: #656d76;
   --os-bg: #ffffff;
@@ -15,7 +15,7 @@
   font-family: inherit;
 }
 @media (prefers-color-scheme: dark) {
-  :where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast, .os-friends, .os-rivals, .os-rival, .os-quests, .os-store) {
+  :where(.os-streak, .os-level, .os-badges, .os-board, .os-league, .os-toast, .os-friends, .os-rivals, .os-rival, .os-quests, .os-store, .os-calendar) {
     --os-fg: #e6edf3;
     --os-muted: #8d96a0;
     --os-bg: #0d1117;
@@ -142,3 +142,18 @@
 .os-item__owned { color: var(--os-up); font-weight: 600; }
 .os-item__blocker { margin-left: auto; color: var(--os-muted); }
 .os-item__action { flex: none; }
+
+/* RewardCalendar */
+.os-calendar__header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.os-calendar__title { margin: 0; font-size: 1rem; }
+.os-calendar__day { color: var(--os-muted); font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.os-calendar__days { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
+.os-calendar__cell { display: grid; justify-items: center; gap: 2px; padding: 8px 4px; background: var(--os-bg); border: 1px solid var(--os-border); border-radius: var(--os-radius); text-align: center; }
+.os-calendar__number { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 0.75rem; font-weight: 700; border: 2px solid var(--os-border); }
+.os-calendar__reward { font-size: 0.6875rem; color: var(--os-muted); overflow-wrap: anywhere; }
+.os-calendar__cell--claimed .os-calendar__number { background: var(--os-up); border-color: var(--os-up); color: #fff; }
+.os-calendar__cell--today { border-color: var(--os-accent); box-shadow: 0 0 0 1px var(--os-accent) inset; }
+.os-calendar__cell--today .os-calendar__number { border-color: var(--os-accent); color: var(--os-accent); }
+.os-calendar__cell--today .os-calendar__reward { color: var(--os-accent); font-weight: 600; }
+.os-calendar__footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 10px; font-size: 0.875rem; }
+.os-calendar__next { color: var(--os-muted); }

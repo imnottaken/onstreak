@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { FriendList as FriendListData, LeaderboardEntry, LeaderboardResult, LeagueStatus, QuestList as QuestListData, RewardStore as RewardStoreData, RivalryStatus, UserProfile } from "@onstreak/sdk";
+import type { FriendList as FriendListData, LeaderboardEntry, LeaderboardResult, LeagueStatus, CalendarList, QuestList as QuestListData, RewardStore as RewardStoreData, RivalryStatus, UserProfile } from "@onstreak/sdk";
 import { countdownTick, cx, displayNameOf, formatTimeLeft, initials, levelProgress, ownedText, priceText, questProgressText, storeItemBlocker, recordText, rewardText, rivalScoreText, rivalShare, rivalStreakText, streakLabel } from "./helpers.js";
 
 type Streak = UserProfile["streaks"][string];
@@ -608,6 +608,64 @@ export function RewardStore({ store, title, renderAction, renderIcon, formatScor
           })}
         </ul>
       )}
+    </section>
+  );
+}
+
+/* ---------- RewardCalendar ---------- */
+
+type Calendar = CalendarList["calendars"][number];
+
+export interface RewardCalendarProps {
+  /** One entry of sdk.calendars(userId).calendars. */
+  calendar: Calendar;
+  /** Default: the calendar's name, else "Daily rewards". */
+  title?: string;
+  /** A claim button for today, shown until today is claimed. It should call your server, which tracks the calendar's event. */
+  renderAction?: (calendar: Calendar) => ReactNode;
+  /** Clock for the first render (pass the server's time to avoid hydration differences). */
+  now?: number;
+  className?: string;
+}
+
+/** A login reward calendar: each day's reward, with claimed days ticked and today highlighted. */
+export function RewardCalendar({ calendar, title, renderAction, now, className }: RewardCalendarProps) {
+  const left = useCountdown(calendar.nextClaimAt, now);
+  const heading = title ?? calendar.name ?? "Daily rewards";
+  const today = calendar.days.find((d) => d.day === calendar.day);
+  return (
+    <section className={cx("os-calendar", className)} aria-label={heading}>
+      <header className="os-calendar__header">
+        <h3 className="os-calendar__title">{heading}</h3>
+        <span className="os-calendar__day">
+          Day {calendar.day} of {calendar.days.length}
+        </span>
+      </header>
+      <ol className="os-calendar__days">
+        {calendar.days.map((d) => {
+          const label = `Day ${d.day}: ${rewardText(d.rewards) ?? "nothing"}, ${d.status === "today" ? "ready to claim" : d.status}`;
+          return (
+            <li key={d.day} className={cx("os-calendar__cell", `os-calendar__cell--${d.status}`)} aria-label={label} aria-current={d.status === "today" ? "date" : undefined}>
+              <span className="os-calendar__number" aria-hidden="true">
+                {d.status === "claimed" ? "✓" : d.day}
+              </span>
+              <span className="os-calendar__reward" aria-hidden="true">
+                {rewardText(d.rewards) ?? "–"}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+      <footer className="os-calendar__footer">
+        {calendar.claimedToday ? (
+          <span className="os-calendar__next">{left > 0 ? `Next reward in ${formatTimeLeft(left)}` : "Next reward is ready"}</span>
+        ) : (
+          <>
+            <span className="os-calendar__next">Today: {today ? (rewardText(today.rewards) ?? "nothing") : "nothing"}</span>
+            {renderAction && <span className="os-calendar__action">{renderAction(calendar)}</span>}
+          </>
+        )}
+      </footer>
     </section>
   );
 }

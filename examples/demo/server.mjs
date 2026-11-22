@@ -1,5 +1,5 @@
 // onstreak demo: a tiny study app showing streaks, levels, badges, a
-// leaderboard, a league, quests, a reward store, friends and head-to-head rivals, with simulated players and a "next day" button.
+// leaderboard, a league, quests, a login calendar, a reward store, friends and head-to-head rivals, with simulated players and a "next day" button.
 // Runs entirely in memory: no database, no keys.
 //
 //   npm run build && npm run demo     # then open http://localhost:3000
@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url";
 import { createElement as h, Fragment } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Engine, MemoryStore } from "@onstreak/engine";
-import { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalList, QuestList, RewardStore } from "@onstreak/react";
+import { StreakFlame, LevelBar, BadgeGrid, Leaderboard, LeagueTable, AchievementToast, FriendsList, RivalList, QuestList, RewardStore, RewardCalendar } from "@onstreak/react";
 
 const DAY = 86_400_000;
 const START = Date.parse("2026-11-16T09:00:00Z"); // a Monday morning
@@ -43,6 +43,14 @@ export const demoConfig = {
     { id: "two_lessons", name: "Two lessons", description: "Finish 2 lessons today", period: "daily", goal: { event: "lesson_completed", target: 2 }, rewards: [{ currency: "coins", amount: 3 }] },
     { id: "daily_xp", name: "Earn 40 XP", period: "daily", goal: { points: "xp", target: 40 }, rewards: [{ currency: "xp", amount: 10 }] },
     { id: "study_hour", name: "Study for an hour", description: "Across the week", period: "weekly", goal: { event: "minutes_studied", target: 60 }, rewards: [{ currency: "coins", amount: 10 }, { currency: "xp", amount: 50 }] },
+  ],
+  calendars: [
+    {
+      id: "daily_login",
+      name: "Daily check-in",
+      event: "checked_in",
+      days: [2, 3, 3, 5, 5, 8].map((amount) => ({ rewards: [{ currency: "coins", amount }] })).concat([{ rewards: [{ currency: "coins", amount: 15 }, { currency: "xp", amount: 50 }] }]),
+    },
   ],
   items: [
     { id: "streak_freeze", name: "Streak freeze", description: "Use it to cover a missed day", price: { currency: "coins", amount: 4 }, limit: 2, effect: { streakFreeze: "daily_lesson" }, metadata: { icon: "🧊" } },
@@ -139,7 +147,7 @@ export function createDemo({ seed = 42 } = {}) {
   }
 
   async function render(unlocked) {
-    const [user, weekly, league, history, friends, rivals, friendsBoard, quests, shop] = await Promise.all([
+    const [user, weekly, league, history, friends, rivals, friendsBoard, quests, shop, calendars] = await Promise.all([
       engine.getUser(YOU),
       engine.leaderboard("xp_weekly", { userId: YOU, limit: 10 }),
       engine.league("weekly_league", YOU),
@@ -149,6 +157,7 @@ export function createDemo({ seed = 42 } = {}) {
       engine.leaderboard("xp_weekly", { userId: YOU, scope: "friends" }),
       engine.quests(YOU),
       engine.rewardStore(YOU),
+      engine.calendars(YOU),
     ]);
     const freezesFull = user.streaks.daily_lesson.freezes >= demoConfig.streaks[0].freezes.max;
     const buyButton = (item) =>
@@ -214,6 +223,15 @@ export function createDemo({ seed = 42 } = {}) {
           h(
             "section",
             { className: "card" },
+            h(RewardCalendar, {
+              calendar: calendars.calendars[0],
+              now: now(),
+              renderAction: () => h("form", { method: "post", action: "/check-in" }, h("button", { type: "submit", className: "small primary" }, "Claim")),
+            }),
+          ),
+          h(
+            "section",
+            { className: "card" },
             h(RewardStore, { store: shop, title: "Shop", renderIcon: (item) => item.metadata?.icon ?? null, renderAction: buyButton }),
           ),
           h("section", { className: "card" }, h(LeagueTable, { status: league, now: now() })),
@@ -270,6 +288,10 @@ export function createDemo({ seed = 42 } = {}) {
       }
       if (req.method === "POST" && url.pathname === "/do/lesson") {
         const r = await engine.track({ userId: YOU, event: "lesson_completed" });
+        return back(r.achievements.map((a) => a.id));
+      }
+      if (req.method === "POST" && url.pathname === "/check-in") {
+        const r = await engine.track({ userId: YOU, event: "checked_in" });
         return back(r.achievements.map((a) => a.id));
       }
       if (req.method === "POST" && url.pathname === "/do/study") {

@@ -190,3 +190,21 @@ test("an XP potion doubles XP until it runs out", async (t) => {
   doc = await view();
   assert.equal(doc.querySelector(".boost"), null, "gone the next day");
 });
+
+test("the daily check-in pays once a day and moves to the next day", async (t) => {
+  const { view, press } = await start(t);
+  let doc = await view();
+  assert.equal(doc.querySelector(".os-calendar__day").textContent, "Day 1 of 7");
+  assert.equal(doc.querySelector(".os-calendar__next").textContent, "Today: +2 coins");
+  await press("/check-in");
+  doc = await view();
+  assert.equal(doc.querySelector(".stats .muted").textContent, "2 coins");
+  assert.equal(doc.querySelector(".os-calendar button"), null, "claimed for today");
+  assert.match(doc.querySelector(".os-calendar__next").textContent, /^Next reward in /);
+  await press("/check-in"); // a second claim does nothing
+  assert.equal((await view()).querySelector(".stats .muted").textContent, "2 coins");
+  await press("/next-day");
+  doc = await view();
+  assert.equal(doc.querySelector(".os-calendar__next").textContent, "Today: +3 coins");
+  assert.equal(doc.querySelector(".os-calendar__cell--today .os-calendar__number").textContent, "2");
+});
