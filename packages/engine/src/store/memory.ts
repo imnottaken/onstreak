@@ -156,6 +156,16 @@ export class MemoryStore implements Store {
         const p = d.purchases.find((x) => x.idempotencyKey === key);
         return p ? { ...p } : null;
       },
+      getPurchase: async (id) => {
+        const p = d.purchases.find((x) => x.id === id);
+        return p ? { ...p } : null;
+      },
+      refundPurchase: async (id, quantity, amount) => {
+        const p = d.purchases.find((x) => x.id === id)!;
+        p.refunded += quantity;
+        d.spent.set(p.currency, (d.spent.get(p.currency) ?? 0) - amount);
+        d.inventory.set(p.itemId, (d.inventory.get(p.itemId) ?? 0) - quantity);
+      },
       recordPurchase: async (p) => {
         d.purchases.push({ ...p });
         d.spent.set(p.currency, (d.spent.get(p.currency) ?? 0) + p.cost);

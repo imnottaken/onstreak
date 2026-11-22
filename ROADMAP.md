@@ -64,7 +64,7 @@ Things that would hurt early users if they were missing.
 - [x] **Personal boosts** (S). A boost given to one user with an expiry ("2x XP for 1 hour"), e.g. bought in the reward store.
 - [x] **Spendable currencies and a reward store** (L). Spend coins on items, inventory, purchase history, balance checks.
 - [x] **Using items** (S). Consume an owned item (`POST /v1/users/:id/inventory/:item/use`); a streak-freeze effect.
-- [ ] **Refunds** (S). Refund a purchase (back to the wallet, out of the inventory).
+- [x] **Refunds** (S). Refund a purchase (back to the wallet, out of the inventory).
 - [x] **RewardStore React component** (S). Item grid with prices, owned counts and a buy button that calls your server.
 - [ ] **Streak repair** (M). Repair a broken streak within N hours, e.g. by paying coins. (Buying freezes with coins works through items with a `streakFreeze` effect.)
 - [ ] **Richer streak rules** (M). "At least 3 lessons a day" to count, weekends off, custom week start, monthly streaks.

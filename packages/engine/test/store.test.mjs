@@ -211,7 +211,7 @@ for (const [name, makeStore] of Object.entries(storeFactories)) {
   test(`${name}: a freeze can be used before any streak exists`, async (t) => {
     const engine = new Engine({ ...config, streaks: [{ id: "daily_lesson", event: "lesson_completed", period: "daily", freezes: { max: 3 } }] }, await makeStore(t), () => start);
     await engine.track({ userId: "new", event: "minutes_studied", value: 5 }); // 10 xp, no coins, no streak
-    await engine.store.withUser("new", (tx) => tx.recordPurchase({ id: "00000000-0000-4000-8000-000000000001", itemId: "streak_freeze", quantity: 1, currency: "coins", cost: 0, purchasedAt: start, idempotencyKey: null }));
+    await engine.store.withUser("new", (tx) => tx.recordPurchase({ id: "00000000-0000-4000-8000-000000000001", itemId: "streak_freeze", quantity: 1, currency: "coins", cost: 0, purchasedAt: start, idempotencyKey: null, refunded: 0 }));
     const r = await engine.useItem("new", "streak_freeze");
     assert.deepEqual(r.effects, { streakFreeze: { streak: "daily_lesson", freezes: 1 } });
   });
@@ -236,3 +236,35 @@ test("pg: concurrent uses never take more than the user owns", { skip: PG_URL ? 
   assert.equal(results.filter((r) => r.status === "fulfilled").length, 3);
   assert.deepEqual((await engine.getUser("fast")).inventory, {});
 });
+
+for (const [name, makeStore] of Object.entries(storeFactories)) {
+  test(`${name}: refunds give the price back and take the items away`, async (t) => {
+    const engine = new Engine(config, await makeStore(t), () => start);
+    await earnCoins(engine, "asha", 10);
+    const p = await engine.purchase("asha", { item: "sticker", quantity: 4 });
+    await engine.useItem("asha", "sticker"); // 3 left
+
+    const part = await engine.refundPurchase("asha", p.purchase.id, { quantity: 2 });
+    assert.deepEqual(part.refund, { quantity: 2, amount: 2, currency: "coins" });
+    assert.deepEqual([part.wallet.coins, part.owned, part.purchase.refunded], [8, 1, 2]);
+    await rejectsWith(engine.refundPurchase("asha", p.purchase.id, { quantity: 2 }), 409, "not_owned"); // only 1 owned
+    await rejectsWith(engine.refundPurchase("asha", p.purchase.id, { quantity: 3 }), 400, undefined); // only 2 left to refund
+    const rest = await engine.refundPurchase("asha", p.purchase.id, { quantity: 1 });
+    assert.deepEqual([rest.wallet.coins, rest.owned, rest.purchase.refunded], [9, 0, 3]);
+    await rejectsWith(engine.refundPurchase("asha", p.purchase.id, { quantity: 1 }), 409, "not_owned");
+
+    const frame = await engine.purchase("asha", { item: "gold_frame" });
+    const all = await engine.refundPurchase("asha", frame.purchase.id);
+    assert.deepEqual([all.refund.quantity, all.refund.amount], [1, 0]);
+    await rejectsWith(engine.refundPurchase("asha", frame.purchase.id), 409, "already_refunded");
+    assert.equal((await engine.purchase("asha", { item: "gold_frame" })).owned, 1, "a refunded limited item can be bought again");
+
+    const user = await engine.getUser("asha");
+    assert.deepEqual([user.points.coins, user.wallet.coins], [10, 9], "earned points never change");
+    assert.equal((await engine.purchases("asha", { limit: 5 })).purchases.find((x) => x.id === p.purchase.id).refunded, 3);
+
+    await rejectsWith(engine.refundPurchase("asha", "00000000-0000-4000-8000-000000000000"), 404, undefined);
+    await rejectsWith(engine.refundPurchase("ravi", p.purchase.id), 404, undefined, "only the buyer can refund");
+    await rejectsWith(engine.refundPurchase("asha", p.purchase.id, null), 400, undefined);
+  });
+}

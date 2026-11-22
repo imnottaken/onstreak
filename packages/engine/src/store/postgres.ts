@@ -115,6 +115,7 @@ function rowToPurchase(r: Record<string, unknown>): PurchaseRecord {
     cost: num(r.cost),
     purchasedAt: ms(r.purchased_at),
     idempotencyKey: (r.idempotency_key as string | null) ?? null,
+    refunded: num(r.refunded ?? 0),
   };
 }
 
@@ -306,6 +307,17 @@ export class PostgresStore implements Store {
       async findPurchase(key) {
         const { rows } = await q.query(`select * from ${t.purchases} where user_id = $1 and idempotency_key = $2`, [userId, key]);
         return rows[0] ? rowToPurchase(rows[0]) : null;
+      },
+      async getPurchase(id) {
+        if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+        const { rows } = await q.query(`select * from ${t.purchases} where user_id = $1 and id = $2`, [userId, id]);
+        return rows[0] ? rowToPurchase(rows[0]) : null;
+      },
+      async refundPurchase(id, quantity, amount) {
+        const { rows } = await q.query(`update ${t.purchases} set refunded = refunded + $3 where user_id = $1 and id = $2 returning currency, item_id`, [userId, id, quantity]);
+        const p = rows[0]!;
+        await q.query(`update ${t.balances} set spent = spent - $3 where user_id = $1 and currency = $2`, [userId, p.currency, amount]);
+        await q.query(`update ${t.inventory} set quantity = quantity - $3 where user_id = $1 and item_id = $2`, [userId, p.item_id, quantity]);
       },
       async recordPurchase(p) {
         await q.query(

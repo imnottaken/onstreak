@@ -154,6 +154,11 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         return send(200, await engine.rewardStore(id));
       }
 
+      if (req.method === "POST" && resource === "users" && id && sub === "purchases" && subId && subSub === "refund" && parts.length === 6) {
+        const body = await readJson(req);
+        return send(200, await engine.refundPurchase(id, subId, (body ?? {}) as { quantity?: number }));
+      }
+
       if (resource === "users" && id && sub === "purchases" && parts.length === 4) {
         if (req.method === "POST") return send(200, await engine.purchase(id, (await readJson(req)) as Parameters<Engine["purchase"]>[1]));
         if (req.method === "GET") {

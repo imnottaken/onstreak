@@ -154,6 +154,15 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   assert.deepEqual([capped.status, capped.json.code], [409, "limit_reached"]);
   await call("post", "/v1/users/asha/purchases", "/v1/users/{userId}/purchases", { item: "nope" }); // 404
   await call("post", "/v1/users/asha/purchases", "/v1/users/{userId}/purchases", { item: "sticker", quantity: 0 }); // 400
+  const refundPath = (id) => `/v1/users/asha/purchases/${id}/refund`;
+  const refundTpl = "/v1/users/{userId}/purchases/{purchaseId}/refund";
+  const refunded = await call("post", refundPath(bought.json.purchase.id), refundTpl, {});
+  assert.deepEqual([refunded.json.refund.amount, refunded.json.wallet.coins], [1, 1]);
+  const twice = await call("post", refundPath(bought.json.purchase.id), refundTpl);
+  assert.deepEqual([twice.status, twice.json.code], [409, "already_refunded"]);
+  await call("post", refundPath("00000000-0000-4000-8000-000000000000"), refundTpl, {}); // 404
+  await call("post", refundPath("not-a-uuid"), refundTpl, {}); // 404
+  await call("post", "/v1/users/asha/purchases", "/v1/users/{userId}/purchases", { item: "sticker" }); // buy it again with the refund
   const history = await call("get", "/v1/users/asha/purchases?limit=1", "/v1/users/{userId}/purchases");
   await call("get", `/v1/users/asha/purchases?limit=1&cursor=${history.json.nextCursor}`, "/v1/users/{userId}/purchases");
   await call("get", "/v1/users/asha", "/v1/users/{userId}"); // with a wallet and inventory

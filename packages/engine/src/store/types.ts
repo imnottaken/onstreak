@@ -80,6 +80,8 @@ export interface PurchaseRecord {
   cost: number;
   purchasedAt: number;
   idempotencyKey: string | null;
+  /** How many of `quantity` were refunded. */
+  refunded: number;
 }
 
 /** One use of owned items, with the result returned to the caller (for idempotent retries). */
@@ -204,6 +206,9 @@ export interface UserTx {
   /** How many of an item the user owns. */
   getInventory(itemId: string): Promise<number>;
   findPurchase(idempotencyKey: string): Promise<PurchaseRecord | null>;
+  getPurchase(purchaseId: string): Promise<PurchaseRecord | null>;
+  /** Refund part of a purchase: gives `amount` back to the wallet and takes `quantity` out of the inventory. */
+  refundPurchase(purchaseId: string, quantity: number, amount: number): Promise<void>;
   /** Store a purchase: adds its cost to spent and its quantity to the inventory. Returns the new quantity owned. */
   recordPurchase(purchase: PurchaseRecord): Promise<number>;
   findItemUse(idempotencyKey: string): Promise<ItemUseResult | null>;

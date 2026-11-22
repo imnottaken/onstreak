@@ -189,6 +189,8 @@ export interface Purchase {
   quantity: number;
   cost: { currency: string; amount: number };
   purchasedAt: string;
+  /** How many were refunded. */
+  refunded: number;
 }
 
 export interface PurchaseResult {
@@ -284,6 +286,16 @@ export interface ItemUseResult {
     /** The boosts this use queued: from the first one's start to the last one's end. */
     boost?: { factor: number; currency: string | null; startsAt: string; endsAt: string };
   };
+}
+
+export interface RefundResult {
+  userId: string;
+  purchase: Purchase;
+  /** What this call gave back. */
+  refund: { quantity: number; amount: number; currency: string };
+  wallet: Record<string, number>;
+  /** How many of the item the user owns now. */
+  owned: number;
 }
 
 export interface PurchaseHistory {
@@ -1139,7 +1151,7 @@ export class Engine {
       if (available < cost) {
         throw new EngineError(`"${item.id}" costs ${cost} ${currency} and ${userId} has ${available}`, 409, "insufficient_funds");
       }
-      const record: PurchaseRecord = { id: randomUUID(), itemId: item.id, quantity, currency, cost, purchasedAt: this.now(), idempotencyKey };
+      const record: PurchaseRecord = { id: randomUUID(), itemId: item.id, quantity, currency, cost, purchasedAt: this.now(), idempotencyKey, refunded: 0 };
       const nowOwned = await tx.recordPurchase(record);
       return { userId, purchase: this.toPurchase(record), duplicate: false, wallet: await walletOf(), owned: nowOwned };
     });
@@ -1229,6 +1241,38 @@ export class Engine {
     });
   }
 
+  /**
+   * Refund some or all of a purchase (default: everything not refunded yet).
+   * The price goes back to the wallet and the items leave the inventory, so
+   * the user must still own them: 409 "not_owned" if they used them, and
+   * 409 "already_refunded" when nothing is left to refund.
+   */
+  async refundPurchase(userId: string, purchaseId: string, options: { quantity?: number } = {}): Promise<RefundResult> {
+    checkUserId(userId);
+    if (!options || typeof options !== "object" || Array.isArray(options)) throw new EngineError("body must be a JSON object");
+    return this.store.withUser(userId, async (tx) => {
+      const p = typeof purchaseId === "string" ? await tx.getPurchase(purchaseId) : null;
+      if (!p) throw new EngineError(`${userId} has no purchase "${String(purchaseId)}"`, 404);
+      const left = p.quantity - p.refunded;
+      if (left <= 0) throw new EngineError("this purchase was already refunded in full", 409, "already_refunded");
+      const quantity = options.quantity ?? left;
+      if (!Number.isInteger(quantity) || quantity < 1 || quantity > left) throw new EngineError(`quantity must be a whole number from 1 to ${left}`);
+      const owned = await tx.getInventory(p.itemId);
+      if (owned < quantity) throw new EngineError(`${userId} owns ${owned} of "${p.itemId}", so ${quantity} cannot be refunded`, 409, "not_owned");
+      const amount = round6((p.cost / p.quantity) * quantity);
+      await tx.refundPurchase(p.id, quantity, amount);
+      const wallet: Record<string, number> = {};
+      for (const c of this.config.currencies) wallet[c] = round6((await tx.getBalance(c)) - (await tx.getSpent(c)));
+      return {
+        userId,
+        purchase: this.toPurchase({ ...p, refunded: p.refunded + quantity }),
+        refund: { quantity, amount, currency: p.currency },
+        wallet,
+        owned: owned - quantity,
+      };
+    });
+  }
+
   /** A user's purchases, newest first. */
   async purchases(userId: string, options: { limit?: number; cursor?: string } = {}): Promise<PurchaseHistory> {
     checkUserId(userId);
@@ -1253,6 +1297,7 @@ export class Engine {
       quantity: p.quantity,
       cost: { currency: p.currency, amount: p.cost },
       purchasedAt: new Date(p.purchasedAt).toISOString(),
+      refunded: p.refunded,
     };
   }
 

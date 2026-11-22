@@ -163,6 +163,8 @@ export interface Purchase {
   quantity: number;
   cost: Price;
   purchasedAt: string;
+  /** How many of `quantity` were refunded. */
+  refunded: number;
 }
 
 export interface PurchaseResult {
@@ -237,6 +239,14 @@ export interface ItemUseResult {
     streakFreeze?: { streak: string; freezes: number };
     boost?: { factor: number; currency: string | null; startsAt: string; endsAt: string };
   };
+}
+
+export interface RefundResult {
+  userId: string;
+  purchase: Purchase;
+  refund: { quantity: number; amount: number; currency: string };
+  wallet: Record<string, number>;
+  owned: number;
 }
 
 export interface PurchaseHistory {
@@ -381,6 +391,9 @@ export function createClient(options: ClientOptions) {
     /** Give a user a personal multiplier for some minutes, e.g. 2x XP for an hour. */
     grantBoost: (userId: string, input: BoostInput) =>
       call<{ userId: string; boost: Boost; duplicate: boolean; boosts: Boost[] }>("POST", `${user(userId)}/boosts`, input),
+    /** Refund some or all of a purchase. Throws 409 "not_owned" or "already_refunded". */
+    refundPurchase: (userId: string, purchaseId: string, opts: { quantity?: number } = {}) =>
+      call<RefundResult>("POST", `${user(userId)}/purchases/${encodeURIComponent(purchaseId)}/refund`, opts),
     /** A user's purchases, newest first. Pass `nextCursor` back to page. */
     purchases: (userId: string, opts: { limit?: number; cursor?: string } = {}) => {
       const params = new URLSearchParams();

@@ -22,6 +22,7 @@ export type {
   Purchase,
   PurchaseResult,
   PurchaseHistory,
+  RefundResult,
   ItemUseInput,
   ItemUseResult,
   Boost,

@@ -21,7 +21,7 @@ const schemas = {
     additionalProperties: false,
     properties: {
       error: { type: "string", description: "What went wrong, in plain words." },
-      code: { type: "string", description: 'A stable reason to branch on, when there is one: "insufficient_funds", "limit_reached", "not_owned", "streak_broken", "already_referred".' },
+      code: { type: "string", description: 'A stable reason to branch on, when there is one: "insufficient_funds", "limit_reached", "not_owned", "streak_broken", "already_referred", "already_refunded".' },
       requestId: { type: "string", description: "Matches the x-request-id header and the server logs." },
     },
   },
@@ -225,7 +225,7 @@ const schemas = {
   },
   Purchase: {
     type: "object",
-    required: ["id", "item", "name", "quantity", "cost", "purchasedAt"],
+    required: ["id", "item", "name", "quantity", "cost", "purchasedAt", "refunded"],
     additionalProperties: false,
     properties: {
       id: { type: "string", format: "uuid" },
@@ -234,6 +234,24 @@ const schemas = {
       quantity: { type: "integer", minimum: 1 },
       cost: ref("Price"),
       purchasedAt: { type: "string", format: "date-time" },
+      refunded: { type: "integer", minimum: 0, description: "How many of quantity were refunded." },
+    },
+  },
+  RefundResult: {
+    type: "object",
+    required: ["userId", "purchase", "refund", "wallet", "owned"],
+    additionalProperties: false,
+    properties: {
+      userId: { type: "string" },
+      purchase: ref("Purchase"),
+      refund: {
+        type: "object",
+        required: ["quantity", "amount", "currency"],
+        additionalProperties: false,
+        properties: { quantity: { type: "integer", minimum: 1 }, amount: { type: "number" }, currency: { type: "string" } },
+      },
+      wallet: map({ type: "number" }),
+      owned: { type: "integer", minimum: 0 },
     },
   },
   PurchaseResult: {
@@ -817,6 +835,21 @@ export function openapiSpec(version: string) {
           summary: "Login reward calendars with the user's place in each",
           parameters: [{ name: "timezone", in: "query", schema: { type: "string" }, description: "Override the zone that decides when days start." }],
           responses: { "200": ok("The user's calendars", ref("CalendarList")), ...authErrors },
+        },
+      },
+      "/v1/users/{userId}/purchases/{purchaseId}/refund": {
+        parameters: [userIdParam, { name: "purchaseId", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        post: {
+          operationId: "refundPurchase",
+          summary: "Refund some or all of a purchase",
+          description: "The price goes back to the wallet and the items leave the inventory. Default quantity: everything not refunded yet.",
+          requestBody: { content: json({ type: "object", additionalProperties: false, properties: { quantity: { type: "integer", minimum: 1 } } }) },
+          responses: {
+            "200": ok("The refund and the balances after it", ref("RefundResult")),
+            ...authErrors,
+            "404": errorResponse("No such purchase for this user"),
+            "409": errorResponse('Items already used (code "not_owned") or nothing left to refund ("already_refunded")'),
+          },
         },
       },
       "/v1/users/{userId}/referred-by/{referrerId}": {

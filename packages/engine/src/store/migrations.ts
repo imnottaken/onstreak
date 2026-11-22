@@ -314,6 +314,11 @@ export const MIGRATIONS: readonly Migration[] = [
       `create index if not exists ${t.prefix}referrals_referrer on ${t.referrals} (referrer_id, created_at desc)`,
     ],
   },
+  {
+    version: 13,
+    name: "refunds",
+    statements: (t) => [`alter table ${t.purchases} add column if not exists refunded integer not null default 0`],
+  },
 ];
 
 export const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

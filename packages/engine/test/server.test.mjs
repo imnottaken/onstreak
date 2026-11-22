@@ -112,6 +112,9 @@ test("SDK covers profiles, batches, history, health and request ids", async () =
     const bought = await xp.purchase("zara", { item: "sticker", idempotencyKey: "s1" });
     assert.deepEqual([bought.owned, bought.wallet.coins], [1, 0]);
     assert.equal((await xp.purchases("zara", { limit: 5 })).purchases[0].item, "sticker");
+    const back = await xp.refundPurchase("zara", bought.purchase.id);
+    assert.deepEqual([back.refund.quantity, back.wallet.coins, back.purchase.refunded], [1, 1, 1]);
+    await xp.purchase("zara", { item: "sticker" });
     const refused = await xp.purchase("zara", { item: "sticker" }).catch((e) => e);
     assert.ok(refused instanceof OnstreakError);
     assert.deepEqual([refused.status, refused.code], [409, "insufficient_funds"]);
