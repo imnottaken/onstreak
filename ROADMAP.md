@@ -85,7 +85,8 @@ Things that would hurt early users if they were missing.
 - [x] **Compound and time-window conditions** (M). AND/OR conditions, "5 lessons within one day", "100 xp in a week".
 - [x] **Event properties in rules** (M). Award points only when `difficulty = "hard"`, sum a property instead of counting.
 - [ ] **A rules language** (L). Expression-based conditions (JSONLogic or similar) for anything the built-in rules cannot say.
-- [ ] **Level curves** (S). Formula-based thresholds (linear, exponential), level-up rewards, prestige.
+- [x] **Level curves** (S). Formula-based thresholds (linear, exponential), level-up rewards.
+- [ ] **Prestige** (S). Start levels over with a prestige rank once the top level is reached.
 - [ ] **Leaderboard views** (M). Around-me (my rank plus or minus N), by segment (country, school, company), past winners archive.
 - [ ] **League upgrades** (M). Fill small groups with ghost players, skill-based grouping, rewards for finishing top 3.
 - [ ] **Corrections** (M). Reverse an event, revoke points or an achievement, with everything recalculated.

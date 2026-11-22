@@ -60,6 +60,7 @@ export type {
   AchievementCondition,
   LeaderboardRule,
   LevelConfig,
+  LevelInput,
   LeagueRule,
   ResolvedLeague,
   RivalryRule,

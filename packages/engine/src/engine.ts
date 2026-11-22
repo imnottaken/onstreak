@@ -55,7 +55,8 @@ export interface TrackResult {
   value: number;
   duplicate: boolean;
   points: Record<string, { awarded: number; total: number }>;
-  level: { current: number; previous: number; leveledUp: boolean } | null;
+  /** `rewards` lists what reaching new levels paid (already in `points`). */
+  level: { current: number; previous: number; leveledUp: boolean; rewards?: QuestReward[] } | null;
   /** `progress` is this period's total so far, for streaks with a minimum. */
   streaks: Record<string, { current: number; longest: number; freezes: number; extended: boolean; freezesUsed: number; reset: boolean; progress?: number }>;
   /** Achievements (or tiers of one) this event unlocked. Their rewards are already in `points`. */
@@ -915,8 +916,28 @@ export class Engine {
 
       let level: TrackResult["level"] = null;
       if (config.levels && levelBefore !== null) {
-        const current = levelFor(config.levels, await tx.getBalance(config.levels.currency));
-        level = { current, previous: levelBefore, leveledUp: current > levelBefore };
+        let current = levelFor(config.levels, await tx.getBalance(config.levels.currency));
+        const paid: QuestReward[] = [];
+        // Pay each level passed; a reward in the level currency can push the user further.
+        let rewardedUpTo = levelBefore;
+        while (current > rewardedUpTo) {
+          for (const entry of config.levels.rewards) {
+            if (entry.level <= rewardedUpTo || entry.level > current) continue;
+            for (const r of entry.rewards) {
+              const total = await tx.addPoints(r.currency, r.amount, ts, eventId, recordedAt);
+              const p = points[r.currency] ?? { awarded: 0, total };
+              p.awarded += r.amount;
+              p.total = total;
+              points[r.currency] = p;
+              const same = paid.find((x) => x.currency === r.currency);
+              if (same) same.amount += r.amount;
+              else paid.push({ ...r });
+            }
+          }
+          rewardedUpTo = current;
+          current = levelFor(config.levels, await tx.getBalance(config.levels.currency));
+        }
+        level = { current, previous: levelBefore, leveledUp: current > levelBefore, ...(paid.length ? { rewards: paid } : {}) };
       }
 
       const leagues: TrackResult["leagues"] = {};

@@ -125,10 +125,28 @@ export interface LeaderboardRule {
   timezone?: string;
 }
 
+/** Levels as configured: a list of thresholds, or a formula. */
+export interface LevelInput {
+  currency: string;
+  /** Points needed to reach level 2, 3, 4, ... in ascending order. */
+  thresholds?: number[];
+  /**
+   * Instead of thresholds: "linear" needs `step` more points per level
+   * (100, 200, 300...); "exponential" needs `base`, then each level `factor`
+   * times the last step (100, 150, 225... with factor 1.5). `maxLevel`
+   * defaults to 100.
+   */
+  curve?: { type: "linear"; step: number; maxLevel?: number } | { type: "exponential"; base: number; factor: number; maxLevel?: number };
+  /** Points paid when a user reaches a level, e.g. [{ level: 5, rewards: [{ currency: "coins", amount: 50 }] }]. */
+  rewards?: Array<{ level: number; rewards: QuestReward[] }>;
+}
+
 export interface LevelConfig {
   currency: string;
   /** Points needed to reach level 2, 3, 4, ... in ascending order. */
   thresholds: number[];
+  /** Rewards by level. */
+  rewards: Array<{ level: number; rewards: QuestReward[] }>;
 }
 
 export interface LeagueRule {
@@ -365,7 +383,7 @@ export interface OnstreakConfig {
   defaultTimezone?: string;
   currencies: string[];
   points?: PointRule[];
-  levels?: LevelConfig;
+  levels?: LevelInput;
   streaks?: StreakRule[];
   achievements?: AchievementRule[];
   leaderboards?: LeaderboardRule[];
@@ -496,12 +514,50 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
   let levels: LevelConfig | null = null;
   if (input.levels) {
     hasCurrency(input.levels.currency, "levels");
-    const t = input.levels.thresholds;
-    if (!Array.isArray(t) || t.length === 0 || !t.every(isNonNegative)) throw new ConfigError("levels.thresholds must be non-negative numbers");
+    const { curve } = input.levels;
+    if ((input.levels.thresholds === undefined) === (curve === undefined)) throw new ConfigError("levels needs thresholds or a curve, not both");
+    let t: number[];
+    if (curve) {
+      const max = curve.maxLevel ?? 100;
+      if (!Number.isInteger(max) || max < 2 || max > 1000) throw new ConfigError("levels.curve.maxLevel must be a whole number from 2 to 1000");
+      t = [];
+      if (curve.type === "linear") {
+        if (typeof curve.step !== "number" || !(curve.step > 0) || !Number.isFinite(curve.step)) throw new ConfigError("levels.curve.step must be positive");
+        for (let n = 1; n < max; n++) t.push(curve.step * n);
+      } else if (curve.type === "exponential") {
+        if (typeof curve.base !== "number" || !(curve.base > 0) || !Number.isFinite(curve.base)) throw new ConfigError("levels.curve.base must be positive");
+        if (typeof curve.factor !== "number" || !(curve.factor > 1) || curve.factor > 10) throw new ConfigError("levels.curve.factor must be above 1 and at most 10");
+        let step = curve.base;
+        let total = 0;
+        for (let n = 1; n < max; n++) {
+          total += step;
+          const rounded = Math.round(total);
+          if (!Number.isSafeInteger(rounded)) break;
+          t.push(rounded);
+          step *= curve.factor;
+        }
+      } else throw new ConfigError('levels.curve.type must be "linear" or "exponential"');
+    } else {
+      t = input.levels.thresholds!;
+      if (!Array.isArray(t) || t.length === 0 || !t.every(isNonNegative)) throw new ConfigError("levels.thresholds must be non-negative numbers");
+    }
     for (let i = 1; i < t.length; i++) {
       if ((t[i] as number) <= (t[i - 1] as number)) throw new ConfigError("levels.thresholds must be strictly ascending");
     }
-    levels = { currency: input.levels.currency, thresholds: [...t] };
+    const rewards = input.levels.rewards ?? [];
+    if (!Array.isArray(rewards)) throw new ConfigError("levels.rewards must be a list of { level, rewards }");
+    const seen = new Set<number>();
+    for (const r of rewards) {
+      if (!r || !Number.isInteger(r.level) || r.level < 2 || r.level > t.length + 1) throw new ConfigError(`levels.rewards level must be a whole number from 2 to ${t.length + 1}`);
+      if (seen.has(r.level)) throw new ConfigError(`levels.rewards has level ${r.level} twice`);
+      seen.add(r.level);
+      if (!Array.isArray(r.rewards)) throw new ConfigError("levels.rewards entries need rewards: [{ currency, amount }]");
+      for (const x of r.rewards) {
+        hasCurrency(x.currency, "levels.rewards");
+        if (typeof x.amount !== "number" || !Number.isFinite(x.amount) || x.amount <= 0) throw new ConfigError("levels.rewards need positive amounts");
+      }
+    }
+    levels = { currency: input.levels.currency, thresholds: [...t], rewards: rewards.map((r) => ({ level: r.level, rewards: r.rewards.map((x) => ({ ...x })) })).sort((a, b) => a.level - b.level) };
   }
 
   const streaks = input.streaks ?? [];

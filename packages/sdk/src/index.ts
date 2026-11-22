@@ -18,7 +18,8 @@ export interface TrackResult {
   value: number;
   duplicate: boolean;
   points: Record<string, { awarded: number; total: number }>;
-  level: { current: number; previous: number; leveledUp: boolean } | null;
+  /** `rewards` lists what reaching new levels paid (already in `points`). */
+  level: { current: number; previous: number; leveledUp: boolean; rewards?: QuestReward[] } | null;
   streaks: Record<string, { current: number; longest: number; freezes: number; extended: boolean; freezesUsed: number; reset: boolean; progress?: number }>;
   /** Rewards of unlocked achievements are already in `points`. */
   achievements: Array<{ id: string; name: string; description?: string; tier?: { level: number; name: string }; rewards?: QuestReward[] }>;

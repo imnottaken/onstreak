@@ -75,7 +75,12 @@ const schemas = {
         type: "object",
         required: ["current", "previous", "leveledUp"],
         additionalProperties: false,
-        properties: { current: { type: "integer" }, previous: { type: "integer" }, leveledUp: { type: "boolean" } },
+        properties: {
+          current: { type: "integer" },
+          previous: { type: "integer" },
+          leveledUp: { type: "boolean" },
+          rewards: { type: "array", items: ref("QuestReward"), description: "What reaching new levels paid (already in points)." },
+        },
       }),
       streaks: map({
         type: "object",
