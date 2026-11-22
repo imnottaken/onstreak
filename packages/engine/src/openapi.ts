@@ -21,7 +21,7 @@ const schemas = {
     additionalProperties: false,
     properties: {
       error: { type: "string", description: "What went wrong, in plain words." },
-      code: { type: "string", description: 'A stable reason to branch on, when there is one: "insufficient_funds", "limit_reached", "not_owned", "streak_broken", "already_referred", "already_refunded", "not_broken", "repair_expired", "team_full", "already_in_team".' },
+      code: { type: "string", description: 'A stable reason to branch on, when there is one: "insufficient_funds", "limit_reached", "not_owned", "streak_broken", "already_referred", "already_refunded", "not_broken", "repair_expired", "team_full", "already_in_team", "not_max_level".' },
       requestId: { type: "string", description: "Matches the x-request-id header and the server logs." },
     },
   },
@@ -785,9 +785,10 @@ const schemas = {
       boosts: { type: "array", items: ref("Boost"), description: "Personal boosts running now or queued, soonest first." },
       level: nullable({
         type: "object",
-        required: ["current", "points", "startsAt", "nextAt"],
+        required: ["current", "points", "startsAt", "nextAt", "prestige"],
         additionalProperties: false,
         properties: {
+          prestige: { type: "integer", minimum: 0, description: "How many times the user has started levels over." },
           current: { type: "integer" },
           points: { type: "number" },
           startsAt: { type: "number", description: "Points where the current level began (0 at level 1)." },
@@ -856,6 +857,12 @@ const schemas = {
       },
       nextCursor: nullable({ type: "string" }),
     },
+  },
+  PrestigeResult: {
+    type: "object",
+    required: ["userId", "prestige", "level", "rewards"],
+    additionalProperties: false,
+    properties: { userId: { type: "string" }, prestige: { type: "integer", minimum: 1 }, level: { type: "integer", minimum: 1 }, rewards: { type: "array", items: ref("QuestReward") } },
   },
   LeaderboardHistory: {
     type: "object",
@@ -1299,6 +1306,20 @@ export function openapiSpec(version: string) {
           operationId: "removeTeamMember",
           summary: "Take a user out of a team",
           responses: { "200": ok("Whether they were removed", ref("TeamMembership")), ...authErrors, "404": errorResponse("Unknown team") },
+        },
+      },
+      "/v1/users/{userId}/prestige": {
+        parameters: [userIdParam],
+        post: {
+          operationId: "prestige",
+          summary: "Start levels over with a higher prestige rank",
+          description: "Only at the top level. Earned points are kept; levels count from here.",
+          responses: {
+            "200": ok("The new prestige rank", ref("PrestigeResult")),
+            ...authErrors,
+            "404": errorResponse("Prestige is not configured"),
+            "409": errorResponse('Not at the top level yet ("not_max_level")'),
+          },
         },
       },
       "/v1/users/{userId}/achievements": {

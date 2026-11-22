@@ -48,6 +48,7 @@ interface UserData {
   itemUses: ItemUseRecord[];
   boosts: BoostRecord[];
   calendars: Map<string, CalendarState>;
+  prestige: { rank: number; base: number };
 }
 
 interface LedgerRow {
@@ -110,6 +111,7 @@ export class MemoryStore implements Store {
         itemUses: [],
         boosts: [],
         calendars: new Map(),
+        prestige: { rank: 0, base: 0 },
       };
       this.users.set(userId, d);
     }
@@ -171,6 +173,10 @@ export class MemoryStore implements Store {
           for (const e of d.events.values()) if (e.key === key && e.ts >= from && e.ts < to) total += e.value;
         }
         return total;
+      },
+      getPrestige: async () => ({ ...d.prestige }),
+      setPrestige: async (rank, base) => {
+        d.prestige = { rank, base };
       },
       getSpent: async (currency) => d.spent.get(currency) ?? 0,
       spend: async (currency, amount) => {
@@ -328,7 +334,7 @@ export class MemoryStore implements Store {
 
   async snapshot(userId: string): Promise<UserSnapshot> {
     const d = this.users.get(userId);
-    if (!d) return { profile: emptyProfile(), metrics: {}, balances: {}, spent: {}, inventory: {}, calendars: {}, streaks: {}, achievements: [] };
+    if (!d) return { profile: emptyProfile(), metrics: {}, balances: {}, spent: {}, inventory: {}, calendars: {}, prestige: { rank: 0, base: 0 }, streaks: {}, achievements: [] };
     return {
       profile: copyProfile(d.profile),
       metrics: Object.fromEntries(d.metrics),
@@ -336,6 +342,7 @@ export class MemoryStore implements Store {
       spent: Object.fromEntries(d.spent),
       inventory: Object.fromEntries([...d.inventory].filter(([, n]) => n > 0)),
       calendars: Object.fromEntries([...d.calendars].map(([k, v]) => [k, { ...v }])),
+      prestige: { ...d.prestige },
       streaks: Object.fromEntries([...d.streaks].map(([k, v]) => [k, { ...v }])),
       achievements: [...d.achievements]
         .sort((a, b) => a[1] - b[1])

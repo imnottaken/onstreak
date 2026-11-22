@@ -139,6 +139,8 @@ export interface LevelInput {
   curve?: { type: "linear"; step: number; maxLevel?: number } | { type: "exponential"; base: number; factor: number; maxLevel?: number };
   /** Points paid when a user reaches a level, e.g. [{ level: 5, rewards: [{ currency: "coins", amount: 50 }] }]. */
   rewards?: Array<{ level: number; rewards: QuestReward[] }>;
+  /** Let users at the top level start over at level 1 with a prestige rank, optionally paid `rewards` each time. */
+  prestige?: { rewards?: QuestReward[] };
 }
 
 export interface LevelConfig {
@@ -147,6 +149,8 @@ export interface LevelConfig {
   thresholds: number[];
   /** Rewards by level. */
   rewards: Array<{ level: number; rewards: QuestReward[] }>;
+  /** Null when prestige is off. */
+  prestige?: { rewards: QuestReward[] } | null;
 }
 
 export interface LeagueRule {
@@ -557,7 +561,15 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
         if (typeof x.amount !== "number" || !Number.isFinite(x.amount) || x.amount <= 0) throw new ConfigError("levels.rewards need positive amounts");
       }
     }
-    levels = { currency: input.levels.currency, thresholds: [...t], rewards: rewards.map((r) => ({ level: r.level, rewards: r.rewards.map((x) => ({ ...x })) })).sort((a, b) => a.level - b.level) };
+    const prestige = input.levels.prestige;
+    if (prestige !== undefined) {
+      if (!prestige || typeof prestige !== "object" || Array.isArray(prestige)) throw new ConfigError("levels.prestige must be an object, e.g. {}");
+      for (const x of prestige.rewards ?? []) {
+        hasCurrency(x.currency, "levels.prestige.rewards");
+        if (typeof x.amount !== "number" || !Number.isFinite(x.amount) || x.amount <= 0) throw new ConfigError("levels.prestige.rewards need positive amounts");
+      }
+    }
+    levels = { currency: input.levels.currency, thresholds: [...t], prestige: prestige ? { rewards: (prestige.rewards ?? []).map((x) => ({ ...x })) } : null, rewards: rewards.map((r) => ({ level: r.level, rewards: r.rewards.map((x) => ({ ...x })) })).sort((a, b) => a.level - b.level) };
   }
 
   const streaks = input.streaks ?? [];

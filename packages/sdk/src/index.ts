@@ -82,7 +82,8 @@ export interface UserProfile {
   /** Personal boosts running now or queued, soonest first. */
   boosts: Boost[];
   /** startsAt: points where the current level began; nextAt: points for the next one (null at max). */
-  level: { current: number; points: number; startsAt: number; nextAt: number | null } | null;
+  /** `prestige` counts how many times the user has started levels over (points then count from there). */
+  level: { current: number; points: number; startsAt: number; nextAt: number | null; prestige: number } | null;
   metrics: Record<string, number>;
   /** `repairableUntil` is set while a broken streak can still be repaired. */
   streaks: Record<string, { current: number; longest: number; freezes: number; lastPeriod: string | null; status: "none" | "done" | "pending" | "broken"; repairableUntil?: string; progress?: number }>;
@@ -529,6 +530,8 @@ export function createClient(options: ClientOptions) {
     /** Take a user out of a team. */
     removeTeamMember: (teamId: string, userId: string) =>
       call<{ teamId: string; userId: string; removed: boolean }>("DELETE", `/v1/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`),
+    /** Start levels over at the top level, with a higher prestige rank. Throws 409 "not_max_level" before then. */
+    prestige: (userId: string) => call<{ userId: string; prestige: number; level: number; rewards: QuestReward[] }>("POST", `${user(userId)}/prestige`),
     /** Every achievement with the user's progress; hidden ones stay secret until unlocked. */
     achievements: (userId: string) => call<AchievementList>("GET", `${user(userId)}/achievements`),
     /** The team a user is in, or null. */

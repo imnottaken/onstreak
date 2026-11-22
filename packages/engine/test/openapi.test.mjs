@@ -256,6 +256,19 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   await call("get", "/v1/teams/owls", "/v1/teams/{teamId}");
   await call("get", "/v1/teams/nope", "/v1/teams/{teamId}"); // 404
   await call("get", "/v1/users/asha/achievements", "/v1/users/{userId}/achievements");
+  await call("post", "/v1/users/asha/prestige", "/v1/users/{userId}/prestige"); // 404: not configured here
+  const prestigious = await serve(t, new MemoryStore(), { ...config, levels: { currency: "xp", thresholds: [5], prestige: {} } });
+  const pres = async (path, method = "POST", body) => {
+    const res = await fetch(`${prestigious.base}${path}`, { method, headers: { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    return { status: res.status, json: await res.json() };
+  };
+  const early = await pres("/v1/users/p/prestige");
+  c.check("post", "/v1/users/{userId}/prestige", early.status, early.json);
+  assert.equal(early.json.code, "not_max_level");
+  await pres("/v1/events", "POST", { userId: "p", event: "lesson_completed" });
+  const done = await pres("/v1/users/p/prestige");
+  c.check("post", "/v1/users/{userId}/prestige", done.status, done.json);
+  assert.equal(done.json.prestige, 1);
   await call("get", "/v1/users/asha/team", "/v1/users/{userId}/team");
   await call("get", "/v1/teams/owls/goals?userId=asha", "/v1/teams/{teamId}/goals"); // none configured here
   await call("get", "/v1/teams/nope/goals", "/v1/teams/{teamId}/goals"); // 404

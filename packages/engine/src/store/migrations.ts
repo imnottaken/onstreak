@@ -37,6 +37,7 @@ export interface Tables {
   teams: string;
   teamMembers: string;
   teamGoalRewards: string;
+  prestige: string;
 }
 
 export function tableNames(prefix: string): Tables {
@@ -66,6 +67,7 @@ export function tableNames(prefix: string): Tables {
     teams: `${prefix}teams`,
     teamMembers: `${prefix}team_members`,
     teamGoalRewards: `${prefix}team_goal_rewards`,
+    prestige: `${prefix}prestige`,
   };
 }
 
@@ -400,6 +402,19 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 19,
     name: "event properties",
     statements: (t) => [`alter table ${t.events} add column if not exists properties jsonb`],
+  },
+  {
+    version: 20,
+    name: "prestige",
+    statements: (t) => [
+      // base: level-currency points at the last prestige; levels count from there.
+      `create table if not exists ${t.prestige} (
+         user_id text primary key references ${t.users}(id),
+         rank integer not null,
+         base double precision not null,
+         updated_at timestamptz not null
+       )`,
+    ],
   },
 ];
 

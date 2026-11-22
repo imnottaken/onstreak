@@ -40,7 +40,7 @@ for (const [name, makeStore] of Object.entries(storeFactories)) {
 
     const profile = await engine.getUser("asha");
     assert.deepEqual(profile.points, { xp: 100, coins: 3 });
-    assert.deepEqual(profile.level, { current: 3, points: 100, startsAt: 60, nextAt: 120 });
+    assert.deepEqual(profile.level, { current: 3, points: 100, startsAt: 60, nextAt: 120, prestige: 0 });
     assert.equal(profile.metrics.minutes_studied, 35);
     assert.equal(profile.streaks.daily_lesson.status, "done");
     assert.deepEqual(profile.achievements.map((a) => a.id), ["first_lesson", "streak_3", "xp_100"]);
@@ -140,9 +140,9 @@ test("config mistakes fail fast", () => {
 test("level progress has a start and an end for progress bars", async () => {
   const engine = new Engine({ currencies: ["xp"], points: [{ event: "e", currency: "xp", amount: 1, multiplyByValue: true }], levels: { currency: "xp", thresholds: [10, 30] } }, new MemoryStore());
   const level = async () => (await engine.getUser("u")).level;
-  assert.deepEqual(await level(), { current: 1, points: 0, startsAt: 0, nextAt: 10 }, "level 1 starts at 0");
+  assert.deepEqual(await level(), { current: 1, points: 0, startsAt: 0, nextAt: 10, prestige: 0 }, "level 1 starts at 0");
   await engine.track({ userId: "u", event: "e", value: 10 });
-  assert.deepEqual(await level(), { current: 2, points: 10, startsAt: 10, nextAt: 30 }, "exactly on a threshold");
+  assert.deepEqual(await level(), { current: 2, points: 10, startsAt: 10, nextAt: 30, prestige: 0 }, "exactly on a threshold");
   await engine.track({ userId: "u", event: "e", value: 25 });
-  assert.deepEqual(await level(), { current: 3, points: 35, startsAt: 30, nextAt: null }, "top level has no next");
+  assert.deepEqual(await level(), { current: 3, points: 35, startsAt: 30, nextAt: null, prestige: 0 }, "top level has no next");
 });

@@ -112,7 +112,8 @@ export interface UserProfile {
   /** Personal boosts running now or queued to start, soonest first. */
   boosts: Boost[];
   /** startsAt: points where the current level began; nextAt: points for the next one (null at max). */
-  level: { current: number; points: number; startsAt: number; nextAt: number | null } | null;
+  /** With prestige, `points` counts from the last prestige and `prestige` is how many times the user has started over. */
+  level: { current: number; points: number; startsAt: number; nextAt: number | null; prestige: number } | null;
   metrics: Record<string, number>;
   /** `repairableUntil` is set while a broken streak can still be repaired. */
   streaks: Record<string, { current: number; longest: number; freezes: number; lastPeriod: string | null; status: StreakStatus; repairableUntil?: string; progress?: number }>;
@@ -738,7 +739,9 @@ export class Engine {
       await tx.insertEvent({ id: eventId, userId, key: event, value, ts, recordedAt, idempotencyKey, properties });
       const metrics = new Map<string, number>([[event, await tx.addMetric(event, value)]]);
 
-      const levelBefore = config.levels ? levelFor(config.levels, await tx.getBalance(config.levels.currency)) : null;
+      // With prestige, levels count from the total at the last prestige.
+      const levelBase = config.levels?.prestige ? (await tx.getPrestige()).base : 0;
+      const levelBefore = config.levels ? levelFor(config.levels, (await tx.getBalance(config.levels.currency)) - levelBase) : null;
 
       const streaks: TrackResult["streaks"] = {};
       const streakStates = new Map<string, StreakState>();
@@ -946,7 +949,7 @@ export class Engine {
 
       let level: TrackResult["level"] = null;
       if (config.levels && levelBefore !== null) {
-        let current = levelFor(config.levels, await tx.getBalance(config.levels.currency));
+        let current = levelFor(config.levels, (await tx.getBalance(config.levels.currency)) - levelBase);
         const paid: QuestReward[] = [];
         // Pay each level passed; a reward in the level currency can push the user further.
         let rewardedUpTo = levelBefore;
@@ -965,7 +968,7 @@ export class Engine {
             }
           }
           rewardedUpTo = current;
-          current = levelFor(config.levels, await tx.getBalance(config.levels.currency));
+          current = levelFor(config.levels, (await tx.getBalance(config.levels.currency)) - levelBase);
         }
         level = { current, previous: levelBefore, leveledUp: current > levelBefore, ...(paid.length ? { rewards: paid } : {}) };
       }
@@ -1005,8 +1008,9 @@ export class Engine {
 
     let level: UserProfile["level"] = null;
     if (this.config.levels) {
-      const total = points[this.config.levels.currency] ?? 0;
+      const total = round6((points[this.config.levels.currency] ?? 0) - (this.config.levels.prestige ? snap.prestige.base : 0));
       level = {
+        prestige: snap.prestige.rank,
         current: levelFor(this.config.levels, total),
         points: total,
         startsAt: [...this.config.levels.thresholds].reverse().find((t) => t <= total) ?? 0,
@@ -1162,6 +1166,32 @@ export class Engine {
       entries: entries.map((e) => withProfile(e, names)),
       user: user ? withProfile(user, names) : null,
     };
+  }
+
+  /**
+   * Start levels over: a user at the top level goes back to level 1 with
+   * their prestige rank one higher, and is paid levels.prestige.rewards.
+   * Earned points are kept; only the level counts from here. 409 with code
+   * "not_max_level" before the top level.
+   */
+  async prestige(userId: string): Promise<{ userId: string; prestige: number; level: number; rewards: QuestReward[] }> {
+    checkUserId(userId);
+    const levels = this.config.levels;
+    if (!levels?.prestige) throw new EngineError("prestige is not configured", 404);
+    const prestigeRewards = levels.prestige.rewards;
+    return this.store.withUser(userId, async (tx) => {
+      const { rank, base } = await tx.getPrestige();
+      const balance = await tx.getBalance(levels.currency);
+      const max = levels.thresholds.length + 1;
+      if (levelFor(levels, balance - base) < max) throw new EngineError(`${userId} needs to reach level ${max} first`, 409, "not_max_level");
+      const now = this.now();
+      await tx.setPrestige(rank + 1, balance, now);
+      const eventId = randomUUID();
+      for (const r of prestigeRewards) await tx.addPoints(r.currency, r.amount, now, eventId, now);
+      // A reward in the level currency already counts toward the new climb.
+      const after = levelFor(levels, (await tx.getBalance(levels.currency)) - balance);
+      return { userId, prestige: rank + 1, level: after, rewards: prestigeRewards.map((r) => ({ ...r })) };
+    });
   }
 
   /**

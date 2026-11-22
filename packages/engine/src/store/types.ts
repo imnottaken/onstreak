@@ -218,6 +218,9 @@ export interface UserTx {
   setQuest(progress: QuestProgress): Promise<void>;
   /** This user's event values summed, or points earned, in [from, to). */
   windowTotal(kind: "event" | "points", key: string, from: number, to: number): Promise<number>;
+  /** How many times the user has prestiged, and the level-currency total levels count from. */
+  getPrestige(): Promise<{ rank: number; base: number }>;
+  setPrestige(rank: number, base: number, at: number): Promise<void>;
   /** Points spent so far in a currency. Spendable balance is getBalance minus this. */
   getSpent(currency: string): Promise<number>;
   /** Take points from the wallet for something other than an item (e.g. a streak repair). */
@@ -267,6 +270,7 @@ export interface UserSnapshot {
   spent: Record<string, number>;
   /** Items owned, by item id. Items with none are left out. */
   inventory: Record<string, number>;
+  prestige: { rank: number; base: number };
   /** Reward calendar progress, by calendar id. */
   calendars: Record<string, CalendarState>;
   streaks: Record<string, StreakState>;

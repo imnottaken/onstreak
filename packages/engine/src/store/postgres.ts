@@ -315,6 +315,17 @@ export class PostgresStore implements Store {
         const { rows } = await q.query(sql, [userId, key, new Date(from).toISOString(), new Date(to).toISOString()]);
         return num(rows[0]?.total);
       },
+      async getPrestige() {
+        const { rows } = await q.query(`select rank, base from ${t.prestige} where user_id = $1`, [userId]);
+        return rows[0] ? { rank: num(rows[0].rank), base: num(rows[0].base) } : { rank: 0, base: 0 };
+      },
+      async setPrestige(rank, base, at) {
+        await q.query(
+          `insert into ${t.prestige} (user_id, rank, base, updated_at) values ($1, $2, $3, $4)
+           on conflict (user_id) do update set rank = $2, base = $3, updated_at = $4`,
+          [userId, rank, base, new Date(at).toISOString()],
+        );
+      },
       async spend(currency, amount) {
         await q.query(
           `insert into ${t.balances} (user_id, currency, total, spent) values ($1, $2, 0, $3)
@@ -562,12 +573,13 @@ export class PostgresStore implements Store {
 
   async snapshot(userId: string): Promise<UserSnapshot> {
     const t = this.t;
-    const [profile, metrics, balances, inventory, calendars, streaks, achievements] = await Promise.all([
+    const [profile, metrics, balances, inventory, calendars, prestige, streaks, achievements] = await Promise.all([
       this.db.query(`select display_name, avatar_url, metadata, timezone from ${t.users} where id = $1`, [userId]),
       this.db.query(`select key, total from ${t.metrics} where user_id = $1`, [userId]),
       this.db.query(`select currency, total, spent from ${t.balances} where user_id = $1`, [userId]),
       this.db.query(`select item_id, quantity from ${t.inventory} where user_id = $1 and quantity > 0`, [userId]),
       this.db.query(`select calendar_id, day, last_period from ${t.calendars} where user_id = $1`, [userId]),
+      this.db.query(`select rank, base from ${t.prestige} where user_id = $1`, [userId]),
       this.db.query(`select * from ${t.streaks} where user_id = $1`, [userId]),
       this.db.query(`select achievement_id, unlocked_at from ${t.achievements} where user_id = $1 order by unlocked_at`, [userId]),
     ]);
@@ -577,6 +589,7 @@ export class PostgresStore implements Store {
       balances: Object.fromEntries(balances.rows.map((r) => [String(r.currency), num(r.total)])),
       spent: Object.fromEntries(balances.rows.filter((r) => num(r.spent) !== 0).map((r) => [String(r.currency), num(r.spent)])),
       inventory: Object.fromEntries(inventory.rows.map((r) => [String(r.item_id), num(r.quantity)])),
+      prestige: prestige.rows[0] ? { rank: num(prestige.rows[0].rank), base: num(prestige.rows[0].base) } : { rank: 0, base: 0 },
       calendars: Object.fromEntries(calendars.rows.map((r) => [String(r.calendar_id), { day: num(r.day), lastPeriod: String(r.last_period) }])),
       streaks: Object.fromEntries(streaks.rows.map((r) => [String(r.streak_id), rowToStreak(r)])),
       achievements: achievements.rows.map((r) => ({ id: String(r.achievement_id), unlockedAt: iso(r.unlocked_at) })),
