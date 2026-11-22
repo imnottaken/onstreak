@@ -40,6 +40,8 @@ export interface LeaguePrevious {
   rank: number;
   outcome: "promoted" | "demoted" | "stayed";
   nextTier: string;
+  /** What finishing at this rank paid, once, when the round settled. */
+  rewards: QuestReward[];
 }
 
 export type LeagueZone = "promotion" | "demotion" | "safe";

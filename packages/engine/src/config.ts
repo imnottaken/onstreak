@@ -213,6 +213,8 @@ export interface LeagueRule {
    * tier, or down `dropTiers` tiers for a soft reset.
    */
   seasonReset?: true | { dropTiers: number };
+  /** Paid when a round settles, by finishing place in the group: the best tier reached, e.g. [{ top: 1, rewards }, { top: 3, rewards }]. */
+  rewards?: Array<{ top: number; rewards: QuestReward[] }>;
 }
 
 export interface RivalryRule {
@@ -465,6 +467,8 @@ export interface ResolvedLeague {
   timezone: string;
   /** Tiers to drop when a season starts: null drops to the first tier. Absent: no reset. */
   seasonReset?: { dropTiers: number | null };
+  /** Finish rewards, best (smallest top) first. */
+  rewards: Array<{ top: number; rewards: QuestReward[] }>;
 }
 
 /** Normalized config with every optional list present. */
@@ -724,7 +728,21 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
       demote: l.demote ?? 5,
       period: l.period ?? "weekly",
       timezone: l.timezone ?? "UTC",
+      rewards: [],
     };
+    const tops = new Set<number>();
+    for (const tier of l.rewards ?? []) {
+      if (!tier || !Number.isInteger(tier.top) || tier.top < 1) throw new ConfigError(`league "${l.id}" rewards need top: a whole number of at least 1`);
+      if (tops.has(tier.top)) throw new ConfigError(`league "${l.id}" rewards have top ${tier.top} twice`);
+      tops.add(tier.top);
+      if (!Array.isArray(tier.rewards) || tier.rewards.length === 0) throw new ConfigError(`league "${l.id}" reward tiers need rewards: [{ currency, amount }]`);
+      for (const x of tier.rewards) {
+        hasCurrency(x.currency, `league "${l.id}" rewards`);
+        if (typeof x.amount !== "number" || !Number.isFinite(x.amount) || x.amount <= 0) throw new ConfigError(`league "${l.id}" rewards need positive amounts`);
+      }
+      resolved.rewards.push({ top: tier.top, rewards: tier.rewards.map((x) => ({ ...x })) });
+    }
+    resolved.rewards.sort((a, b) => a.top - b.top);
     for (const key of ["groupSize", "promote", "demote"] as const) {
       if (!Number.isInteger(resolved[key]) || resolved[key] < 0) throw new ConfigError(`league "${l.id}" ${key} must be a whole number`);
     }

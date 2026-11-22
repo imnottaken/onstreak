@@ -88,7 +88,8 @@ Things that would hurt early users if they were missing.
 - [x] **Level curves** (S). Formula-based thresholds (linear, exponential), level-up rewards.
 - [x] **Prestige** (S). Start levels over with a prestige rank once the top level is reached.
 - [x] **Leaderboard views** (M). Around-me (my rank plus or minus N), by segment (country, school, company), past winners archive.
-- [ ] **League upgrades** (M). Fill small groups with ghost players, skill-based grouping, rewards for finishing top 3.
+- [x] **League finish rewards** (S). Rewards for finishing top 1, top 3, ... when a round settles.
+- [ ] **League grouping upgrades** (M). Fill small groups with ghost players, skill-based grouping.
 - [x] **Corrections** (M). Reverse an event's points and counts, revoke an achievement. (Recomputing streaks and quests is part of replay.)
 - [ ] **Replay and backfill** (L). Rebuild every user's state from the event log after a config change, with a dry run showing what would change.
 - [ ] **Config preview and simulation** (M). "If I change level thresholds, how many users change level?"

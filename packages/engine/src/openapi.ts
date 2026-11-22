@@ -46,7 +46,7 @@ const schemas = {
   },
   LeaguePrevious: {
     type: "object",
-    required: ["round", "tier", "rank", "outcome", "nextTier"],
+    required: ["round", "tier", "rank", "outcome", "nextTier", "rewards"],
     additionalProperties: false,
     properties: {
       round: { type: "string" },
@@ -54,6 +54,7 @@ const schemas = {
       rank: { type: "integer", minimum: 1 },
       outcome: { enum: ["promoted", "demoted", "stayed"] },
       nextTier: { type: "string" },
+      rewards: { type: "array", items: ref("QuestReward"), description: "What finishing at this rank paid, once, when the round settled." },
     },
   },
   TrackResult: {

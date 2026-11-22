@@ -80,6 +80,8 @@ export interface LeaguePrevious {
   rank: number;
   outcome: LeagueOutcome;
   nextTier: string;
+  /** What finishing at this rank paid (paid once, when the round settled). */
+  rewards: QuestReward[];
 }
 
 /** A ranked user, with the name and avatar they chose (null if none). */
@@ -2319,8 +2321,9 @@ export class Engine {
 
   /** Final result of a finished round, computed once and then stored. */
   private async settle(tx: UserTx, userId: string, league: ResolvedLeague, m: Membership): Promise<LeaguePrevious> {
+    const finishRewards = (rank: number) => (league.rewards.find((t) => rank <= t.top)?.rewards ?? []).map((x) => ({ ...x }));
     if (m.outcome && m.finalRank !== null && m.nextTier) {
-      return { round: m.roundKey, tier: m.tier, rank: m.finalRank, outcome: m.outcome, nextTier: m.nextTier };
+      return { round: m.roundKey, tier: m.tier, rank: m.finalRank, outcome: m.outcome, nextTier: m.nextTier, rewards: finishRewards(m.finalRank) };
     }
     const r = roundFromKey(league, m.roundKey);
     const standings = await tx.groupStandings({
@@ -2340,7 +2343,14 @@ export class Engine {
     const outcome = outcomeFor(league, league.tiers.indexOf(m.tier), rank, size);
     const next = nextTier(league, m.tier, outcome);
     await tx.settleMembership(league.id, m.roundKey, { outcome, finalRank: rank, nextTier: next });
-    return { round: m.roundKey, tier: m.tier, rank, outcome, nextTier: next };
+    // Settlement happens once (it is stored), so finish rewards are paid once. They are dated in the
+    // finished round, so they never count toward the next one (and, recorded after it closed, not toward it either).
+    const rewards = finishRewards(rank);
+    if (rewards.length > 0) {
+      const eventId = randomUUID();
+      for (const x of rewards) await tx.addPoints(x.currency, x.amount, r.to - 1, eventId, this.now());
+    }
+    return { round: m.roundKey, tier: m.tier, rank, outcome, nextTier: next, rewards };
   }
 }
 

@@ -73,7 +73,7 @@ for (const [name, makeStore] of Object.entries(storeFactories)) {
       tier: "silver",
       group: 1,
       joined: true,
-      previous: { round: "2026-11-16", tier: "bronze", rank: 1, outcome: "promoted", nextTier: "silver" },
+      previous: { round: "2026-11-16", tier: "bronze", rank: 1, outcome: "promoted", nextTier: "silver", rewards: [] },
     });
     const u5 = await win("u5", 10);
     assert.equal(u5.leagues.arena.tier, "silver", "top of a 2-person group also goes up");
@@ -84,7 +84,7 @@ for (const [name, makeStore] of Object.entries(storeFactories)) {
     assert.equal(idle.tier, "bronze");
     assert.equal(idle.group, null);
     assert.equal(idle.you, null);
-    assert.deepEqual(idle.previous, { round: "2026-11-16", tier: "bronze", rank: 3, outcome: "stayed", nextTier: "bronze" });
+    assert.deepEqual(idle.previous, { round: "2026-11-16", tier: "bronze", rank: 3, outcome: "stayed", nextTier: "bronze", rewards: [] });
 
     const silver = await engine.league("arena", "u1");
     assert.deepEqual(
@@ -171,4 +171,47 @@ test("seasonReset is validated", () => {
   assert.throws(cfg({ dropTiers: 0 }), /seasonReset must be/);
   assert.throws(cfg("yes"), /seasonReset must be/);
   assert.deepEqual(resolveConfig(seasonal({ dropTiers: 2 })).leagues[0].seasonReset, { dropTiers: 2 });
+});
+
+const rewarding = {
+  currencies: ["xp", "coins"],
+  points: [{ event: "win", currency: "xp", amount: 1, multiplyByValue: true }],
+  leagues: [{
+    id: "arena", currency: "xp", tiers: ["bronze", "silver"], groupSize: 4, promote: 1, demote: 0, period: "weekly",
+    rewards: [{ top: 3, rewards: [{ currency: "coins", amount: 5 }] }, { top: 1, rewards: [{ currency: "coins", amount: 20 }, { currency: "xp", amount: 50 }] }],
+  }],
+};
+
+for (const [name, makeStore] of Object.entries(storeFactories)) {
+  test(`${name}: finishing places pay once, when the round settles`, async (t) => {
+    let now = monday;
+    const engine = new Engine(rewarding, await makeStore(t), () => now);
+    for (const [u, v] of [["u1", 40], ["u2", 30], ["u3", 20], ["u4", 10]]) await engine.track({ userId: u, event: "win", value: v });
+    now = monday + 7 * DAY;
+    const first = await engine.league("arena", "u1");
+    assert.deepEqual(first.previous.rewards, [{ currency: "coins", amount: 20 }, { currency: "xp", amount: 50 }], "the best tier only");
+    assert.deepEqual((await engine.league("arena", "u1")).previous.rewards, first.previous.rewards, "shown again, not paid again");
+    let u1 = await engine.getUser("u1");
+    assert.deepEqual([u1.points.coins, u1.points.xp], [20, 90]);
+    assert.equal((await engine.league("arena", "u3")).previous.rewards[0].amount, 5);
+    assert.deepEqual((await engine.league("arena", "u4")).previous.rewards, []);
+
+    // The xp reward is dated in the finished round: it neither counts in the new one nor changes the old.
+    const r = await engine.track({ userId: "u1", event: "win", value: 1 });
+    assert.equal(r.leagues.arena.tier, "silver");
+    const now1 = await engine.league("arena", "u1");
+    assert.equal(now1.you.score, 1);
+    assert.equal((await engine.league("arena", "u2")).previous.rank, 2);
+    u1 = await engine.getUser("u1");
+    assert.equal(u1.points.coins, 20);
+  });
+}
+
+test("league rewards are validated", () => {
+  const bad = (rewards, re) => assert.throws(() => resolveConfig({ ...rewarding, leagues: [{ ...rewarding.leagues[0], rewards }] }), re);
+  bad([{ top: 0, rewards: [{ currency: "coins", amount: 1 }] }], /top/);
+  bad([{ top: 1, rewards: [] }], /need rewards/);
+  bad([{ top: 1, rewards: [{ currency: "coins", amount: 1 }] }, { top: 1, rewards: [{ currency: "coins", amount: 1 }] }], /twice/);
+  bad([{ top: 1, rewards: [{ currency: "gems", amount: 1 }] }], /unknown currency/);
+  assert.deepEqual(resolveConfig(rewarding).leagues[0].rewards.map((x) => x.top), [1, 3]);
 });
