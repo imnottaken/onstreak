@@ -211,3 +211,51 @@ test("quest chains are validated", () => {
   bad([q("a", { after: "b" }), q("b", { after: "a" })], /loop/);
   assert.doesNotThrow(() => resolveConfig({ ...base, quests: [q("a"), q("b", { after: "a" }), q("c", { after: "b", period: "weekly" })] }));
 });
+
+const missions = {
+  ...base,
+  quests: [
+    { id: "busy_day", name: "Busy day", period: "daily", goals: [{ event: "lesson_completed", target: 2 }, { event: "minutes_studied", target: 30 }, { points: "xp", target: 100 }], rewards: [{ currency: "coins", amount: 9 }] },
+  ],
+};
+
+for (const [name, makeStore] of Object.entries(storeFactories)) {
+  test(`${name}: missions need every goal done in the same period`, async (t) => {
+    let now = start;
+    const engine = new Engine(missions, await makeStore(t), () => now);
+    let r = await engine.track({ userId: "asha", event: "lesson_completed" });
+    assert.deepEqual(r.quests.busy_day, { progress: 0, target: 3, completed: false, rewards: [], goals: [{ progress: 1, target: 2 }, { progress: 0, target: 30 }, { progress: 10, target: 100 }] });
+    r = await engine.track({ userId: "asha", event: "lesson_completed" });
+    assert.deepEqual([r.quests.busy_day.progress, r.quests.busy_day.goals[0]], [1, { progress: 2, target: 2 }]);
+    r = await engine.track({ userId: "asha", event: "lesson_completed" });
+    assert.deepEqual(r.quests.busy_day.goals[0], { progress: 2, target: 2 }, "a finished goal stops counting");
+
+    let list = await engine.quests("asha");
+    assert.equal(list.quests[0].goal, undefined);
+    assert.deepEqual(list.quests[0].goals, [
+      { event: "lesson_completed", target: 2, progress: 2 },
+      { event: "minutes_studied", target: 30, progress: 0 },
+      { points: "xp", target: 100, progress: 30 },
+    ]);
+    assert.deepEqual([list.quests[0].progress, list.quests[0].target], [1, 3]);
+
+    r = await engine.track({ userId: "asha", event: "minutes_studied", value: 40 }); // 80 xp: done
+    assert.deepEqual([r.quests.busy_day.progress, r.quests.busy_day.completed, r.quests.busy_day.rewards], [3, true, [{ currency: "coins", amount: 9 }]]);
+    r = await engine.track({ userId: "asha", event: "minutes_studied", value: 40 });
+    assert.equal(r.quests.busy_day, undefined, "done for today");
+
+    now += 24 * HOUR;
+    list = await engine.quests("asha");
+    assert.deepEqual([list.quests[0].completed, list.quests[0].goals.map((g) => g.progress)], [false, [0, 0, 0]], "a new day starts over");
+  });
+}
+
+test("missions are validated", () => {
+  const q = { id: "m", name: "M", period: "daily" };
+  const bad = (extra, re) => assert.throws(() => resolveConfig({ ...base, quests: [{ ...q, ...extra }] }), re);
+  bad({}, /not both/);
+  bad({ goal: { event: "x", target: 1 }, goals: [{ event: "x", target: 1 }, { event: "y", target: 1 }] }, /not both/);
+  bad({ goals: [{ event: "x", target: 1 }] }, /2 to 10/);
+  bad({ goals: [{ event: "x", target: 1 }, { points: "gems", target: 1 }] }, /unknown currency/);
+  bad({ goals: [{ event: "x", target: 1 }, { event: "y", target: 0 }] }, /positive target/);
+});

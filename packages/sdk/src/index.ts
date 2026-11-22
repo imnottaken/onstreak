@@ -21,7 +21,7 @@ export interface TrackResult {
   achievements: Array<{ id: string; name: string; description?: string }>;
   leagues: Record<string, { tier: string; group: number; joined: boolean; previous: LeaguePrevious | null }>;
   /** Quests this event moved forward. Rewards of a quest it completed are already in `points`. */
-  quests: Record<string, { progress: number; target: number; completed: boolean; rewards: QuestReward[] }>;
+  quests: Record<string, { progress: number; target: number; completed: boolean; rewards: QuestReward[]; goals?: Array<{ progress: number; target: number }> }>;
   /** Reward calendar days this event claimed. Their rewards are already in `points`. */
   calendars: Record<string, { day: number; rewards: QuestReward[] }>;
   /** Set when this event qualified the user's referral. The referrer is paid separately. */
@@ -118,7 +118,10 @@ export interface QuestList {
     period: "daily" | "weekly" | "once";
     /** The one-off quest this one unlocked after. */
     after?: string;
-    goal: { event: string; target: number } | { points: string; target: number };
+    /** Absent for missions, which have `goals`. */
+    goal?: { event: string; target: number } | { points: string; target: number };
+    /** A mission's goals with their progress; then `progress` and `target` count goals done. */
+    goals?: Array<({ event: string; target: number } | { points: string; target: number }) & { progress: number }>;
     progress: number;
     target: number;
     completed: boolean;

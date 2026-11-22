@@ -122,6 +122,10 @@
 .os-quest__fill { height: 100%; background: var(--os-accent); transition: width 300ms ease; }
 .os-quest--done .os-quest__fill { background: var(--os-up); }
 @media (prefers-reduced-motion: reduce) { .os-quest__fill { transition: none; } }
+.os-quest__goals { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; font-size: 0.8125rem; }
+.os-quest__goal { display: flex; justify-content: space-between; gap: 8px; color: var(--os-muted); }
+.os-quest__goal--done .os-quest__goal-name { text-decoration: line-through; }
+.os-quest__goal-progress { font-variant-numeric: tabular-nums; }
 .os-quest__meta { display: flex; justify-content: space-between; margin-top: 4px; color: var(--os-muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
 
 /* RewardStore */

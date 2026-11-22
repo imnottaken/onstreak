@@ -479,3 +479,15 @@ test("QuestList shows one-off quests without a reset countdown", () => {
   const done = fragment(renderToStaticMarkup(h(QuestList, { quests: { userId: "a", quests: [once({ completed: true, progress: 1, endsAt: new Date(NOW + 3_600_000).toISOString() })] }, now: NOW })));
   assert.equal(done.querySelector(".os-quest__ends"), null, "a finished one-off quest never comes back");
 });
+
+test("QuestList shows a mission's goals", () => {
+  const mission = {
+    id: "m", name: "Busy day", period: "daily", progress: 1, target: 2, completed: false, completedAt: null, rewards: [], startsAt: null, endsAt: new Date(NOW + 3_600_000).toISOString(), until: null,
+    goals: [{ event: "lesson_completed", target: 3, progress: 3 }, { points: "xp", target: 50, progress: 20 }],
+  };
+  const f = fragment(renderToStaticMarkup(h(QuestList, { quests: { userId: "a", quests: [mission] }, now: NOW })));
+  assert.equal(f.querySelector(".os-quest__progress").textContent, "1 / 2 goals");
+  const goals = [...f.querySelectorAll(".os-quest__goal")];
+  assert.deepEqual(goals.map((g) => g.textContent), ["lesson completed3 / 3", "xp20 / 50 xp"]);
+  assert.ok(goals[0].classList.contains("os-quest__goal--done"));
+});

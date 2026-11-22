@@ -105,6 +105,13 @@ export interface QuestReward {
   amount: number;
 }
 
+export type QuestGoal = { event: string; target: number } | { points: string; target: number };
+
+/** A quest's goals: its single goal, or a mission's list. */
+export function questGoals(q: QuestRule): QuestGoal[] {
+  return q.goals ?? [q.goal!];
+}
+
 export interface QuestRule {
   id: string;
   name: string;
@@ -117,7 +124,9 @@ export interface QuestRule {
    * Done when `event` adds up to `target` (event values are summed, so a plain
    * event counts 1), or when `target` points in a currency are earned.
    */
-  goal: { event: string; target: number } | { points: string; target: number };
+  goal?: QuestGoal;
+  /** A mission: done when every one of these goals is reached in the same period. Use instead of `goal`. */
+  goals?: QuestGoal[];
   /** Points paid once on completion. */
   rewards?: QuestReward[];
   /** Fix where days start for everyone. Default: each user's own time zone. */
@@ -481,13 +490,17 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
       if (!prev || prev.id === q.id) throw new ConfigError(`quest "${q.id}" comes after unknown quest "${q.after}"`);
       if (prev.period !== "once") throw new ConfigError(`quest "${q.id}" can only come after a one-off quest, and "${prev.id}" repeats`);
     }
-    const g = q.goal as Record<string, unknown> | undefined;
-    const kinds = g ? ["event", "points"].filter((k) => k in g) : [];
-    if (kinds.length !== 1 || typeof g?.target !== "number" || !Number.isFinite(g.target) || g.target <= 0) {
-      throw new ConfigError(`quest "${q.id}" needs goal: { event | points, target } with a positive target`);
+    if ((q.goal === undefined) === (q.goals === undefined)) throw new ConfigError(`quest "${q.id}" needs goal: { event | points, target } (or goals: [...] for a mission), not both`);
+    if (q.goals !== undefined && (!Array.isArray(q.goals) || q.goals.length < 2 || q.goals.length > 10)) throw new ConfigError(`quest "${q.id}" goals must list 2 to 10 goals`);
+    for (const goal of questGoals(q)) {
+      const g = goal as Record<string, unknown> | undefined;
+      const kinds = g && typeof g === "object" ? ["event", "points"].filter((k) => k in g) : [];
+      if (kinds.length !== 1 || typeof g?.target !== "number" || !Number.isFinite(g.target) || g.target <= 0) {
+        throw new ConfigError(`quest "${q.id}" needs goal: { event | points, target } with a positive target`);
+      }
+      if ("event" in goal && (typeof goal.event !== "string" || !ID.test(goal.event))) throw new ConfigError(`quest "${q.id}" has bad event "${goal.event}"`);
+      if ("points" in goal) hasCurrency(goal.points, `quest "${q.id}"`);
     }
-    if ("event" in q.goal && (typeof q.goal.event !== "string" || !ID.test(q.goal.event))) throw new ConfigError(`quest "${q.id}" has bad event "${q.goal.event}"`);
-    if ("points" in q.goal) hasCurrency(q.goal.points, `quest "${q.id}"`);
     for (const r of q.rewards ?? []) {
       hasCurrency(r.currency, `quest "${q.id}" reward`);
       if (typeof r.amount !== "number" || !Number.isFinite(r.amount) || r.amount <= 0) throw new ConfigError(`quest "${q.id}" rewards need a positive amount`);

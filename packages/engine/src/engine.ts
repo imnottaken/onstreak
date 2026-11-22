@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, type StreakRule, boostSpecProblem, questRunsAt } from "./config.js";
+import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, type StreakRule, boostSpecProblem, questGoals, questRunsAt, type QuestGoal } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { breakPeriod, initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
 import { AlreadyInTeamError, FriendLimitError, RivalLimitError, TeamFullError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type ReferralRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
@@ -44,7 +44,7 @@ export interface TrackResult {
   /** Leagues this event counted toward. `joined` is true the first time in a round. */
   leagues: Record<string, { tier: string; group: number; joined: boolean; previous: LeaguePrevious | null }>;
   /** Quests this event moved forward. `completed` is true on the event that finished one; its rewards are already in `points`. */
-  quests: Record<string, { progress: number; target: number; completed: boolean; rewards: QuestReward[] }>;
+  quests: Record<string, { progress: number; target: number; completed: boolean; rewards: QuestReward[]; goals?: Array<{ progress: number; target: number }> }>;
   /** Reward calendar days this event claimed. Their rewards are already in `points`. */
   calendars: Record<string, { day: number; rewards: QuestReward[] }>;
   /** Set when this event qualified the user's referral. Their own rewards are already in `points`; the referrer is paid separately. */
@@ -140,8 +140,10 @@ export interface QuestStatus {
   period: "daily" | "weekly" | "once";
   /** The one-off quest this one unlocked after, if any. */
   after?: string;
-  /** Event or points goal, as configured. */
-  goal: QuestRule["goal"];
+  /** Event or points goal, as configured (absent for missions, which have `goals`). */
+  goal?: QuestGoal;
+  /** A mission's goals, each with its own progress. Then `progress` and `target` count goals done. */
+  goals?: Array<QuestGoal & { progress: number }>;
   progress: number;
   target: number;
   completed: boolean;
@@ -699,8 +701,9 @@ export class Engine {
       const completedNow = new Set<string>();
       for (const quest of config.quests) {
         if (!questRunsAt(quest, ts)) continue;
-        const gain = "event" in quest.goal ? (quest.goal.event === event ? value : 0) : (earned.get(quest.goal.points) ?? 0);
-        if (gain <= 0) continue;
+        const goals = questGoals(quest);
+        const gains = goals.map((g) => ("event" in g ? (g.event === event ? value : 0) : (earned.get(g.points) ?? 0)));
+        if (gains.every((gain) => gain <= 0)) continue;
         // A chained quest starts counting with the first event after the one that unlocked it.
         if (quest.after !== undefined && (completedNow.has(quest.after) || (await tx.getQuest(quest.after, "once"))?.completedAt == null)) continue;
         const zone = quest.timezone ?? timezone;
@@ -708,8 +711,27 @@ export class Engine {
         if (round.key !== questRound(quest, zone, recordedAt).key) continue;
         const prev = await tx.getQuest(quest.id, round.key);
         if (prev?.completedAt != null) continue;
-        const target = quest.goal.target;
-        const progress = Math.min(target, (prev?.progress ?? 0) + gain);
+        let progress: number;
+        let target: number;
+        let parts: Array<{ progress: number; target: number }> | undefined;
+        if (quest.goals) {
+          // A mission keeps each goal's progress in its own row ("id#0", "id#1", ...).
+          parts = [];
+          for (const [i, g] of quest.goals.entries()) {
+            const key = `${quest.id}#${i}`;
+            let p = (await tx.getQuest(key, round.key))?.progress ?? 0;
+            if (gains[i]! > 0 && p < g.target) {
+              p = Math.min(g.target, p + gains[i]!);
+              await tx.setQuest({ questId: key, periodKey: round.key, progress: p, completedAt: p >= g.target ? recordedAt : null });
+            }
+            parts.push({ progress: p, target: g.target });
+          }
+          progress = parts.filter((p) => p.progress >= p.target).length;
+          target = parts.length;
+        } else {
+          target = goals[0]!.target;
+          progress = Math.min(target, (prev?.progress ?? 0) + gains[0]!);
+        }
         const completed = progress >= target;
         if (completed) completedNow.add(quest.id);
         await tx.setQuest({ questId: quest.id, periodKey: round.key, progress, completedAt: completed ? recordedAt : null });
@@ -721,7 +743,7 @@ export class Engine {
           entry.total = total;
           points[r.currency] = entry;
         }
-        quests[quest.id] = { progress, target, completed, rewards };
+        quests[quest.id] = { progress, target, completed, rewards, ...(parts ? { goals: parts } : {}) };
       }
 
       // Reward calendars: the first matching event each day claims the next day.
@@ -940,9 +962,11 @@ export class Engine {
     const once = this.config.quests.filter((q) => q.period === "once").map((q) => ({ questId: q.id, periodKey: "once" }));
     const candidates = this.config.quests.filter((q) => questRunsAt(q, now));
     const candidateRounds = candidates.map((q) => questRound(q, q.timezone ?? userZone!, now));
+    const missionParts = candidates.flatMap((q, i) => (q.goals ?? []).map((_, g) => ({ questId: `${q.id}#${g}`, periodKey: candidateRounds[i]!.key })));
     const stored = await this.store.quests(userId, [
       ...candidates.map((q, i) => ({ questId: q.id, periodKey: candidateRounds[i]!.key })).filter((k) => k.periodKey !== "once"),
       ...once,
+      ...missionParts,
     ]);
     const byId = new Map(stored.map((s) => [`${s.questId}|${s.periodKey}`, s]));
     const doneOnce = (id: string) => byId.get(`${id}|once`)?.completedAt != null;
@@ -960,9 +984,10 @@ export class Engine {
           ...(q.description ? { description: q.description } : {}),
           period: q.period,
           ...(q.after ? { after: q.after } : {}),
-          goal: { ...q.goal },
+          ...(q.goal ? { goal: { ...q.goal } } : {}),
+          ...(q.goals ? { goals: q.goals.map((g, gi) => ({ ...g, progress: byId.get(`${q.id}#${gi}|${round.key}`)?.progress ?? 0 })) } : {}),
           progress: s?.progress ?? 0,
-          target: q.goal.target,
+          target: q.goals ? q.goals.length : q.goal!.target,
           completed: s?.completedAt != null,
           completedAt: s?.completedAt != null ? new Date(s.completedAt).toISOString() : null,
           rewards: (q.rewards ?? []).map((r) => ({ ...r })),

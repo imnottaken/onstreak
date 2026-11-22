@@ -468,7 +468,7 @@ const NEVER = "9999-12-31T00:00:00.000Z";
 function QuestItem({ quest, now, unitLabel, formatScore }: { quest: Quest; now?: number; unitLabel?: (quest: Quest) => string | undefined; formatScore: (n: number) => string }) {
   const left = useCountdown(quest.endsAt ?? NEVER, now);
   const pct = Math.round(Math.min(1, quest.progress / quest.target) * 100);
-  const unit = unitLabel?.(quest) ?? ("points" in quest.goal ? quest.goal.points : undefined);
+  const unit = quest.goals ? "goals" : (unitLabel?.(quest) ?? (quest.goal && "points" in quest.goal ? quest.goal.points : undefined));
   const reward = rewardText(quest.rewards);
   return (
     <li className={cx("os-quest", quest.completed && "os-quest--done")}>
@@ -481,6 +481,20 @@ function QuestItem({ quest, now, unitLabel, formatScore }: { quest: Quest; now?:
           {reward && <span className="os-quest__reward">{reward}</span>}
         </div>
         {quest.description && <p className="os-quest__description">{quest.description}</p>}
+        {quest.goals && (
+          <ul className="os-quest__goals">
+            {quest.goals.map((g, i) => {
+              const done = g.progress >= g.target;
+              const label = "event" in g ? g.event.replace(/_/g, " ") : g.points;
+              return (
+                <li key={i} className={cx("os-quest__goal", done && "os-quest__goal--done")}>
+                  <span className="os-quest__goal-name">{label}</span>
+                  <span className="os-quest__goal-progress">{questProgressText(g, formatScore, "points" in g ? g.points : undefined)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
         <div
           className="os-quest__track"
           role="progressbar"

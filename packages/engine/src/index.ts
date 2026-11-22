@@ -46,7 +46,7 @@ export type {
 export { FriendLimitError, RivalLimitError, TeamFullError, AlreadyInTeamError } from "./store/types.js";
 export { zoneFor, outcomeFor, nextTier, currentRound, roundFromKey, nextRoundKey } from "./leagues.js";
 export type { LeagueOutcome, LeagueZone, LeagueRound, RoundRule } from "./leagues.js";
-export { resolveConfig, levelFor, ConfigError, MAX_BOOST_MINUTES, questRunsAt } from "./config.js";
+export { resolveConfig, levelFor, ConfigError, MAX_BOOST_MINUTES, questRunsAt, questGoals } from "./config.js";
 export type {
   OnstreakConfig,
   ResolvedConfig,
@@ -63,6 +63,7 @@ export type {
   MultiplierRule,
   ResolvedMultiplier,
   QuestReward,
+  QuestGoal,
   ResolvedRivalry,
   ItemRule,
   BoostSpec,

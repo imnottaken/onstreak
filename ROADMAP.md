@@ -59,7 +59,7 @@ Things that would hurt early users if they were missing.
 - [ ] **Team leagues and team quests** (M). Teams in league groups, goals a team completes together.
 - [x] **Quests and missions** (L). Daily and weekly quests ("finish 3 lessons today", "earn 50 XP"), rewards on completion.
 - [x] **Multi-step quests** (M). Quest chains and one-off (non-repeating) quests.
-- [ ] **Missions with several goals** (S). One quest that needs several goals done together.
+- [x] **Missions with several goals** (S). One quest that needs several goals done together.
 - [x] **Time-limited events** (M). "Double XP weekend" (multiplier windows), global community goals ("everyone together: 1M minutes").
 - [x] **Limited-time quests** (S). Quests that only run between two dates, for seasonal challenges.
 - [x] **Seasons** (M). Seasonal standings with a fixed archive and rank awards (titles and points).

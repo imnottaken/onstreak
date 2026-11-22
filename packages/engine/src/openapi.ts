@@ -115,6 +115,11 @@ const schemas = {
           target: { type: "number" },
           completed: { type: "boolean", description: "True only on the event that completed the quest." },
           rewards: { type: "array", items: ref("QuestReward") },
+          goals: {
+            type: "array",
+            description: "A mission's goals; progress and target then count goals done.",
+            items: { type: "object", required: ["progress", "target"], additionalProperties: false, properties: { progress: { type: "number" }, target: { type: "number" } } },
+          },
         },
       }),
       calendars: map({
@@ -156,7 +161,7 @@ const schemas = {
         type: "array",
         items: {
           type: "object",
-          required: ["id", "name", "period", "goal", "progress", "target", "completed", "completedAt", "rewards", "startsAt", "endsAt", "until"],
+          required: ["id", "name", "period", "progress", "target", "completed", "completedAt", "rewards", "startsAt", "endsAt", "until"],
           additionalProperties: false,
           properties: {
             id: { type: "string" },
@@ -169,6 +174,16 @@ const schemas = {
                 { type: "object", required: ["event", "target"], additionalProperties: false, properties: { event: { type: "string" }, target: { type: "number" } } },
                 { type: "object", required: ["points", "target"], additionalProperties: false, properties: { points: { type: "string" }, target: { type: "number" } } },
               ],
+            },
+            goals: {
+              type: "array",
+              description: "A mission's goals with their progress; then progress and target count goals done.",
+              items: {
+                oneOf: [
+                  { type: "object", required: ["event", "target", "progress"], additionalProperties: false, properties: { event: { type: "string" }, target: { type: "number" }, progress: { type: "number" } } },
+                  { type: "object", required: ["points", "target", "progress"], additionalProperties: false, properties: { points: { type: "string" }, target: { type: "number" }, progress: { type: "number" } } },
+                ],
+              },
             },
             progress: { type: "number" },
             target: { type: "number" },
