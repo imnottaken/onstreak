@@ -832,6 +832,25 @@ const schemas = {
       avatarUrl: nullable({ type: "string" }),
     },
   },
+  LeaderboardHistory: {
+    type: "object",
+    required: ["id", "currency", "period", "windows"],
+    additionalProperties: false,
+    properties: {
+      id: { type: "string" },
+      currency: { type: "string" },
+      period: { enum: ["daily", "weekly", "monthly"] },
+      windows: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["from", "to", "entries"],
+          additionalProperties: false,
+          properties: { from: { type: "string", format: "date-time" }, to: { type: "string", format: "date-time" }, entries: { type: "array", items: ref("RankedUser") } },
+        },
+      },
+    },
+  },
   LeaderboardResult: {
     type: "object",
     required: ["id", "currency", "period", "scope", "from", "to", "entries", "user"],
@@ -841,6 +860,14 @@ const schemas = {
       currency: { type: "string" },
       period: { enum: ["daily", "weekly", "monthly", "all"] },
       scope: { enum: ["all", "friends"] },
+      around: { type: "integer", description: "Set when entries are the places around the user rather than the top." },
+      segment: {
+        type: "object",
+        required: ["key", "value"],
+        additionalProperties: false,
+        properties: { key: { type: "string" }, value: { type: "string" } },
+        description: "Set when only users with this profile metadata were ranked.",
+      },
       from: nullable({ type: "string", format: "date-time" }),
       to: nullable({ type: "string", format: "date-time" }),
       entries: { type: "array", items: ref("RankedUser") },
@@ -1266,6 +1293,19 @@ export function openapiSpec(version: string) {
           responses: { "200": ok("The user's team, or null", ref("UserTeam")), ...authErrors },
         },
       },
+      "/v1/leaderboards/{leaderboardId}/history": {
+        parameters: [{ name: "leaderboardId", in: "path", required: true, schema: { type: "string" } }],
+        get: {
+          operationId: "leaderboardHistory",
+          summary: "Winners of past windows, newest first",
+          description: "Each window's top entries as they stood when it closed (late backfilled points do not change them).",
+          parameters: [
+            { name: "periods", in: "query", schema: { type: "integer", minimum: 1, maximum: 52, default: 5 } },
+            { name: "top", in: "query", schema: { type: "integer", minimum: 1, maximum: 10, default: 3 } },
+          ],
+          responses: { "200": ok("Past winners", ref("LeaderboardHistory")), ...authErrors, "404": errorResponse("Unknown leaderboard") },
+        },
+      },
       "/v1/leaderboards/{leaderboardId}/teams": {
         parameters: [{ name: "leaderboardId", in: "path", required: true, schema: { type: "string" } }],
         get: {
@@ -1396,6 +1436,8 @@ export function openapiSpec(version: string) {
               schema: { enum: ["all", "friends"], default: "all" },
               description: "friends: rank only the user and their friends, including friends with no points yet.",
             },
+            { name: "around", in: "query", schema: { type: "integer", minimum: 1, maximum: 50 }, description: "With userId: the entries within this many places of the user, instead of the top." },
+            { name: "segment", in: "query", schema: { type: "string" }, description: 'Rank only users whose profile metadata matches, as "key:value" (e.g. "country:IN").' },
           ],
           responses: { "200": ok("The leaderboard", ref("LeaderboardResult")), ...authErrors, "404": errorResponse("No such leaderboard") },
         },

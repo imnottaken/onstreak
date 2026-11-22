@@ -87,7 +87,7 @@ Things that would hurt early users if they were missing.
 - [ ] **A rules language** (L). Expression-based conditions (JSONLogic or similar) for anything the built-in rules cannot say.
 - [x] **Level curves** (S). Formula-based thresholds (linear, exponential), level-up rewards.
 - [ ] **Prestige** (S). Start levels over with a prestige rank once the top level is reached.
-- [ ] **Leaderboard views** (M). Around-me (my rank plus or minus N), by segment (country, school, company), past winners archive.
+- [x] **Leaderboard views** (M). Around-me (my rank plus or minus N), by segment (country, school, company), past winners archive.
 - [ ] **League upgrades** (M). Fill small groups with ghost players, skill-based grouping, rewards for finishing top 3.
 - [ ] **Corrections** (M). Reverse an event, revoke points or an achievement, with everything recalculated.
 - [ ] **Replay and backfill** (L). Rebuild every user's state from the event log after a config change, with a dry run showing what would change.

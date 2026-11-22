@@ -127,10 +127,22 @@ export interface LeaderboardResult {
   currency: string;
   period: LeaderboardPeriod;
   scope: LeaderboardScope;
+  /** Set when the entries are the places around the user rather than the top. */
+  around?: number;
+  /** Set when only users with this profile metadata were ranked. */
+  segment?: { key: string; value: string };
   from: string | null;
   to: string | null;
   entries: RankedUser[];
   user: RankedUser | null;
+}
+
+export interface LeaderboardHistory {
+  id: string;
+  currency: string;
+  period: LeaderboardPeriod;
+  /** Finished windows, newest first, each with its winners as they stood when it closed. */
+  windows: Array<{ from: string; to: string; entries: RankedUser[] }>;
 }
 
 export interface EventHistory {
@@ -1074,7 +1086,10 @@ export class Engine {
    * Top entries for the current window. With `scope: "friends"`, only the user
    * and their friends are ranked, and friends with no points yet are included.
    */
-  async leaderboard(id: string, options: { limit?: number; userId?: string; scope?: LeaderboardScope } = {}): Promise<LeaderboardResult> {
+  async leaderboard(
+    id: string,
+    options: { limit?: number; userId?: string; scope?: LeaderboardScope; around?: number; segment?: { key: string; value: string } } = {},
+  ): Promise<LeaderboardResult> {
     const rule = this.config.leaderboards.find((l) => l.id === id);
     if (!rule) throw new EngineError(`unknown leaderboard "${id}"`, 404);
     const limit = options.limit ?? 10;
@@ -1082,6 +1097,17 @@ export class Engine {
     const scope = options.scope ?? "all";
     if (scope !== "all" && scope !== "friends") throw new EngineError('scope must be "all" or "friends"');
     if (scope === "friends" && !options.userId) throw new EngineError("a friends leaderboard needs userId");
+    const { around, segment } = options;
+    if (around !== undefined) {
+      if (!Number.isInteger(around) || around < 1 || around > 50) throw new EngineError("around must be a whole number from 1 to 50");
+      if (!options.userId) throw new EngineError("around needs userId");
+    }
+    if (segment !== undefined) {
+      if (!segment || typeof segment.key !== "string" || !PROPERTY_KEY.test(segment.key) || typeof segment.value !== "string" || segment.value.length < 1 || segment.value.length > 200) {
+        throw new EngineError('segment must be "key:value", with a key of letters, digits or _');
+      }
+    }
+    if (scope === "friends" && (around !== undefined || segment !== undefined)) throw new EngineError("around and segment work with scope all only");
     const { from, to } = leaderboardWindow(rule.period, this.now(), rule.timezone ?? "UTC");
 
     let entries: LeaderboardEntry[];
@@ -1101,6 +1127,8 @@ export class Engine {
         to,
         limit,
         ...(options.userId ? { userId: options.userId } : {}),
+        ...(around !== undefined ? { around } : {}),
+        ...(segment ? { segment } : {}),
       }));
     }
     const names = await this.store.profiles([...new Set([...entries, ...(user ? [user] : [])].map((e) => e.userId))]);
@@ -1111,9 +1139,38 @@ export class Engine {
       scope,
       from: from === null ? null : new Date(from).toISOString(),
       to: to === null ? null : new Date(to).toISOString(),
+      ...(around !== undefined ? { around } : {}),
+      ...(segment ? { segment: { ...segment } } : {}),
       entries: entries.map((e) => withProfile(e, names)),
       user: user ? withProfile(user, names) : null,
     };
+  }
+
+  /**
+   * Winners of the last `periods` finished windows, newest first: the top
+   * `top` of each, fixed as they stood when the window closed.
+   */
+  async leaderboardHistory(id: string, options: { periods?: number; top?: number } = {}): Promise<LeaderboardHistory> {
+    const rule = this.config.leaderboards.find((l) => l.id === id);
+    if (!rule) throw new EngineError(`unknown leaderboard "${id}"`, 404);
+    if (rule.period === "all") throw new EngineError("an all-time leaderboard has no past windows");
+    const periods = options.periods ?? 5;
+    const top = options.top ?? 3;
+    if (!Number.isInteger(periods) || periods < 1 || periods > 52) throw new EngineError("periods must be a whole number from 1 to 52");
+    if (!Number.isInteger(top) || top < 1 || top > 10) throw new EngineError("top must be a whole number from 1 to 10");
+    const zone = rule.timezone ?? "UTC";
+    let edge = leaderboardWindow(rule.period, this.now(), zone).from as number;
+    const windows: LeaderboardHistory["windows"] = [];
+    for (let i = 0; i < periods; i++) {
+      const w = leaderboardWindow(rule.period, edge - 1, zone);
+      const from = w.from as number;
+      const to = w.to as number;
+      const { entries } = await this.store.leaderboard({ currency: rule.currency, from, to, limit: top, recordedBefore: to });
+      const names = await this.store.profiles(entries.map((e) => e.userId));
+      windows.push({ from: new Date(from).toISOString(), to: new Date(to).toISOString(), entries: entries.map((e) => withProfile(e, names)) });
+      edge = from;
+    }
+    return { id: rule.id, currency: rule.currency, period: rule.period, windows };
   }
 
   /** Make two users friends. Friendship is mutual. Users that do not exist yet are created. */

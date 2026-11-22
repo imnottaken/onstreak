@@ -351,6 +351,10 @@ export class MemoryStore implements Store {
       if (q.from !== null && row.ts < q.from) continue;
       if (q.to !== null && row.ts >= q.to) continue;
       if (q.recordedBefore != null && row.recordedAt >= q.recordedBefore) continue;
+      if (q.segment) {
+        const v = this.users.get(row.userId)?.profile.metadata[q.segment.key];
+        if (v === undefined || v === null || typeof v === "object" || String(v) !== q.segment.value) continue;
+      }
       scores.set(row.userId, (scores.get(row.userId) ?? 0) + row.amount);
     }
     const sorted = [...scores].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
@@ -360,9 +364,10 @@ export class MemoryStore implements Store {
       const prev = ranked[i - 1];
       ranked.push({ userId, score, rank: prev && prev.score === score ? prev.rank : i + 1 });
     });
+    const userIndex = q.userId ? ranked.findIndex((e) => e.userId === q.userId) : -1;
     return {
-      entries: ranked.slice(0, q.limit),
-      user: q.userId ? (ranked.find((e) => e.userId === q.userId) ?? null) : null,
+      entries: q.around !== undefined && userIndex >= 0 ? ranked.slice(Math.max(0, userIndex - q.around), userIndex + q.around + 1) : ranked.slice(0, q.limit),
+      user: userIndex >= 0 ? ranked[userIndex]! : null,
     };
   }
 

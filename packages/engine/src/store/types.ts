@@ -290,6 +290,10 @@ export interface LeaderboardQuery {
   userIds?: string[];
   /** Only count points recorded before this instant (so a finished window stays fixed). */
   recordedBefore?: number | null;
+  /** With userId: return the entries within this many places of the user instead of the top. */
+  around?: number;
+  /** Only rank users whose profile metadata[key], as text, equals value. */
+  segment?: { key: string; value: string };
 }
 
 export interface MigrationReport {

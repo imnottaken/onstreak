@@ -593,6 +593,7 @@ export class PostgresStore implements Store {
            and ($3::timestamptz is null or ts < $3::timestamptz)
            and ($6::jsonb is null or user_id in (select jsonb_array_elements_text($6::jsonb)))
            and ($7::timestamptz is null or recorded_at < $7::timestamptz)
+           and ($9::text is null or user_id in (select id from ${this.t.users} where metadata ->> $9::text = $10::text))
          group by user_id
        ), ranked as (
          select user_id, score, rank() over (order by score desc) as rank
@@ -603,6 +604,7 @@ export class PostgresStore implements Store {
        )
        select user_id, score, rank, pos from ordered
        where pos <= $4 or user_id = $5
+          or ($8::int is not null and abs(pos - (select pos from ordered where user_id = $5)) <= $8::int)
        order by pos`,
       [
         q.currency,
@@ -612,11 +614,17 @@ export class PostgresStore implements Store {
         q.userId ?? null,
         q.userIds ? JSON.stringify(q.userIds) : null,
         q.recordedBefore == null ? null : new Date(q.recordedBefore).toISOString(),
+        q.around ?? null,
+        q.segment?.key ?? null,
+        q.segment?.value ?? null,
       ],
     );
     const toEntry = (r: Record<string, unknown>): LeaderboardEntry => ({ rank: num(r.rank), userId: String(r.user_id), score: num(r.score) });
-    const entries = rows.filter((r) => num(r.pos) <= q.limit).map(toEntry);
     const userRow = q.userId ? rows.find((r) => r.user_id === q.userId) : undefined;
+    const entries =
+      q.around !== undefined && userRow
+        ? rows.filter((r) => Math.abs(num(r.pos) - num(userRow.pos)) <= q.around!).map(toEntry)
+        : rows.filter((r) => num(r.pos) <= q.limit).map(toEntry);
     return { entries, user: userRow ? toEntry(userRow) : null };
   }
 

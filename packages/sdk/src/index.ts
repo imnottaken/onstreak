@@ -409,6 +409,10 @@ export interface LeaderboardResult {
   period: "daily" | "weekly" | "monthly" | "all";
   /** "friends" when only the user and their friends were ranked. */
   scope: "all" | "friends";
+  /** Set when entries are the places around the user rather than the top. */
+  around?: number;
+  /** Set when only users with this profile metadata were ranked. */
+  segment?: { key: string; value: string };
   from: string | null;
   to: string | null;
   entries: LeaderboardEntry[];
@@ -537,6 +541,17 @@ export function createClient(options: ClientOptions) {
       const qs = params.toString();
       return call<TeamLeaderboard>("GET", `/v1/leaderboards/${encodeURIComponent(id)}/teams${qs ? `?${qs}` : ""}`);
     },
+    /** Winners of past windows, newest first, fixed as they stood when each closed. */
+    leaderboardHistory: (id: string, opts: { periods?: number; top?: number } = {}) => {
+      const params = new URLSearchParams();
+      if (opts.periods !== undefined) params.set("periods", String(opts.periods));
+      if (opts.top !== undefined) params.set("top", String(opts.top));
+      const qs = params.toString();
+      return call<{ id: string; currency: string; period: "daily" | "weekly" | "monthly"; windows: Array<{ from: string; to: string; entries: LeaderboardEntry[] }> }>(
+        "GET",
+        `/v1/leaderboards/${encodeURIComponent(id)}/history${qs ? `?${qs}` : ""}`,
+      );
+    },
     /** Every season; with userId, that user's score, rank and award (paid on the first look after the season ends). */
     seasons: (opts: { userId?: string } = {}) => call<SeasonList>("GET", `/v1/seasons${opts.userId ? `?userId=${encodeURIComponent(opts.userId)}` : ""}`),
     /** A season's standings: live while it runs, fixed once it ends. */
@@ -588,11 +603,13 @@ export function createClient(options: ClientOptions) {
     /** Whether the server and its database are up. Never throws for a 503. */
     health: () => call<Health>("GET", "/health", undefined, [503]),
     /** Top entries of a leaderboard, plus the given user's own rank. */
-    leaderboard: (id: string, opts: { limit?: number; userId?: string; scope?: "all" | "friends" } = {}) => {
+    leaderboard: (id: string, opts: { limit?: number; userId?: string; scope?: "all" | "friends"; around?: number; segment?: { key: string; value: string } } = {}) => {
       const params = new URLSearchParams();
       if (opts.limit !== undefined) params.set("limit", String(opts.limit));
       if (opts.userId) params.set("userId", opts.userId);
       if (opts.scope) params.set("scope", opts.scope);
+      if (opts.around !== undefined) params.set("around", String(opts.around));
+      if (opts.segment) params.set("segment", `${opts.segment.key}:${opts.segment.value}`);
       const qs = params.toString();
       return call<LeaderboardResult>("GET", `/v1/leaderboards/${encodeURIComponent(id)}${qs ? `?${qs}` : ""}`);
     },

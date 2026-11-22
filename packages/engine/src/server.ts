@@ -213,12 +213,22 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         const limit = intParam(url, "limit");
         const userId = url.searchParams.get("userId") ?? undefined;
         const scope = url.searchParams.get("scope") ?? undefined;
+        const around = intParam(url, "around");
+        const segmentParam = url.searchParams.get("segment");
+        let segment: { key: string; value: string } | undefined;
+        if (segmentParam !== null) {
+          const at = segmentParam.indexOf(":");
+          if (at < 1) throw new HttpError(400, 'segment must be "key:value"');
+          segment = { key: segmentParam.slice(0, at), value: segmentParam.slice(at + 1) };
+        }
         return send(
           200,
           await engine.leaderboard(id, {
             ...(limit !== undefined ? { limit } : {}),
             ...(userId ? { userId } : {}),
             ...(scope ? { scope: scope as "all" | "friends" } : {}),
+            ...(around !== undefined ? { around } : {}),
+            ...(segment ? { segment } : {}),
           }),
         );
       }
@@ -243,6 +253,11 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
       }
       if (req.method === "GET" && resource === "users" && id && sub === "team" && parts.length === 4) {
         return send(200, await engine.userTeam(id));
+      }
+      if (req.method === "GET" && resource === "leaderboards" && id && sub === "history" && parts.length === 4) {
+        const periods = intParam(url, "periods");
+        const top = intParam(url, "top");
+        return send(200, await engine.leaderboardHistory(id, { ...(periods !== undefined ? { periods } : {}), ...(top !== undefined ? { top } : {}) }));
       }
       if (req.method === "GET" && resource === "leaderboards" && id && sub === "teams" && parts.length === 4) {
         const limit = intParam(url, "limit");
