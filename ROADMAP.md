@@ -93,7 +93,7 @@ Things that would hurt early users if they were missing.
 - [ ] **Replay and backfill** (L). Rebuild every user's state from the event log after a config change, with a dry run showing what would change.
 - [ ] **Config preview and simulation** (M). "If I change level thresholds, how many users change level?"
 - [x] **"Streak at risk" list** (M). Users who have not done today's activity yet, for reminders.
-- [ ] **Translated names** (S). Achievement and tier names in several languages.
+- [x] **Translated names** (S). Achievement and tier names in several languages.
 
 ## Phase 5: Integrations
 

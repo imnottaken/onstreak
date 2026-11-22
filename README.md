@@ -147,6 +147,8 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 | `GET /health/live` | Alive: the process is up. No key needed |
 | `GET /openapi.json` | OpenAPI 3.1 description of this API. No key needed |
 
+Achievements (and their tiers), quests, items and calendars take `translations: { es: { name, description }, "pt-BR": { ... } }`. `GET` routes for users, achievements, quests, the store and calendars take `?locale=`, falling back from `pt-BR` to `pt` to the default text.
+
 A time zone sent with an event is remembered for that user, so later events and `GET /v1/users/:id` use it when none is given.
 
 Spending never lowers earned points. `points` on a user is what they earned (levels, achievements, leaderboards and leagues use it), and `wallet` is what is left to spend: earned minus spent. Purchases are checked and recorded inside the user's lock, so concurrent requests can never overspend.

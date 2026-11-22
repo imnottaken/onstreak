@@ -131,10 +131,12 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         return send(200, { results: await engine.trackBatch(body.events) });
       }
 
+      const locale = url.searchParams.get("locale") ?? undefined;
+      const withLocale = locale ? { locale } : {};
       if (resource === "users" && id && parts.length === 3) {
         if (req.method === "GET") {
           const timezone = url.searchParams.get("timezone") ?? undefined;
-          return send(200, await engine.getUser(id, timezone ? { timezone } : {}));
+          return send(200, await engine.getUser(id, { ...(timezone ? { timezone } : {}), ...withLocale }));
         }
         if (req.method === "PATCH") return send(200, await engine.updateUser(id, await readJson(req)));
       }
@@ -147,7 +149,7 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
 
       if (req.method === "GET" && resource === "users" && id && sub === "quests" && parts.length === 4) {
         const timezone = url.searchParams.get("timezone") ?? undefined;
-        return send(200, await engine.quests(id, timezone ? { timezone } : {}));
+        return send(200, await engine.quests(id, { ...(timezone ? { timezone } : {}), ...withLocale }));
       }
 
       if (req.method === "POST" && resource === "users" && id && sub === "streaks" && subId && subSub === "repair" && parts.length === 6) {
@@ -155,7 +157,7 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
       }
 
       if (req.method === "GET" && resource === "users" && id && sub === "store" && parts.length === 4) {
-        return send(200, await engine.rewardStore(id));
+        return send(200, await engine.rewardStore(id, withLocale));
       }
 
       if (req.method === "POST" && resource === "users" && id && sub === "purchases" && subId && subSub === "refund" && parts.length === 6) {
@@ -185,7 +187,7 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
 
       if (req.method === "GET" && resource === "users" && id && sub === "calendars" && parts.length === 4) {
         const timezone = url.searchParams.get("timezone") ?? undefined;
-        return send(200, await engine.calendars(id, timezone ? { timezone } : {}));
+        return send(200, await engine.calendars(id, { ...(timezone ? { timezone } : {}), ...withLocale }));
       }
 
       if (req.method === "PUT" && resource === "users" && id && sub === "referred-by" && subId && parts.length === 5) {
@@ -252,7 +254,7 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         return send(200, await engine.prestige(id));
       }
       if (req.method === "GET" && resource === "users" && id && sub === "achievements" && parts.length === 4) {
-        return send(200, await engine.achievements(id));
+        return send(200, await engine.achievements(id, withLocale));
       }
       if (req.method === "GET" && resource === "users" && id && sub === "team" && parts.length === 4) {
         return send(200, await engine.userTeam(id));

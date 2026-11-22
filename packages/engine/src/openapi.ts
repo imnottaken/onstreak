@@ -12,6 +12,7 @@ const ok = (description: string, schema: Record<string, unknown>) => ({ descript
 const errorResponse = (description: string) => ({ description, content: json(ref("Error")) });
 
 const userIdParam = { name: "userId", in: "path", required: true, schema: { type: "string", maxLength: 128 } };
+const localeParam = { name: "locale", in: "query", schema: { type: "string" }, description: 'Show translated names, e.g. "es" or "pt-BR" (falls back to the language, then the default).' };
 const limitParam = (max = 100) => ({ name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: max } });
 
 const schemas = {
@@ -1148,7 +1149,7 @@ export function openapiSpec(version: string) {
         get: {
           operationId: "getUser",
           summary: "A user's profile, points, level, streaks and achievements",
-          parameters: [{ name: "timezone", in: "query", schema: { type: "string" }, description: "Override the zone used for streak status." }],
+          parameters: [localeParam, { name: "timezone", in: "query", schema: { type: "string" }, description: "Override the zone used for streak status." }],
           responses: { "200": ok("The user (all zeros if never seen)", ref("UserProfile")), ...authErrors },
         },
         patch: {
@@ -1172,7 +1173,7 @@ export function openapiSpec(version: string) {
         get: {
           operationId: "quests",
           summary: "Every quest for the current day or week, with the user's progress",
-          parameters: [{ name: "timezone", in: "query", schema: { type: "string" }, description: "Override the zone that decides when days start." }],
+          parameters: [localeParam, { name: "timezone", in: "query", schema: { type: "string" }, description: "Override the zone that decides when days start." }],
           responses: { "200": ok("The user's quests", ref("QuestList")), ...authErrors },
         },
       },
@@ -1181,6 +1182,7 @@ export function openapiSpec(version: string) {
         get: {
           operationId: "rewardStore",
           summary: "The reward store: spendable balances, and what the user owns and can buy",
+          parameters: [localeParam],
           responses: { "200": ok("The store for this user", ref("RewardStore")), ...authErrors },
         },
       },
@@ -1209,7 +1211,7 @@ export function openapiSpec(version: string) {
         get: {
           operationId: "calendars",
           summary: "Login reward calendars with the user's place in each",
-          parameters: [{ name: "timezone", in: "query", schema: { type: "string" }, description: "Override the zone that decides when days start." }],
+          parameters: [localeParam, { name: "timezone", in: "query", schema: { type: "string" }, description: "Override the zone that decides when days start." }],
           responses: { "200": ok("The user's calendars", ref("CalendarList")), ...authErrors },
         },
       },
@@ -1328,6 +1330,7 @@ export function openapiSpec(version: string) {
           operationId: "achievements",
           summary: "Every achievement with the user's progress",
           description: "Tiered badges list each tier. Hidden achievements have no name, description or progress until unlocked.",
+          parameters: [localeParam],
           responses: { "200": ok("The user's achievements", ref("AchievementList")), ...authErrors },
         },
       },

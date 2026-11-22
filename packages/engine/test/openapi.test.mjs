@@ -81,6 +81,8 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   await call("patch", "/v1/users/asha", "/v1/users/{userId}", { nickname: "x" }); // 400
   await call("get", "/v1/users/asha", "/v1/users/{userId}");
   await call("get", "/v1/users/never-seen", "/v1/users/{userId}");
+  await call("get", "/v1/users/asha?locale=es", "/v1/users/{userId}");
+  await call("get", "/v1/users/asha?locale=nope_nope", "/v1/users/{userId}"); // 400
 
   const page = await call("get", "/v1/users/asha/events?limit=2", "/v1/users/{userId}/events");
   await call("get", `/v1/users/asha/events?limit=2&cursor=${page.json.nextCursor}`, "/v1/users/{userId}/events");

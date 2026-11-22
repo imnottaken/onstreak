@@ -52,7 +52,7 @@ export type {
 export { FriendLimitError, RivalLimitError, TeamFullError, AlreadyInTeamError } from "./store/types.js";
 export { zoneFor, outcomeFor, nextTier, currentRound, roundFromKey, nextRoundKey } from "./leagues.js";
 export type { LeagueOutcome, LeagueZone, LeagueRound, RoundRule } from "./leagues.js";
-export { resolveConfig, levelFor, ConfigError, MAX_BOOST_MINUTES, questRunsAt, questGoals, achievementLevels } from "./config.js";
+export { resolveConfig, levelFor, ConfigError, MAX_BOOST_MINUTES, questRunsAt, questGoals, achievementLevels, localize, isLocale } from "./config.js";
 export type {
   OnstreakConfig,
   ResolvedConfig,
@@ -84,6 +84,7 @@ export type {
   AchievementTier,
   AchievementLeaf,
   AchievementWindow,
+  Translations,
   AchievementLevel,
 } from "./config.js";
 export { initialStreak, recordActivity, streakStatus } from "./streaks.js";

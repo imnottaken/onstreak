@@ -1,5 +1,43 @@
 import { isValidTimeZone, type LeaderboardPeriod, type StreakPeriod } from "./time.js";
 
+/** Names (and descriptions) by locale, e.g. { es: { name: "Ratón de biblioteca" }, "pt-BR": { ... } }. */
+export type Translations = Record<string, { name?: string; description?: string }>;
+
+const LOCALE = /^[a-z]{2,3}(-[a-z0-9]{2,8}){0,2}$/i;
+
+export function isLocale(s: unknown): s is string {
+  return typeof s === "string" && LOCALE.test(s);
+}
+
+/**
+ * The text to show for a locale: an exact match ("pt-BR"), then the language
+ * alone ("pt"), then the default. Locale tags match without regard to case.
+ */
+export function localize<T extends { name?: string; description?: string; translations?: Translations }>(entity: T, locale: string | null | undefined): { name: T["name"]; description?: string } {
+  let t: { name?: string; description?: string } | undefined;
+  if (locale && entity.translations) {
+    const lower = Object.fromEntries(Object.entries(entity.translations).map(([k, v]) => [k.toLowerCase(), v]));
+    const l = locale.toLowerCase();
+    t = lower[l] ?? lower[l.split("-")[0]!];
+  }
+  const description = t?.description ?? entity.description;
+  return { name: (t?.name ?? entity.name) as T["name"], ...(description ? { description } : {}) };
+}
+
+function translationsProblem(t: unknown): string | null {
+  if (t === undefined) return null;
+  if (!t || typeof t !== "object" || Array.isArray(t)) return "translations must be an object of locales";
+  for (const [locale, v] of Object.entries(t)) {
+    if (!LOCALE.test(locale)) return `translations has bad locale "${locale}"`;
+    if (!v || typeof v !== "object" || Array.isArray(v)) return `translations.${locale} must be { name?, description? }`;
+    for (const [k, s] of Object.entries(v)) {
+      if (k !== "name" && k !== "description") return `translations.${locale} can only have name and description`;
+      if (typeof s !== "string" || s.length === 0 || s.length > 500) return `translations.${locale}.${k} must be 1-500 characters`;
+    }
+  }
+  return null;
+}
+
 /** A test on one event property: equal to a value, one of a list, or within a range. */
 export type PropertyMatch = string | number | boolean | { in?: Array<string | number>; gte?: number; lte?: number };
 
@@ -83,6 +121,7 @@ export function isLeaf(c: AchievementCondition): c is AchievementLeaf {
 export interface AchievementTier {
   /** e.g. "Bronze". */
   name: string;
+  translations?: Translations;
   gte: number;
   rewards?: QuestReward[];
 }
@@ -97,7 +136,7 @@ export interface AchievementRule {
   /** Kept secret (no name, description or progress) until unlocked. */
   hidden?: boolean;
   /** Points paid when it unlocks (for tiered badges, put rewards on each tier). */
-  rewards?: QuestReward[];
+  rewards?: QuestReward[];  translations?: Translations;
 }
 
 /** One unlockable step of an achievement: the whole achievement, or one of its tiers. */
@@ -234,6 +273,7 @@ export interface QuestRule {
   /** Only run between these ISO dates (a seasonal challenge). Default: always. */
   from?: string;
   to?: string;
+  translations?: Translations;
 }
 
 /**
@@ -254,6 +294,7 @@ export type MultiplierRule =
 export interface CalendarRule {
   id: string;
   name?: string;
+  translations?: Translations;
   /** The event that claims a day, e.g. "app_opened". */
   event: string;
   days: Array<{ rewards: QuestReward[] }>;
@@ -372,6 +413,7 @@ export interface ItemRule {
   limit?: number;
   /** Anything your app needs to show or use the item (image URL, sku). Returned as is. */
   metadata?: Record<string, unknown>;
+  translations?: Translations;
   /**
    * What using one does. `streakFreeze` adds a freeze to that streak (up to its
    * freezes.max). `boost` gives the user a personal multiplier for some
@@ -648,6 +690,10 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
         if (!isNonNegative(t.gte) || (i > 0 && t.gte <= a.tiers![i - 1]!.gte)) throw new ConfigError(`achievement "${a.id}" tier gte values must be ascending`);
       });
     }
+    for (const tr of [a.translations, ...(a.tiers ?? []).map((t) => t.translations)]) {
+      const problem = translationsProblem(tr);
+      if (problem) throw new ConfigError(`achievement "${a.id}" ${problem}`);
+    }
     if (a.hidden !== undefined && typeof a.hidden !== "boolean") throw new ConfigError(`achievement "${a.id}" hidden must be true or false`);
     for (const r of [...(a.rewards ?? []), ...(a.tiers ?? []).flatMap((t) => t.rewards ?? [])]) {
       hasCurrency(r.currency, `achievement "${a.id}" reward`);
@@ -719,6 +765,8 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
   uniqueIds("quest", quests.map((q) => q.id));
   for (const q of quests) {
     if (typeof q.name !== "string" || q.name.length === 0) throw new ConfigError(`quest "${q.id}" needs a name`);
+    const questTr = translationsProblem(q.translations);
+    if (questTr) throw new ConfigError(`quest "${q.id}" ${questTr}`);
     if (!STREAK_PERIODS.includes(q.period) && q.period !== "once") throw new ConfigError(`quest "${q.id}" period must be daily, weekly or once`);
     if (q.after !== undefined) {
       const prev = quests.find((x) => x.id === q.after);
@@ -786,6 +834,8 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
   uniqueIds("item", items.map((i) => i.id));
   for (const i of items) {
     if (typeof i.name !== "string" || i.name.length === 0) throw new ConfigError(`item "${i.id}" needs a name`);
+    const itemTr = translationsProblem(i.translations);
+    if (itemTr) throw new ConfigError(`item "${i.id}" ${itemTr}`);
     if (!i.price || typeof i.price !== "object") throw new ConfigError(`item "${i.id}" needs price: { currency, amount }`);
     hasCurrency(i.price.currency, `item "${i.id}"`);
     if (!isNonNegative(i.price.amount)) throw new ConfigError(`item "${i.id}" price amount must be zero or more`);
@@ -807,6 +857,8 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
   uniqueIds("calendar", calendars.map((c) => c.id));
   for (const c of calendars) {
     if (typeof c.event !== "string" || !ID.test(c.event)) throw new ConfigError(`calendar "${c.id}" has bad event "${c.event}"`);
+    const calTr = translationsProblem(c.translations);
+    if (calTr) throw new ConfigError(`calendar "${c.id}" ${calTr}`);
     if (c.name !== undefined && (typeof c.name !== "string" || c.name.length === 0)) throw new ConfigError(`calendar "${c.id}" name must be a non-empty string`);
     if (!Array.isArray(c.days) || c.days.length === 0 || c.days.length > 366) throw new ConfigError(`calendar "${c.id}" needs 1 to 366 days`);
     for (const d of c.days) {

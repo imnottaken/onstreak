@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, type StreakRule, matchesWhere, boostSpecProblem, achievementLevels, isLeaf, type AchievementCondition, type AchievementLeaf, questGoals, questRunsAt, type QuestGoal } from "./config.js";
+import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, type StreakRule, matchesWhere, localize, isLocale, boostSpecProblem, achievementLevels, isLeaf, type AchievementCondition, type AchievementLeaf, questGoals, questRunsAt, type QuestGoal } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { breakPeriod, missedBetween, shiftPeriod, streakPeriodKey, streakPeriodsBetween, initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
 import { AlreadyInTeamError, FriendLimitError, RivalLimitError, TeamFullError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type ReferralRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
@@ -631,6 +631,10 @@ async function queueBoost(tx: UserTx, spec: BoostSpec, now: number, reason: stri
   return record;
 }
 
+function checkLocale(locale: unknown): asserts locale is string | undefined {
+  if (locale !== undefined && !isLocale(locale)) throw new EngineError(`locale "${String(locale)}" must look like "en", "es" or "pt-BR"`);
+}
+
 function checkUserId(userId: unknown): asserts userId is string {
   if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces (max 128 chars)");
 }
@@ -993,7 +997,8 @@ export class Engine {
     return tracked;
   }
 
-  async getUser(userId: string, options: { timezone?: string } = {}): Promise<UserProfile> {
+  async getUser(userId: string, options: { timezone?: string; locale?: string } = {}): Promise<UserProfile> {
+    checkLocale(options.locale);
     if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces");
     if (options.timezone !== undefined && !isValidTimeZone(options.timezone)) throw new EngineError(`unknown timezone "${options.timezone}"`);
 
@@ -1041,9 +1046,8 @@ export class Engine {
         if (!rule || (level !== undefined && !tier)) return null;
         return {
           id,
-          name: rule.name,
-          ...(rule.description ? { description: rule.description } : {}),
-          ...(tier ? { tier: { level: Number(level), name: tier.name } } : {}),
+          ...localize(rule, options.locale),
+          ...(tier ? { tier: { level: Number(level), name: localize(tier, options.locale).name } } : {}),
           unlockedAt: a.unlockedAt,
         };
       })
@@ -1053,8 +1057,9 @@ export class Engine {
   }
 
   /** Every achievement with the user's progress toward it. Hidden ones stay secret until unlocked. */
-  async achievements(userId: string): Promise<AchievementList> {
+  async achievements(userId: string, options: { locale?: string } = {}): Promise<AchievementList> {
     checkUserId(userId);
+    checkLocale(options.locale);
     const snap = await this.store.snapshot(userId);
     const now = this.now();
     const timezone = snap.profile.timezone ?? this.config.defaultTimezone;
@@ -1090,14 +1095,13 @@ export class Engine {
         const percent = target <= 0 ? 100 : Math.min(100, Math.floor((current / target) * 100));
         return {
           id: a.id,
-          name: a.name,
-          ...(a.description ? { description: a.description } : {}),
+          ...localize(a, options.locale),
           hidden: Boolean(a.hidden),
           unlocked,
           completed,
           unlockedAt: last,
           progress: { current, target, percent: completed ? 100 : percent },
-          ...(a.tiers ? { tiers: a.tiers.map((t, i) => ({ level: i + 1, name: t.name, gte: t.gte, unlockedAt: unlockedAt.get(`${a.id}#${i + 1}`) ?? null })) } : {}),
+          ...(a.tiers ? { tiers: a.tiers.map((t, i) => ({ level: i + 1, name: localize(t, options.locale).name, gte: t.gte, unlockedAt: unlockedAt.get(`${a.id}#${i + 1}`) ?? null })) } : {}),
           ...(a.rewards ? { rewards: a.rewards.map((r) => ({ ...r })) } : {}),
         };
       }),
@@ -1302,7 +1306,8 @@ export class Engine {
 
   /** A user's friends, newest first, with their names and avatars. */
   /** Every quest for the period running now, with the user's progress. */
-  async quests(userId: string, options: { timezone?: string } = {}): Promise<QuestList> {
+  async quests(userId: string, options: { timezone?: string; locale?: string } = {}): Promise<QuestList> {
+    checkLocale(options.locale);
     if (typeof userId !== "string" || !USER_ID.test(userId)) throw new EngineError("userId must be a non-empty string without spaces");
     if (options.timezone !== undefined && !isValidTimeZone(options.timezone)) throw new EngineError(`unknown timezone "${options.timezone}"`);
     const now = this.now();
@@ -1331,8 +1336,7 @@ export class Engine {
         const s = byId.get(`${q.id}|${round.key}`);
         return {
           id: q.id,
-          name: q.name,
-          ...(q.description ? { description: q.description } : {}),
+          ...localize(q, options.locale),
           period: q.period,
           ...(q.after ? { after: q.after } : {}),
           ...(q.goal ? { goal: { ...q.goal } } : {}),
@@ -1351,7 +1355,8 @@ export class Engine {
   }
 
   /** Every reward calendar with the user's place in it: what is claimed, what today pays, and what comes next. */
-  async calendars(userId: string, options: { timezone?: string } = {}): Promise<CalendarList> {
+  async calendars(userId: string, options: { timezone?: string; locale?: string } = {}): Promise<CalendarList> {
+    checkLocale(options.locale);
     checkUserId(userId);
     if (options.timezone !== undefined && !isValidTimeZone(options.timezone)) throw new EngineError(`unknown timezone "${options.timezone}"`);
     const now = this.now();
@@ -1368,7 +1373,7 @@ export class Engine {
         const day = claimedToday ? state!.day : next;
         return {
           id: cal.id,
-          ...(cal.name ? { name: cal.name } : {}),
+          ...(cal.name ? { name: localize(cal, options.locale).name } : {}),
           event: cal.event,
           day,
           claimedToday,
@@ -1932,7 +1937,8 @@ export class Engine {
   }
 
   /** The reward store as one user sees it: their spendable balances, and what they own and can buy. */
-  async rewardStore(userId: string): Promise<RewardStore> {
+  async rewardStore(userId: string, options: { locale?: string } = {}): Promise<RewardStore> {
+    checkLocale(options.locale);
     checkUserId(userId);
     const snap = await this.store.snapshot(userId);
     const wallet: Record<string, number> = {};
@@ -1942,8 +1948,7 @@ export class Engine {
       const limit = item.limit ?? null;
       return {
         id: item.id,
-        name: item.name,
-        ...(item.description ? { description: item.description } : {}),
+        ...localize(item, options.locale),
         price: { ...item.price },
         limit,
         ...(item.metadata ? { metadata: structuredClone(item.metadata) } : {}),

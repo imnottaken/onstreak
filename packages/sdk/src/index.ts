@@ -466,13 +466,19 @@ export function createClient(options: ClientOptions) {
     return data as T;
   }
   const user = (userId: string) => `/v1/users/${encodeURIComponent(userId)}`;
+  /** "?a=1&b=2" from the defined options, or "". */
+  const query = (opts: Record<string, string | number | undefined>) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(opts)) if (v !== undefined) params.set(k, String(v));
+    const qs = params.toString();
+    return qs ? `?${qs}` : "";
+  };
 
   return {
     /** Record that a user did something. Returns points, streaks and achievements it triggered. */
     track: (input: TrackInput) => call<TrackResult>("POST", "/v1/events", input),
     /** A user's points, level, streaks and achievements. */
-    getUser: (userId: string, opts: { timezone?: string } = {}) =>
-      call<UserProfile>("GET", `${user(userId)}${opts.timezone ? `?timezone=${encodeURIComponent(opts.timezone)}` : ""}`),
+    getUser: (userId: string, opts: { timezone?: string; locale?: string } = {}) => call<UserProfile>("GET", `${user(userId)}${query(opts)}`),
     /** Track up to 100 events in order. Bad items are reported in place; the rest still count. */
     trackBatch: (events: TrackInput[]) => call<{ results: BatchItemResult[] }>("POST", "/v1/events/batch", { events }).then((r) => r.results),
     /** Set a user's display name, avatar, metadata or time zone. Returns the full profile. */
@@ -494,10 +500,9 @@ export function createClient(options: ClientOptions) {
     /** A user's friends, newest first. */
     friends: (userId: string) => call<FriendList>("GET", `${user(userId)}/friends`),
     /** Every quest for the current day or week, with the user's progress. */
-    quests: (userId: string, options: { timezone?: string } = {}) =>
-      call<QuestList>("GET", `${user(userId)}/quests${options.timezone ? `?timezone=${encodeURIComponent(options.timezone)}` : ""}`),
+    quests: (userId: string, options: { timezone?: string; locale?: string } = {}) => call<QuestList>("GET", `${user(userId)}/quests${query(options)}`),
     /** The reward store for one user: their spendable balances, and what they own and can buy. */
-    store: (userId: string) => call<RewardStore>("GET", `${user(userId)}/store`),
+    store: (userId: string, opts: { locale?: string } = {}) => call<RewardStore>("GET", `${user(userId)}/store${query(opts)}`),
     /**
      * Buy an item with points. Throws OnstreakError with status 409 and code
      * "insufficient_funds" or "limit_reached" when the purchase is refused.
@@ -510,8 +515,7 @@ export function createClient(options: ClientOptions) {
     useItem: (userId: string, itemId: string, opts: { quantity?: number; idempotencyKey?: string } = {}) =>
       call<ItemUseResult>("POST", `${user(userId)}/inventory/${encodeURIComponent(itemId)}/use`, opts),
     /** Login reward calendars with the user's place in each. Track the calendar's event to claim a day. */
-    calendars: (userId: string, options: { timezone?: string } = {}) =>
-      call<CalendarList>("GET", `${user(userId)}/calendars${options.timezone ? `?timezone=${encodeURIComponent(options.timezone)}` : ""}`),
+    calendars: (userId: string, options: { timezone?: string; locale?: string } = {}) => call<CalendarList>("GET", `${user(userId)}/calendars${query(options)}`),
     /** Record that `referrerId` brought `userId` in. Throws 409 "already_referred" for a different referrer. */
     addReferral: (userId: string, referrerId: string) => call<ReferralResult>("PUT", `${user(userId)}/referred-by/${encodeURIComponent(referrerId)}`),
     /** Who referred a user and whom they referred. */
@@ -533,7 +537,7 @@ export function createClient(options: ClientOptions) {
     /** Start levels over at the top level, with a higher prestige rank. Throws 409 "not_max_level" before then. */
     prestige: (userId: string) => call<{ userId: string; prestige: number; level: number; rewards: QuestReward[] }>("POST", `${user(userId)}/prestige`),
     /** Every achievement with the user's progress; hidden ones stay secret until unlocked. */
-    achievements: (userId: string) => call<AchievementList>("GET", `${user(userId)}/achievements`),
+    achievements: (userId: string, opts: { locale?: string } = {}) => call<AchievementList>("GET", `${user(userId)}/achievements${query(opts)}`),
     /** The team a user is in, or null. */
     userTeam: (userId: string) => call<{ userId: string; team: (Team & { joinedAt: string }) | null }>("GET", `${user(userId)}/team`),
     /** Teams ranked by their members' points in a leaderboard's window. */
