@@ -51,6 +51,7 @@ export type {
   ReversalResult,
   ConfigPreview,
   WebhookDeliveryList,
+  UserExport,
 } from "./engine.js";
 export { signWebhook, verifyWebhookSignature, webhookBackoffMs, MAX_WEBHOOK_ATTEMPTS } from "./webhooks.js";
 export { FriendLimitError, RivalLimitError, TeamFullError, AlreadyInTeamError } from "./store/types.js";

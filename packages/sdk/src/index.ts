@@ -583,6 +583,19 @@ export function createClient(options: ClientOptions) {
         "/v1/config/preview",
         config,
       ),
+    /** Everything stored about a user, in one document (for data access requests). */
+    exportUser: (userId: string) =>
+      call<{
+        exportedAt: string;
+        user: UserProfile;
+        events: EventHistory["events"];
+        purchases: Purchase[];
+        friends: FriendList["friends"];
+        team: { id: string; name: string; joinedAt: string } | null;
+        referrals: { referredBy: string | null; referred: string[] } | null;
+      }>("GET", `${user(userId)}/export`),
+    /** Delete a user and everything about them. Cannot be undone. */
+    deleteUser: (userId: string) => call<{ userId: string; deleted: boolean }>("DELETE", user(userId)),
     /** Start levels over at the top level, with a higher prestige rank. Throws 409 "not_max_level" before then. */
     prestige: (userId: string) => call<{ userId: string; prestige: number; level: number; rewards: QuestReward[] }>("POST", `${user(userId)}/prestige`),
     /** Every achievement with the user's progress; hidden ones stay secret until unlocked. */

@@ -188,6 +188,16 @@ export interface WebhookDeliveryList {
   nextCursor: string | null;
 }
 
+export interface UserExport {
+  exportedAt: string;
+  user: UserProfile;
+  events: EventHistory["events"];
+  purchases: Purchase[];
+  friends: FriendList["friends"];
+  team: { id: string; name: string; joinedAt: string } | null;
+  referrals: { referredBy: string | null; referred: string[] } | null;
+}
+
 export interface ConfigPreview {
   /** Users checked. */
   users: number;
@@ -1179,6 +1189,53 @@ export class Engine {
       }
     }
     return rows;
+  }
+
+  /**
+   * Everything onstreak stores about a user, in one JSON document (for data
+   * access requests). Events and purchases are included in full.
+   */
+  async exportUser(userId: string): Promise<UserExport> {
+    checkUserId(userId);
+    const events: EventHistory["events"] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.events(userId, { limit: MAX_LIMIT, ...(cursor ? { cursor } : {}) });
+      events.push(...page.events);
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    const purchases: Purchase[] = [];
+    cursor = undefined;
+    do {
+      const page = await this.purchases(userId, { limit: MAX_LIMIT, ...(cursor ? { cursor } : {}) });
+      purchases.push(...page.purchases);
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    const team = (await this.userTeam(userId)).team;
+    let referrals: UserExport["referrals"] = null;
+    if (this.config.referrals) {
+      const r = await this.store.referrals(userId);
+      referrals = { referredBy: r.referredBy?.referrerId ?? null, referred: r.referred.map((x) => x.referredId) };
+    }
+    return {
+      exportedAt: new Date(this.now()).toISOString(),
+      user: await this.getUser(userId),
+      events,
+      purchases,
+      friends: (await this.friends(userId)).friends,
+      team: team ? { id: team.id, name: team.name, joinedAt: team.joinedAt } : null,
+      referrals,
+    };
+  }
+
+  /**
+   * Delete a user and everything about them (right to erasure). Their points
+   * leave every leaderboard and league group, and friendships, rivalries and
+   * referrals involving them are removed on both sides. Cannot be undone.
+   */
+  async deleteUser(userId: string): Promise<{ userId: string; deleted: boolean }> {
+    checkUserId(userId);
+    return { userId, deleted: await this.store.deleteUser(userId) };
   }
 
   /**

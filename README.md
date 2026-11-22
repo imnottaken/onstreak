@@ -113,6 +113,8 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 | `POST /v1/events/batch` | Track up to 100 events in order: `{ events: [...] }`. Bad items are reported in place |
 | `GET /v1/users/:id?timezone=` | Profile, points, level, metrics, streak status (`done`, `pending`, `broken`) and achievements |
 | `PATCH /v1/users/:id` | Set `displayName`, `avatarUrl`, `metadata` (JSON, max 8 KB) or `timezone`. `null` clears a field |
+| `GET /v1/users/:id/export` | Everything stored about a user in one JSON document: profile and totals, every event, purchases, friends, team and referrals (for data access requests) |
+| `DELETE /v1/users/:id` | Delete a user and everything about them (right to erasure). Their points leave every board and league; friendships, rivalries and referrals go on both sides. Cannot be undone |
 | `GET /v1/users/:id/events?limit=&cursor=` | The user's events, newest first, with what each one awarded |
 | `GET /v1/users/:id/quests?timezone=` | Every quest for the current day or week with the user's progress, completion time and when it resets |
 | `POST /v1/users/:id/streaks/:streakId/repair` | Repair a recently broken streak; it resumes as if yesterday was done. While repairable, the user's streak shows `repairableUntil`. 409 `not_broken`, `repair_expired` or `insufficient_funds` |
@@ -161,7 +163,7 @@ Spending never lowers earned points. `points` on a user is what they earned (lev
 
 The full machine-readable description is served at `GET /openapi.json` (OpenAPI 3.1, no key needed), so you can generate a client for any language. Tests check every response against it, so it stays accurate.
 
-The SDK mirrors these: `track`, `previewConfig`, `webhookDeliveries`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `calendars`, `communityGoals`, `seasons`, `seasonStandings`, `achievements`, `reverseEvent`, `revokeAchievement`, `prestige`, `saveTeam`, `team`, `addTeamMember`, `removeTeamMember`, `userTeam`, `teamLeaderboard`, `teamGoals`, `addReferral`, `referrals`, `store`, `purchase`, `purchases`, `useItem`, `refundPurchase`, `repairStreak`, `grantBoost`, `leaderboard`, `leaderboardHistory`, `streaksAtRisk`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
+The SDK mirrors these: `track`, `previewConfig`, `webhookDeliveries`, `exportUser`, `deleteUser`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `calendars`, `communityGoals`, `seasons`, `seasonStandings`, `achievements`, `reverseEvent`, `revokeAchievement`, `prestige`, `saveTeam`, `team`, `addTeamMember`, `removeTeamMember`, `userTeam`, `teamLeaderboard`, `teamGoals`, `addReferral`, `referrals`, `store`, `purchase`, `purchases`, `useItem`, `refundPurchase`, `repairStreak`, `grantBoost`, `leaderboard`, `leaderboardHistory`, `streaksAtRisk`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
 
 ## Webhooks
 

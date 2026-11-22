@@ -414,6 +414,23 @@ export class MemoryStore implements Store {
       .map((e) => ({ id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result, properties: e.properties ? { ...e.properties } : null, reversedAt: (e as { reversedAt?: number | null }).reversedAt ?? null }));
   }
 
+  async deleteUser(userId: string): Promise<boolean> {
+    const existed = this.users.delete(userId);
+    this.ledger = this.ledger.filter((l) => l.userId !== userId);
+    this.members = this.members.filter((m) => m.userId !== userId);
+    this.friendships.delete(userId);
+    for (const m of this.friendships.values()) m.delete(userId);
+    for (const [k, r] of this.rivals) if (r.a === userId || r.b === userId) this.rivals.delete(k);
+    for (const [k, r] of this.referralRows) if (k === userId || r.referrerId === userId) this.referralRows.delete(k);
+    for (const k of [...this.communityClaimRows]) if (k.startsWith(`${userId}|`)) this.communityClaimRows.delete(k);
+    for (const k of [...this.seasonAwardRows.keys()]) if (k.startsWith(`${userId}|`)) this.seasonAwardRows.delete(k);
+    for (const k of [...this.teamGoalClaimRows]) if (k.startsWith(`${userId}|`)) this.teamGoalClaimRows.delete(k);
+    this.teamMemberRows.delete(userId);
+    for (const [k, w] of this.webhookRows) if (w.userId === userId) this.webhookRows.delete(k);
+    for (const k of [...this.noticeKeys]) if (k.startsWith("remind:") && k.includes(`:${userId}:`)) this.noticeKeys.delete(k);
+    return existed;
+  }
+
   async enqueueOnce(key: string, _at: number, deliveries: WebhookDelivery[]): Promise<boolean> {
     if (this.noticeKeys.has(key)) return false;
     this.noticeKeys.add(key);

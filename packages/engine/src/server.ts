@@ -149,6 +149,7 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
           return send(200, await engine.getUser(id, { ...(timezone ? { timezone } : {}), ...withLocale }));
         }
         if (req.method === "PATCH") return send(200, await engine.updateUser(id, await readJson(req)));
+        if (req.method === "DELETE") return send(200, await engine.deleteUser(id));
       }
 
       if (req.method === "GET" && resource === "users" && id && sub === "events" && parts.length === 4) {
@@ -271,6 +272,9 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
       }
       if (req.method === "GET" && resource === "users" && id && sub === "achievements" && parts.length === 4) {
         return send(200, await engine.achievements(id, withLocale));
+      }
+      if (req.method === "GET" && resource === "users" && id && sub === "export" && parts.length === 4) {
+        return send(200, await engine.exportUser(id));
       }
       if (req.method === "GET" && resource === "users" && id && sub === "team" && parts.length === 4) {
         return send(200, await engine.userTeam(id));

@@ -906,6 +906,36 @@ const schemas = {
       nextCursor: nullable({ type: "string" }),
     },
   },
+  UserExport: {
+    type: "object",
+    required: ["exportedAt", "user", "events", "purchases", "friends", "team", "referrals"],
+    additionalProperties: false,
+    properties: {
+      exportedAt: { type: "string", format: "date-time" },
+      user: ref("UserProfile"),
+      events: ref("EventHistory/properties/events"),
+      purchases: { type: "array", items: ref("Purchase") },
+      friends: ref("FriendList/properties/friends"),
+      team: nullable({
+        type: "object",
+        required: ["id", "name", "joinedAt"],
+        additionalProperties: false,
+        properties: { id: { type: "string" }, name: { type: "string" }, joinedAt: { type: "string", format: "date-time" } },
+      }),
+      referrals: nullable({
+        type: "object",
+        required: ["referredBy", "referred"],
+        additionalProperties: false,
+        properties: { referredBy: nullable({ type: "string" }), referred: { type: "array", items: { type: "string" } } },
+      }),
+    },
+  },
+  Deleted: {
+    type: "object",
+    required: ["userId", "deleted"],
+    additionalProperties: false,
+    properties: { userId: { type: "string" }, deleted: { type: "boolean", description: "False if the user did not exist." } },
+  },
   ConfigPreview: {
     type: "object",
     required: ["users", "truncated", "levels", "achievements"],
@@ -1248,6 +1278,12 @@ export function openapiSpec(version: string) {
           requestBody: { required: true, content: json(ref("ProfilePatch")) },
           responses: { "200": ok("The updated user", ref("UserProfile")), ...authErrors },
         },
+        delete: {
+          operationId: "deleteUser",
+          summary: "Delete a user and everything about them",
+          description: "Right to erasure. Their points leave every leaderboard and league; friendships, rivalries and referrals involving them go on both sides. Cannot be undone.",
+          responses: { "200": ok("Whether the user existed", ref("Deleted")), ...authErrors },
+        },
       },
       "/v1/users/{userId}/events": {
         parameters: [userIdParam],
@@ -1444,6 +1480,14 @@ export function openapiSpec(version: string) {
           description: "Tiered badges list each tier. Hidden achievements have no name, description or progress until unlocked.",
           parameters: [localeParam],
           responses: { "200": ok("The user's achievements", ref("AchievementList")), ...authErrors },
+        },
+      },
+      "/v1/users/{userId}/export": {
+        parameters: [userIdParam],
+        get: {
+          operationId: "exportUser",
+          summary: "Everything stored about a user, in one document",
+          responses: { "200": ok("The export", ref("UserExport")), ...authErrors },
         },
       },
       "/v1/users/{userId}/team": {

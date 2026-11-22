@@ -724,6 +724,28 @@ export class PostgresStore implements Store {
     }));
   }
 
+  async deleteUser(userId: string): Promise<boolean> {
+    const t = this.t;
+    return this.db.transaction(async (q) => {
+      const { rows } = await q.query(`select id from ${t.users} where id = $1 for update`, [userId]);
+      if (rows.length === 0) return false;
+      // Children first, so foreign keys hold at every step.
+      for (const table of [
+        t.events, t.metrics, t.balances, t.ledger, t.streaks, t.achievements, t.leagueMembers, t.quests, t.inventory,
+        t.purchases, t.itemUses, t.boosts, t.calendars, t.communityRewards, t.seasonAwards, t.teamMembers,
+        t.teamGoalRewards, t.prestige, t.webhookDeliveries,
+      ]) {
+        await q.query(`delete from ${table} where user_id = $1`, [userId]);
+      }
+      await q.query(`delete from ${t.friends} where user_id = $1 or friend_id = $1`, [userId]);
+      await q.query(`delete from ${t.rivalries} where user_a = $1 or user_b = $1`, [userId]);
+      await q.query(`delete from ${t.referrals} where referred_id = $1 or referrer_id = $1`, [userId]);
+      await q.query(`delete from ${t.notices} where key like 'remind:%' and position(':' || $1 || ':' in key) > 0`, [userId]);
+      await q.query(`delete from ${t.users} where id = $1`, [userId]);
+      return true;
+    });
+  }
+
   async enqueueOnce(key: string, at: number, deliveries: WebhookDelivery[]): Promise<boolean> {
     const t = this.t;
     return this.db.transaction(async (q) => {

@@ -123,7 +123,7 @@ Things that would hurt early users if they were missing.
 - [ ] **Rate limiting** (S).
 - [ ] **CORS settings** (S).
 - [ ] **Anti-cheat** (M). Caps per event per day, minimum time between events, maximum values, flags for unusual activity.
-- [ ] **GDPR tools** (S). Delete a user and everything about them, export a user's data.
+- [x] **GDPR tools** (S). Delete a user and everything about them, export a user's data.
 - [ ] **Leaderboard rollups and caching** (M). Pre-summed totals so boards stay fast with millions of users.
 - [ ] **Optional Redis** (M). Sorted sets for very hot leaderboards.
 - [ ] **Ledger retention and compaction** (M). Roll old points rows into totals.

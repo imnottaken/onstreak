@@ -269,6 +269,10 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   await call("get", "/v1/teams/owls", "/v1/teams/{teamId}");
   await call("get", "/v1/teams/nope", "/v1/teams/{teamId}"); // 404
   await call("get", "/v1/users/asha/achievements", "/v1/users/{userId}/achievements");
+  await call("get", "/v1/users/asha/export", "/v1/users/{userId}/export");
+  await call("post", "/v1/events", "/v1/events", { userId: "eraseme", event: "lesson_completed" });
+  const erased = await call("delete", "/v1/users/eraseme", "/v1/users/{userId}");
+  assert.equal(erased.json.deleted, true);
   const toReverse = await call("post", "/v1/events", "/v1/events", { userId: "rev", event: "lesson_completed" });
   await call("post", `/v1/users/rev/events/${toReverse.json.eventId}/reverse`, "/v1/users/{userId}/events/{eventId}/reverse");
   await call("post", `/v1/users/rev/events/${toReverse.json.eventId}/reverse`, "/v1/users/{userId}/events/{eventId}/reverse"); // 409
