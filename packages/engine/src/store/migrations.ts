@@ -38,6 +38,7 @@ export interface Tables {
   teamMembers: string;
   teamGoalRewards: string;
   prestige: string;
+  webhookDeliveries: string;
 }
 
 export function tableNames(prefix: string): Tables {
@@ -68,6 +69,7 @@ export function tableNames(prefix: string): Tables {
     teamMembers: `${prefix}team_members`,
     teamGoalRewards: `${prefix}team_goal_rewards`,
     prestige: `${prefix}prestige`,
+    webhookDeliveries: `${prefix}webhook_deliveries`,
   };
 }
 
@@ -420,6 +422,28 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 21,
     name: "corrections",
     statements: (t) => [`alter table ${t.events} add column if not exists reversed_at timestamptz`],
+  },
+  {
+    version: 22,
+    name: "webhooks",
+    statements: (t) => [
+      // An outbox: rows are written in the same transaction as the event, then delivered.
+      `create table if not exists ${t.webhookDeliveries} (
+         id uuid primary key,
+         webhook_id text not null,
+         type text not null,
+         user_id text not null,
+         payload jsonb not null,
+         status text not null default 'pending',
+         attempts integer not null default 0,
+         next_attempt_at timestamptz not null,
+         last_error text,
+         created_at timestamptz not null,
+         delivered_at timestamptz
+       )`,
+      `create index if not exists ${t.prefix}webhook_due on ${t.webhookDeliveries} (next_attempt_at) where status = 'pending'`,
+      `create index if not exists ${t.prefix}webhook_log on ${t.webhookDeliveries} (created_at desc, id desc)`,
+    ],
   },
 ];
 

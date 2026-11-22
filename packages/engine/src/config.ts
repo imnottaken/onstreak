@@ -38,6 +38,30 @@ function translationsProblem(t: unknown): string | null {
   return null;
 }
 
+export const WEBHOOK_EVENT_TYPES = ["level.up", "achievement.unlocked", "streak.extended", "streak.broken", "quest.completed", "league.settled"] as const;
+export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
+
+/**
+ * Where to send signed notifications. Set `secret` directly, or `secretEnv`
+ * to read it from an environment variable (better: keep secrets out of
+ * config files).
+ */
+export interface WebhookRule {
+  id: string;
+  url: string;
+  /** Event types to send, or ["*"] for all. */
+  events: Array<WebhookEventType | "*">;
+  secret?: string;
+  secretEnv?: string;
+}
+
+export interface ResolvedWebhook {
+  id: string;
+  url: string;
+  events: Set<WebhookEventType>;
+  secret: string;
+}
+
 /** A test on one event property: equal to a value, one of a list, or within a range. */
 export type PropertyMatch = string | number | boolean | { in?: Array<string | number>; gte?: number; lte?: number };
 
@@ -443,6 +467,7 @@ export interface OnstreakConfig {
   calendars?: CalendarRule[];
   referrals?: ReferralConfig;
   communityGoals?: CommunityGoalRule[];
+  webhooks?: WebhookRule[];
   seasons?: SeasonRule[];
   teamGoals?: TeamGoalRule[];
   friends?: {
@@ -489,6 +514,7 @@ export interface ResolvedConfig {
   /** Null when referrals are not configured. */
   referrals: ReferralConfig | null;
   communityGoals: ResolvedCommunityGoal[];
+  webhooks: ResolvedWebhook[];
   seasons: ResolvedSeason[];
   teamGoals: TeamGoalRule[];
   friends: { max: number };
@@ -991,6 +1017,28 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     if (g.timezone !== undefined && !isValidTimeZone(g.timezone)) throw new ConfigError(`team goal "${g.id}" has unknown timezone "${g.timezone}"`);
   }
 
+  const webhooks: ResolvedWebhook[] = [];
+  uniqueIds("webhook", (input.webhooks ?? []).map((w) => w.id));
+  for (const w of input.webhooks ?? []) {
+    let url: URL | null = null;
+    try {
+      url = new URL(w.url);
+    } catch {
+      url = null;
+    }
+    if (!url || !["http:", "https:"].includes(url.protocol)) throw new ConfigError(`webhook "${w.id}" needs an http(s) url`);
+    if (!Array.isArray(w.events) || w.events.length === 0) throw new ConfigError(`webhook "${w.id}" needs events, e.g. ["level.up"] or ["*"]`);
+    for (const e of w.events) {
+      if (e !== "*" && !(WEBHOOK_EVENT_TYPES as readonly string[]).includes(e)) throw new ConfigError(`webhook "${w.id}" has unknown event "${e}" (known: ${WEBHOOK_EVENT_TYPES.join(", ")})`);
+    }
+    if ((w.secret === undefined) === (w.secretEnv === undefined)) throw new ConfigError(`webhook "${w.id}" needs secret or secretEnv, not both`);
+    const secret = w.secret ?? process.env[w.secretEnv!];
+    if (typeof secret !== "string" || secret.length < 16) {
+      throw new ConfigError(w.secretEnv ? `webhook "${w.id}": set ${w.secretEnv} to a secret of at least 16 characters` : `webhook "${w.id}" secret must be at least 16 characters`);
+    }
+    webhooks.push({ id: w.id, url: url.toString(), events: new Set(w.events.includes("*") ? WEBHOOK_EVENT_TYPES : (w.events as WebhookEventType[])), secret });
+  }
+
   const maxFriends = input.friends?.max ?? 1000;
   if (!Number.isInteger(maxFriends) || maxFriends < 1 || maxFriends > 100_000) {
     throw new ConfigError("friends.max must be a whole number from 1 to 100000");
@@ -1015,6 +1063,7 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     calendars,
     referrals,
     communityGoals,
+    webhooks,
     seasons,
     teamGoals,
     friends: { max: maxFriends },

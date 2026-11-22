@@ -71,6 +71,7 @@ The server migrates the schema on start. Set `ONSTREAK_AUTO_MIGRATE=false` to ma
 | `ONSTREAK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `ONSTREAK_LOG_FORMAT` | `json` | `pretty` for readable local logs |
 | `ONSTREAK_SHUTDOWN_TIMEOUT_MS` | `10000` | How long requests may finish on SIGTERM |
+| `ONSTREAK_WEBHOOK_INTERVAL_MS` | `2000` | How often the server sends due webhook deliveries (only with `webhooks` configured) |
 
 ## Configure
 
@@ -107,6 +108,7 @@ All `/v1` routes need `Authorization: Bearer <ONSTREAK_API_KEY>`. Every response
 | --- | --- |
 | `POST /v1/events` | Track an event: `{ userId, event, value?, timestamp?, timezone?, idempotencyKey?, properties? }`. `properties` are up to 20 strings, numbers or booleans that rules can filter on |
 | `POST /v1/config/preview` | Send a candidate config: see how many users' levels would go up or down, and per achievement who would unlock it on their next event or no longer qualify. Changes nothing |
+| `GET /v1/webhooks/deliveries?status=&limit=&cursor=` | Webhook deliveries, newest first, with attempts, the last error and the payload |
 | `POST /v1/events/batch` | Track up to 100 events in order: `{ events: [...] }`. Bad items are reported in place |
 | `GET /v1/users/:id?timezone=` | Profile, points, level, metrics, streak status (`done`, `pending`, `broken`) and achievements |
 | `PATCH /v1/users/:id` | Set `displayName`, `avatarUrl`, `metadata` (JSON, max 8 KB) or `timezone`. `null` clears a field |
@@ -158,7 +160,17 @@ Spending never lowers earned points. `points` on a user is what they earned (lev
 
 The full machine-readable description is served at `GET /openapi.json` (OpenAPI 3.1, no key needed), so you can generate a client for any language. Tests check every response against it, so it stays accurate.
 
-The SDK mirrors these: `track`, `previewConfig`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `calendars`, `communityGoals`, `seasons`, `seasonStandings`, `achievements`, `reverseEvent`, `revokeAchievement`, `prestige`, `saveTeam`, `team`, `addTeamMember`, `removeTeamMember`, `userTeam`, `teamLeaderboard`, `teamGoals`, `addReferral`, `referrals`, `store`, `purchase`, `purchases`, `useItem`, `refundPurchase`, `repairStreak`, `grantBoost`, `leaderboard`, `leaderboardHistory`, `streaksAtRisk`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
+The SDK mirrors these: `track`, `previewConfig`, `webhookDeliveries`, `trackBatch`, `getUser`, `updateUser`, `events`, `addFriend`, `removeFriend`, `friends`, `addRival`, `removeRival`, `rivals`, `quests`, `calendars`, `communityGoals`, `seasons`, `seasonStandings`, `achievements`, `reverseEvent`, `revokeAchievement`, `prestige`, `saveTeam`, `team`, `addTeamMember`, `removeTeamMember`, `userTeam`, `teamLeaderboard`, `teamGoals`, `addReferral`, `referrals`, `store`, `purchase`, `purchases`, `useItem`, `refundPurchase`, `repairStreak`, `grantBoost`, `leaderboard`, `leaderboardHistory`, `streaksAtRisk`, `league` and `health`. Errors are `OnstreakError` with `status`, `requestId` and, when the server gives one, `code`.
+
+## Webhooks
+
+Add `webhooks` to the config to be told when things happen:
+
+```json
+"webhooks": [{ "id": "app", "url": "https://example.com/onstreak", "events": ["level.up", "achievement.unlocked"], "secretEnv": "ONSTREAK_WEBHOOK_SECRET" }]
+```
+
+Event types: `level.up`, `achievement.unlocked`, `streak.extended`, `streak.broken`, `quest.completed`, `league.settled` (or `["*"]`). Deliveries are written in the same transaction as the event (an outbox), so they exist exactly when the event does, and the server sends them in the background. Each POST has a JSON body `{ id, type, createdAt, userId, eventId, data }` and the headers `onstreak-event`, `onstreak-delivery` and `onstreak-signature: t=<unix>,v1=<hex>` (HMAC-SHA256 of `t.body`). Check it with `verifyWebhookSignature(secret, rawBody, header)` from `@onstreak/engine`. Answer with any 2xx; anything else is retried with backoff (30 s, 1 min, 2 min, ... up to 6 h) and marked failed after 8 attempts. Several servers can share a database without sending anything twice.
 
 ## React components
 

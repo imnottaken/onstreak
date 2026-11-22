@@ -552,6 +552,30 @@ export function createClient(options: ClientOptions) {
     /** Take back an achievement, or one tier with "id#2". */
     revokeAchievement: (userId: string, achievementId: string) =>
       call<{ userId: string; achievementId: string; revoked: boolean }>("DELETE", `${user(userId)}/achievements/${encodeURIComponent(achievementId)}`),
+    /** Webhook deliveries, newest first: what was sent and why one failed. */
+    webhookDeliveries: (opts: { status?: "pending" | "delivered" | "failed"; limit?: number; cursor?: string } = {}) => {
+      const params = new URLSearchParams();
+      if (opts.status) params.set("status", opts.status);
+      if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+      if (opts.cursor) params.set("cursor", opts.cursor);
+      const qs = params.toString();
+      return call<{
+        deliveries: Array<{
+          id: string;
+          webhookId: string;
+          type: string;
+          userId: string;
+          status: "pending" | "delivered" | "failed";
+          attempts: number;
+          nextAttemptAt: string | null;
+          lastError: string | null;
+          createdAt: string;
+          deliveredAt: string | null;
+          payload: Record<string, unknown>;
+        }>;
+        nextCursor: string | null;
+      }>("GET", `/v1/webhooks/deliveries${qs ? `?${qs}` : ""}`);
+    },
     /** What a new config would change for existing users (changes nothing). */
     previewConfig: (config: Record<string, unknown>) =>
       call<{ users: number; truncated: boolean; levels: { up: number; down: number; same: number } | null; achievements: Record<string, { wouldUnlock: number; noLongerQualify: number }> }>(

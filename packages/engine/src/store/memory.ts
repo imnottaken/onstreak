@@ -25,6 +25,7 @@ import type {
   CalendarState,
   ReferralRecord,
   CommunityTotalQuery,
+  WebhookDelivery,
   TeamRecord,
   TeamMemberRecord,
   TeamScoreQuery,
@@ -82,6 +83,7 @@ export class MemoryStore implements Store {
   /** Keyed by "userId|goalId". */
   private communityClaimRows = new Set<string>();
   /** Keyed by "userId|seasonId". */
+  private webhookRows = new Map<string, WebhookDelivery>();
   private seasonAwardRows = new Map<string, { rank: number; claimedAt: number }>();
   private teamRows = new Map<string, TeamRecord>();
   /** Keyed by user id: a user is in at most one team. */
@@ -288,6 +290,9 @@ export class MemoryStore implements Store {
       },
       unlockedAchievements: async () => new Set(d.achievements.keys()),
       revokeAchievement: async (id) => d.achievements.delete(id),
+      enqueueWebhooks: async (rows) => {
+        for (const r of rows) this.webhookRows.set(r.id, structuredClone(r));
+      },
       getEvent: async (eventId) => {
         const e = d.events.get(eventId);
         if (!e) return null;
@@ -406,6 +411,30 @@ export class MemoryStore implements Store {
       .filter((e) => !before || e.ts < before.ts || (e.ts === before.ts && e.id < before.id))
       .slice(0, q.limit)
       .map((e) => ({ id: e.id, key: e.key, value: e.value, ts: e.ts, recordedAt: e.recordedAt, result: e.result, properties: e.properties ? { ...e.properties } : null, reversedAt: (e as { reversedAt?: number | null }).reversedAt ?? null }));
+  }
+
+  async claimWebhooks(now: number, limit: number, leaseMs: number): Promise<WebhookDelivery[]> {
+    const due = [...this.webhookRows.values()]
+      .filter((w) => w.status === "pending" && w.nextAttemptAt <= now)
+      .sort((a, b) => a.nextAttemptAt - b.nextAttemptAt || a.createdAt - b.createdAt)
+      .slice(0, limit);
+    for (const w of due) w.nextAttemptAt = now + leaseMs;
+    return due.map((w) => structuredClone(w));
+  }
+
+  async updateWebhook(id: string, patch: { status: WebhookDelivery["status"]; attempts: number; nextAttemptAt: number; lastError: string | null; deliveredAt: number | null }): Promise<void> {
+    const w = this.webhookRows.get(id);
+    if (w) Object.assign(w, patch);
+  }
+
+  async webhookDeliveries(q: { status?: WebhookDelivery["status"]; limit: number; before?: { ts: number; id: string } }): Promise<WebhookDelivery[]> {
+    const before = q.before;
+    return [...this.webhookRows.values()]
+      .filter((w) => !q.status || w.status === q.status)
+      .sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : -1))
+      .filter((w) => !before || w.createdAt < before.ts || (w.createdAt === before.ts && w.id < before.id))
+      .slice(0, q.limit)
+      .map((w) => structuredClone(w));
   }
 
   async userIds(afterUserId: string | null, limit: number): Promise<string[]> {

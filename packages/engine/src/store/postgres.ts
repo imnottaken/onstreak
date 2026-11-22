@@ -14,6 +14,7 @@ import type {
   ReferralRecord,
   EventProperties,
   CommunityTotalQuery,
+  WebhookDelivery,
   TeamRecord,
   TeamMemberRecord,
   TeamScoreQuery,
@@ -146,6 +147,22 @@ function rowToReferral(r: Record<string, unknown>): ReferralRecord {
     qualifiedAt: maybe(r.qualified_at),
     settledAt: maybe(r.settled_at),
     rewarded: Boolean(r.rewarded),
+  };
+}
+
+function rowToWebhook(r: Record<string, unknown>): WebhookDelivery {
+  return {
+    id: String(r.id),
+    webhookId: String(r.webhook_id),
+    type: String(r.type),
+    userId: String(r.user_id),
+    payload: json<Record<string, unknown>>(r.payload),
+    status: String(r.status) as WebhookDelivery["status"],
+    attempts: num(r.attempts),
+    nextAttemptAt: ms(r.next_attempt_at),
+    lastError: (r.last_error as string | null) ?? null,
+    createdAt: ms(r.created_at),
+    deliveredAt: r.delivered_at ? ms(r.delivered_at) : null,
   };
 }
 
@@ -495,6 +512,15 @@ export class PostgresStore implements Store {
         const { rows } = await q.query(`select achievement_id from ${t.achievements} where user_id = $1`, [userId]);
         return new Set(rows.map((r) => String(r.achievement_id)));
       },
+      async enqueueWebhooks(rows) {
+        for (const w of rows) {
+          await q.query(
+            `insert into ${t.webhookDeliveries} (id, webhook_id, type, user_id, payload, status, attempts, next_attempt_at, created_at)
+             values ($1, $2, $3, $4, $5, 'pending', 0, $6, $7)`,
+            [w.id, w.webhookId, w.type, w.userId, JSON.stringify(w.payload), new Date(w.nextAttemptAt).toISOString(), new Date(w.createdAt).toISOString()],
+          );
+        }
+      },
       async revokeAchievement(id) {
         const { rows } = await q.query(`delete from ${t.achievements} where user_id = $1 and achievement_id = $2 returning achievement_id`, [userId, id]);
         return rows.length > 0;
@@ -696,6 +722,42 @@ export class PostgresStore implements Store {
       properties: r.properties ? json<EventProperties>(r.properties) : null,
       reversedAt: r.reversed_at ? ms(r.reversed_at) : null,
     }));
+  }
+
+  async claimWebhooks(now: number, limit: number, leaseMs: number): Promise<WebhookDelivery[]> {
+    const t = this.t;
+    const { rows } = await this.db.query(
+      `update ${t.webhookDeliveries} set next_attempt_at = $2
+       where id in (
+         select id from ${t.webhookDeliveries}
+         where status = 'pending' and next_attempt_at <= $1
+         order by next_attempt_at, created_at
+         limit $3
+         for update skip locked
+       )
+       returning *`,
+      [new Date(now).toISOString(), new Date(now + leaseMs).toISOString(), limit],
+    );
+    return rows.map(rowToWebhook);
+  }
+
+  async updateWebhook(id: string, p: { status: WebhookDelivery["status"]; attempts: number; nextAttemptAt: number; lastError: string | null; deliveredAt: number | null }): Promise<void> {
+    await this.db.query(
+      `update ${this.t.webhookDeliveries} set status = $2, attempts = $3, next_attempt_at = $4, last_error = $5, delivered_at = $6 where id = $1`,
+      [id, p.status, p.attempts, new Date(p.nextAttemptAt).toISOString(), p.lastError, p.deliveredAt === null ? null : new Date(p.deliveredAt).toISOString()],
+    );
+  }
+
+  async webhookDeliveries(q: { status?: WebhookDelivery["status"]; limit: number; before?: { ts: number; id: string } }): Promise<WebhookDelivery[]> {
+    const { rows } = await this.db.query(
+      `select * from ${this.t.webhookDeliveries}
+       where ($1::text is null or status = $1)
+         and ($2::timestamptz is null or (created_at, id) < ($2::timestamptz, $3::uuid))
+       order by created_at desc, id desc
+       limit $4`,
+      [q.status ?? null, q.before ? new Date(q.before.ts).toISOString() : null, q.before?.id ?? null, q.limit],
+    );
+    return rows.map(rowToWebhook);
   }
 
   async userIds(afterUserId: string | null, limit: number): Promise<string[]> {

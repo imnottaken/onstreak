@@ -119,6 +119,12 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
       if (parts[0] !== "v1") throw new HttpError(404, "not found");
       const [, resource, id, sub, subId, subSub, subSubId] = parts;
 
+      if (req.method === "GET" && resource === "webhooks" && id === "deliveries" && parts.length === 3) {
+        const limit = intParam(url, "limit");
+        const status = url.searchParams.get("status") ?? undefined;
+        const cursor = url.searchParams.get("cursor") ?? undefined;
+        return send(200, await engine.webhookDeliveries({ ...(limit !== undefined ? { limit } : {}), ...(status ? { status } : {}), ...(cursor ? { cursor } : {}) }));
+      }
       if (req.method === "POST" && resource === "config" && id === "preview" && parts.length === 3) {
         return send(200, await engine.previewConfig(await readJson(req)));
       }

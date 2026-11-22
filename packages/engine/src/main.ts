@@ -39,6 +39,27 @@ async function serve(env: NodeJS.ProcessEnv): Promise<void> {
     logger.info(`onstreak listening on http://localhost:${actual}`, { port: actual });
   });
 
+  // Deliver webhooks in the background. Several servers can share a database: claims never overlap.
+  let webhookTimer: NodeJS.Timeout | null = null;
+  if (engine.config.webhooks.length > 0) {
+    const every = Number(env.ONSTREAK_WEBHOOK_INTERVAL_MS ?? 2000);
+    let busy = false;
+    webhookTimer = setInterval(() => {
+      if (busy) return;
+      busy = true;
+      engine
+        .deliverWebhooks()
+        .then((r) => {
+          if (r.attempted > 0) logger.info("webhooks", r);
+        })
+        .catch((err) => logger.error("webhook delivery failed", { err }))
+        .finally(() => {
+          busy = false;
+        });
+    }, every);
+    logger.info("webhook delivery on", { webhooks: engine.config.webhooks.length, everyMs: every });
+  }
+
   let stopping = false;
   const stop = async (signal: string) => {
     if (stopping) {
@@ -48,6 +69,7 @@ async function serve(env: NodeJS.ProcessEnv): Promise<void> {
     stopping = true;
     const timeoutMs = Number(env.ONSTREAK_SHUTDOWN_TIMEOUT_MS ?? 10_000);
     logger.info("shutting down", { signal, timeoutMs });
+    if (webhookTimer) clearInterval(webhookTimer);
     const { forced } = await server.shutdown({ timeoutMs });
     logger.info("stopped", { forced });
     process.exit(0);

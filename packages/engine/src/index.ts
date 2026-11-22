@@ -50,10 +50,13 @@ export type {
   StreaksAtRisk,
   ReversalResult,
   ConfigPreview,
+  WebhookDeliveryList,
 } from "./engine.js";
+export { signWebhook, verifyWebhookSignature, webhookBackoffMs, MAX_WEBHOOK_ATTEMPTS } from "./webhooks.js";
 export { FriendLimitError, RivalLimitError, TeamFullError, AlreadyInTeamError } from "./store/types.js";
 export { zoneFor, outcomeFor, nextTier, currentRound, roundFromKey, nextRoundKey } from "./leagues.js";
 export type { LeagueOutcome, LeagueZone, LeagueRound, RoundRule } from "./leagues.js";
+export { WEBHOOK_EVENT_TYPES } from "./config.js";
 export { resolveConfig, levelFor, ConfigError, MAX_BOOST_MINUTES, questRunsAt, questGoals, achievementLevels, localize, isLocale } from "./config.js";
 export type {
   OnstreakConfig,
@@ -87,6 +90,9 @@ export type {
   AchievementLeaf,
   AchievementWindow,
   Translations,
+  WebhookRule,
+  ResolvedWebhook,
+  WebhookEventType,
   AchievementLevel,
 } from "./config.js";
 export { initialStreak, recordActivity, streakStatus } from "./streaks.js";
@@ -122,6 +128,7 @@ export type {
   CalendarState,
   ReferralRecord,
   CommunityTotalQuery,
+  WebhookDelivery,
   TeamRecord,
   TeamMemberRecord,
   TeamScoreQuery,

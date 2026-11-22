@@ -79,6 +79,14 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   const preview = await call("post", "/v1/config/preview", "/v1/config/preview", { ...config, levels: { currency: "xp", thresholds: [5] } });
   assert.ok(preview.json.users >= 1);
   await call("post", "/v1/config/preview", "/v1/config/preview", { currencies: [] }); // 400
+  await call("get", "/v1/webhooks/deliveries?limit=5", "/v1/webhooks/deliveries");
+  await call("get", "/v1/webhooks/deliveries?status=lost", "/v1/webhooks/deliveries"); // 400
+  const hooked = await serve(t, new MemoryStore(), { ...config, webhooks: [{ id: "h", url: "https://example.test/h", events: ["*"], secret: "whsec_0123456789abcdef" }] });
+  await fetch(`${hooked.base}/v1/events`, { method: "POST", headers: { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" }, body: JSON.stringify({ userId: "w", event: "lesson_completed" }) });
+  const logRes = await fetch(`${hooked.base}/v1/webhooks/deliveries`, { headers: { authorization: `Bearer ${API_KEY}` } });
+  const log = await logRes.json();
+  c.check("get", "/v1/webhooks/deliveries", logRes.status, log);
+  assert.equal(log.deliveries.length, 2);
 
   await call("patch", "/v1/users/asha", "/v1/users/{userId}", { displayName: "Asha", avatarUrl: "https://example.com/a.png", metadata: { a: 1 } });
   await call("patch", "/v1/users/asha", "/v1/users/{userId}", { nickname: "x" }); // 400

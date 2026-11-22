@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, type StreakRule, matchesWhere, localize, isLocale, boostSpecProblem, achievementLevels, isLeaf, type AchievementCondition, type AchievementLeaf, questGoals, questRunsAt, type QuestGoal } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { breakPeriod, missedBetween, shiftPeriod, streakPeriodKey, streakPeriodsBetween, initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
-import { AlreadyInTeamError, FriendLimitError, RivalLimitError, TeamFullError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type ReferralRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
+import { AlreadyInTeamError, FriendLimitError, RivalLimitError, TeamFullError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type ReferralRecord, type PurchaseRecord, type Store, type UserTx, type WebhookDelivery } from "./store/types.js";
+import { MAX_WEBHOOK_ATTEMPTS, signWebhook, webhookBackoffMs } from "./webhooks.js";
+import type { WebhookEventType } from "./config.js";
 import { addDays, isValidTimeZone, leaderboardWindow, periodKey, periodsBetween, startOfDay, type LeaderboardPeriod } from "./time.js";
 
 export class EngineError extends Error {
@@ -165,6 +167,25 @@ export interface ReversalResult {
   points: Record<string, number>;
   /** Totals after the reversal. */
   totals: Record<string, number>;
+}
+
+export interface WebhookDeliveryList {
+  deliveries: Array<{
+    id: string;
+    webhookId: string;
+    type: string;
+    userId: string;
+    status: "pending" | "delivered" | "failed";
+    attempts: number;
+    /** When the next attempt is due (pending only). */
+    nextAttemptAt: string | null;
+    lastError: string | null;
+    createdAt: string;
+    deliveredAt: string | null;
+    /** The JSON body that is (or was) sent. */
+    payload: Record<string, unknown>;
+  }>;
+  nextCursor: string | null;
 }
 
 export interface ConfigPreview {
@@ -1014,6 +1035,7 @@ export class Engine {
       }
 
       const result: TrackResult = { eventId, userId, event, value, duplicate: false, points, level, streaks, achievements, leagues, quests, calendars, referral, multipliers };
+      if (config.webhooks.length > 0) await tx.enqueueWebhooks(this.webhooksFor(result, recordedAt));
       await tx.setEventResult(eventId, result);
       return result;
     });
@@ -1117,6 +1139,122 @@ export class Engine {
           ...(a.rewards ? { rewards: a.rewards.map((r) => ({ ...r })) } : {}),
         };
       }),
+    };
+  }
+
+  /** Outbox rows for what an event did, one per webhook that wants each kind. */
+  private webhooksFor(r: TrackResult, at: number): WebhookDelivery[] {
+    const notes: Array<{ type: WebhookEventType; data: Record<string, unknown> }> = [];
+    if (r.level?.leveledUp) notes.push({ type: "level.up", data: { previous: r.level.previous, current: r.level.current } });
+    for (const a of r.achievements) notes.push({ type: "achievement.unlocked", data: { ...a } });
+    for (const [streak, s] of Object.entries(r.streaks)) {
+      if (s.reset) notes.push({ type: "streak.broken", data: { streak } });
+      if (s.extended) notes.push({ type: "streak.extended", data: { streak, current: s.current, longest: s.longest } });
+    }
+    for (const [quest, q] of Object.entries(r.quests)) if (q.completed) notes.push({ type: "quest.completed", data: { quest, rewards: q.rewards } });
+    for (const [league, l] of Object.entries(r.leagues)) if (l.joined && l.previous) notes.push({ type: "league.settled", data: { league, ...l.previous } });
+    const rows: WebhookDelivery[] = [];
+    for (const n of notes) {
+      for (const hook of this.config.webhooks) {
+        if (!hook.events.has(n.type)) continue;
+        const id = randomUUID();
+        rows.push({
+          id,
+          webhookId: hook.id,
+          type: n.type,
+          userId: r.userId,
+          payload: { id, type: n.type, createdAt: new Date(at).toISOString(), userId: r.userId, eventId: r.eventId, data: n.data },
+          status: "pending",
+          attempts: 0,
+          nextAttemptAt: at,
+          lastError: null,
+          createdAt: at,
+          deliveredAt: null,
+        });
+      }
+    }
+    return rows;
+  }
+
+  /**
+   * Send due webhook deliveries once. Run it on a timer (the server does, every
+   * few seconds). Each POST carries `onstreak-signature`, `onstreak-event` and
+   * `onstreak-delivery` headers; a 2xx answer counts as delivered, anything
+   * else is retried with backoff and marked failed after 8 attempts.
+   */
+  async deliverWebhooks(options: { limit?: number; timeoutMs?: number; fetch?: typeof fetch } = {}): Promise<{ attempted: number; delivered: number; failed: number }> {
+    const send = options.fetch ?? fetch;
+    const timeoutMs = options.timeoutMs ?? 10_000;
+    const now = this.now();
+    const due = await this.store.claimWebhooks(now, options.limit ?? 50, timeoutMs + 60_000);
+    let delivered = 0;
+    let failed = 0;
+    await Promise.all(
+      due.map(async (d) => {
+        const hook = this.config.webhooks.find((w) => w.id === d.webhookId);
+        const attempts = d.attempts + 1;
+        if (!hook) {
+          failed++;
+          await this.store.updateWebhook(d.id, { status: "failed", attempts, nextAttemptAt: now, lastError: "webhook is no longer configured", deliveredAt: null });
+          return;
+        }
+        const body = JSON.stringify(d.payload);
+        let error: string | null = null;
+        try {
+          const res = await send(hook.url, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "user-agent": "onstreak-webhooks",
+              "onstreak-event": d.type,
+              "onstreak-delivery": d.id,
+              "onstreak-signature": signWebhook(hook.secret, body, Math.floor(this.now() / 1000)),
+            },
+            body,
+            signal: AbortSignal.timeout(timeoutMs),
+          });
+          if (!res.ok) error = `HTTP ${res.status}`;
+        } catch (err) {
+          error = err instanceof Error ? err.message : String(err);
+        }
+        if (error === null) {
+          delivered++;
+          await this.store.updateWebhook(d.id, { status: "delivered", attempts, nextAttemptAt: now, lastError: null, deliveredAt: this.now() });
+        } else {
+          const gaveUp = attempts >= MAX_WEBHOOK_ATTEMPTS;
+          if (gaveUp) failed++;
+          await this.store.updateWebhook(d.id, { status: gaveUp ? "failed" : "pending", attempts, nextAttemptAt: now + webhookBackoffMs(attempts), lastError: error.slice(0, 500), deliveredAt: null });
+        }
+      }),
+    );
+    return { attempted: due.length, delivered, failed };
+  }
+
+  /** Webhook deliveries, newest first: what was sent, when, and why one failed. */
+  async webhookDeliveries(options: { status?: string; limit?: number; cursor?: string } = {}): Promise<WebhookDeliveryList> {
+    const status = options.status;
+    if (status !== undefined && !["pending", "delivered", "failed"].includes(status)) throw new EngineError('status must be "pending", "delivered" or "failed"');
+    const limit = options.limit ?? 20;
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) throw new EngineError(`limit must be a whole number from 1 to ${MAX_LIMIT}`);
+    const before = options.cursor ? decodeCursor(options.cursor) : undefined;
+    const rows = await this.store.webhookDeliveries({ ...(status ? { status: status as WebhookDelivery["status"] } : {}), limit: limit + 1, ...(before ? { before } : {}) });
+    const page = rows.slice(0, limit);
+    const last = page[page.length - 1];
+    return {
+      deliveries: page.map((d) => ({
+        id: d.id,
+        webhookId: d.webhookId,
+        type: d.type,
+        userId: d.userId,
+        status: d.status,
+        attempts: d.attempts,
+        nextAttemptAt: d.status === "pending" ? new Date(d.nextAttemptAt).toISOString() : null,
+        lastError: d.lastError,
+        createdAt: new Date(d.createdAt).toISOString(),
+        deliveredAt: d.deliveredAt === null ? null : new Date(d.deliveredAt).toISOString(),
+        payload: d.payload,
+      })),
+      nextCursor: rows.length > limit && last ? encodeCursor({ ts: last.createdAt, id: last.id }) : null,
     };
   }
 

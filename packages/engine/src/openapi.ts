@@ -877,6 +877,35 @@ const schemas = {
     additionalProperties: false,
     properties: { userId: { type: "string" }, achievementId: { type: "string" }, revoked: { type: "boolean" } },
   },
+  WebhookDeliveryList: {
+    type: "object",
+    required: ["deliveries", "nextCursor"],
+    additionalProperties: false,
+    properties: {
+      deliveries: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id", "webhookId", "type", "userId", "status", "attempts", "nextAttemptAt", "lastError", "createdAt", "deliveredAt", "payload"],
+          additionalProperties: false,
+          properties: {
+            id: { type: "string", format: "uuid" },
+            webhookId: { type: "string" },
+            type: { type: "string" },
+            userId: { type: "string" },
+            status: { enum: ["pending", "delivered", "failed"] },
+            attempts: { type: "integer", minimum: 0 },
+            nextAttemptAt: nullable({ type: "string", format: "date-time" }),
+            lastError: nullable({ type: "string" }),
+            createdAt: { type: "string", format: "date-time" },
+            deliveredAt: nullable({ type: "string", format: "date-time" }),
+            payload: { type: "object" },
+          },
+        },
+      },
+      nextCursor: nullable({ type: "string" }),
+    },
+  },
   ConfigPreview: {
     type: "object",
     required: ["users", "truncated", "levels", "achievements"],
@@ -1173,6 +1202,18 @@ export function openapiSpec(version: string) {
           summary: "Track an event",
           requestBody: { required: true, content: json(ref("TrackInput")) },
           responses: { "200": ok("What the event awarded", ref("TrackResult")), ...authErrors },
+        },
+      },
+      "/v1/webhooks/deliveries": {
+        get: {
+          operationId: "webhookDeliveries",
+          summary: "Webhook deliveries, newest first",
+          parameters: [
+            limitParam(),
+            { name: "status", in: "query", schema: { enum: ["pending", "delivered", "failed"] } },
+            { name: "cursor", in: "query", schema: { type: "string" }, description: "nextCursor from the previous page." },
+          ],
+          responses: { "200": ok("A page of deliveries", ref("WebhookDeliveryList")), ...authErrors },
         },
       },
       "/v1/config/preview": {

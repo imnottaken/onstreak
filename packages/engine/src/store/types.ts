@@ -51,6 +51,20 @@ export interface StoredEvent {
 
 export type EventProperties = Record<string, string | number | boolean>;
 
+export interface WebhookDelivery {
+  id: string;
+  webhookId: string;
+  type: string;
+  userId: string;
+  payload: Record<string, unknown>;
+  status: "pending" | "delivered" | "failed";
+  attempts: number;
+  nextAttemptAt: number;
+  lastError: string | null;
+  createdAt: number;
+  deliveredAt: number | null;
+}
+
 /** A friend, with what others may see about them. */
 export interface FriendRecord extends PublicProfile {
   userId: string;
@@ -211,6 +225,8 @@ export interface UserTx {
   unlock(id: string, ts: number): Promise<void>;
   /** Remove an unlocked achievement (or tier key). Returns false if it was not unlocked. */
   revokeAchievement(id: string): Promise<boolean>;
+  /** Queue webhook deliveries in this transaction, so they exist exactly when the event does. */
+  enqueueWebhooks(deliveries: WebhookDelivery[]): Promise<void>;
   /** One of this user's events, or null. */
   getEvent(eventId: string): Promise<(EventRecord & { reversedAt: number | null }) | null>;
   markReversed(eventId: string, at: number): Promise<void>;
@@ -348,6 +364,14 @@ export interface Store {
   /** A user's progress on these quest periods. Periods never started are left out. */
   quests(userId: string, keys: Array<{ questId: string; periodKey: string }>): Promise<QuestProgress[]>;
   communityTotal(query: CommunityTotalQuery): Promise<number>;
+  /**
+   * Take up to `limit` pending deliveries due by `now` and push their next
+   * attempt to `now + leaseMs`, so concurrent workers never send one twice.
+   */
+  claimWebhooks(now: number, limit: number, leaseMs: number): Promise<WebhookDelivery[]>;
+  updateWebhook(id: string, patch: { status: WebhookDelivery["status"]; attempts: number; nextAttemptAt: number; lastError: string | null; deliveredAt: number | null }): Promise<void>;
+  /** Deliveries newest first, optionally only one status. */
+  webhookDeliveries(query: { status?: WebhookDelivery["status"]; limit: number; before?: { ts: number; id: string } }): Promise<WebhookDelivery[]>;
   /** User ids in order, after `afterUserId`. */
   userIds(afterUserId: string | null, limit: number): Promise<string[]>;
   /** Users with a running streak (current > 0), by user id after `afterUserId`, with their saved time zone. */
