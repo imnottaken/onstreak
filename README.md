@@ -71,6 +71,9 @@ The server migrates the schema on start. Set `ONSTREAK_AUTO_MIGRATE=false` to ma
 | `ONSTREAK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `ONSTREAK_LOG_FORMAT` | `json` | `pretty` for readable local logs |
 | `ONSTREAK_SHUTDOWN_TIMEOUT_MS` | `10000` | How long requests may finish on SIGTERM |
+| `ONSTREAK_RATE_LIMIT_PER_MINUTE` | off | Limit each client (by IP) to this many API requests a minute; over it, 429 with `retry-after`. Health checks are never limited |
+| `ONSTREAK_TRUST_PROXY` | `false` | With `true`, tell clients apart by the first `x-forwarded-for` address (only behind a proxy you control) |
+| `ONSTREAK_CORS_ORIGINS` | none | Comma-separated origins allowed to call the API from a browser, or `*` |
 | `ONSTREAK_SCHEDULER_INTERVAL_MS` | `60000` | How often the server runs scheduled jobs (streak reminders, season ends; only with `webhooks` configured) |
 | `ONSTREAK_WEBHOOK_INTERVAL_MS` | `2000` | How often the server sends due webhook deliveries (only with `webhooks` configured) |
 

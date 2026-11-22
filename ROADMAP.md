@@ -120,8 +120,8 @@ Things that would hurt early users if they were missing.
 
 - [ ] **Multiple and scoped API keys** (M). Read-only keys, key rotation.
 - [ ] **Signed user tokens for browsers and apps** (M). Short-lived tokens so a client can read only its own user, without exposing the API key.
-- [ ] **Rate limiting** (S).
-- [ ] **CORS settings** (S).
+- [x] **Rate limiting** (S).
+- [x] **CORS settings** (S).
 - [ ] **Anti-cheat** (M). Caps per event per day, minimum time between events, maximum values, flags for unusual activity.
 - [x] **GDPR tools** (S). Delete a user and everything about them, export a user's data.
 - [ ] **Leaderboard rollups and caching** (M). Pre-summed totals so boards stay fast with millions of users.

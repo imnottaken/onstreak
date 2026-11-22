@@ -134,7 +134,7 @@ export type {
   TeamMemberRecord,
   TeamScoreQuery,
 } from "./store/types.js";
-export { createHandler, createOnstreakServer } from "./server.js";
+export { createHandler, createOnstreakServer, RateLimiter } from "./server.js";
 export type { ServerOptions, OnstreakServer } from "./server.js";
 export { createLogger, silentLogger, LOG_LEVELS } from "./logger.js";
 export type { Logger, LogLevel, LogFields, LoggerOptions } from "./logger.js";

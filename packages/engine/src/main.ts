@@ -32,7 +32,15 @@ async function serve(env: NodeJS.ProcessEnv): Promise<void> {
 
   const engine = new Engine(config, opened.store);
   const port = Number(env.PORT ?? 8787);
-  const server = createOnstreakServer(engine, { apiKey, logger });
+  const perMinute = env.ONSTREAK_RATE_LIMIT_PER_MINUTE ? Number(env.ONSTREAK_RATE_LIMIT_PER_MINUTE) : null;
+  if (perMinute !== null && !(Number.isFinite(perMinute) && perMinute > 0)) throw new CliError("ONSTREAK_RATE_LIMIT_PER_MINUTE must be a positive number");
+  const corsOrigins = (env.ONSTREAK_CORS_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const server = createOnstreakServer(engine, {
+    apiKey,
+    logger,
+    ...(perMinute !== null ? { rateLimit: { perMinute, trustProxy: env.ONSTREAK_TRUST_PROXY === "true" } } : {}),
+    ...(corsOrigins.length ? { corsOrigins } : {}),
+  });
   server.listen(port, () => {
     const address = server.address();
     const actual = typeof address === "object" && address ? address.port : port;

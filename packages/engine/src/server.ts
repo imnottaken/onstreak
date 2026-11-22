@@ -15,6 +15,43 @@ export interface ServerOptions {
   logger?: Logger;
   /** How long the database check in /health may take. Default 2000 ms. */
   healthTimeoutMs?: number;
+  /**
+   * Limit each client to `perMinute` API requests (a token bucket that refills
+   * steadily, allowing bursts up to `burst`, default perMinute). Clients are
+   * told apart by IP, or by the first x-forwarded-for address with
+   * `trustProxy`. Over the limit: 429 with retry-after. Default: no limit.
+   */
+  rateLimit?: { perMinute: number; burst?: number; trustProxy?: boolean };
+  /** Origins allowed to call the API from a browser ("*" for any). Default: none (no CORS headers). */
+  corsOrigins?: string[];
+}
+
+/** A token bucket per client key. Old idle buckets are dropped as it grows. */
+export class RateLimiter {
+  private buckets = new Map<string, { tokens: number; at: number }>();
+  constructor(
+    private readonly perMinute: number,
+    private readonly burst: number = perMinute,
+  ) {
+    if (!(perMinute > 0) || !(burst >= 1)) throw new Error("rate limit needs perMinute > 0 and burst >= 1");
+  }
+
+  /** Take one token. Returns 0 if allowed, else the seconds to wait. */
+  take(key: string, now = Date.now()): number {
+    const rate = this.perMinute / 60_000;
+    const b = this.buckets.get(key) ?? { tokens: this.burst, at: now };
+    b.tokens = Math.min(this.burst, b.tokens + (now - b.at) * rate);
+    b.at = now;
+    this.buckets.set(key, b);
+    if (this.buckets.size > 50_000) {
+      for (const [k, v] of this.buckets) if (now - v.at > 600_000) this.buckets.delete(k);
+    }
+    if (b.tokens >= 1) {
+      b.tokens -= 1;
+      return 0;
+    }
+    return Math.ceil((1 - b.tokens) / rate / 1000);
+  }
 }
 
 class HttpError extends Error {
@@ -73,6 +110,8 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
   const logger = options.logger ?? silentLogger;
   const healthTimeoutMs = options.healthTimeoutMs ?? 2000;
   const spec = openapiSpec(packageVersion());
+  const limiter = options.rateLimit ? new RateLimiter(options.rateLimit.perMinute, options.rateLimit.burst) : null;
+  const corsOrigins = options.corsOrigins ?? [];
 
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const started = process.hrtime.bigint();
@@ -80,9 +119,22 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
     const requestId = typeof incoming === "string" && REQUEST_ID.test(incoming) ? incoming : randomUUID();
     const url = new URL(req.url ?? "/", "http://localhost");
 
+    const origin = typeof req.headers.origin === "string" ? req.headers.origin : null;
+    const allowOrigin = origin && corsOrigins.length > 0 ? (corsOrigins.includes("*") ? "*" : corsOrigins.includes(origin) ? origin : null) : null;
+    const cors: Record<string, string> = allowOrigin
+      ? {
+          "access-control-allow-origin": allowOrigin,
+          "access-control-expose-headers": "x-request-id, retry-after",
+          ...(allowOrigin !== "*" ? { vary: "origin" } : {}),
+        }
+      : {};
+    const extraHeaders: Record<string, string> = {};
+
     const send = (status: number, body: unknown) => {
       const json = JSON.stringify(body);
       res.writeHead(status, {
+        ...cors,
+        ...extraHeaders,
         "content-type": "application/json; charset=utf-8",
         "content-length": Buffer.byteLength(json),
         "x-request-id": requestId,
@@ -114,7 +166,29 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
 
       if (req.method === "GET" && url.pathname === "/openapi.json") return send(200, spec);
 
+      if (req.method === "OPTIONS") {
+        // CORS preflight. Without an allowed origin, browsers block the call.
+        res.writeHead(204, {
+          ...cors,
+          ...(allowOrigin
+            ? { "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE", "access-control-allow-headers": "authorization, content-type, x-request-id", "access-control-max-age": "600" }
+            : {}),
+          "x-request-id": requestId,
+        });
+        res.end();
+        return;
+      }
+
       if (state.shuttingDown) throw new HttpError(503, "server is shutting down");
+      if (limiter) {
+        const forwarded = options.rateLimit?.trustProxy ? String(req.headers["x-forwarded-for"] ?? "").split(",")[0]!.trim() : "";
+        const client = forwarded || req.socket.remoteAddress || "unknown";
+        const wait = limiter.take(client);
+        if (wait > 0) {
+          extraHeaders["retry-after"] = String(wait);
+          throw new HttpError(429, "too many requests, slow down");
+        }
+      }
       if (!authorized(req, options.apiKey)) throw new HttpError(401, "missing or wrong API key");
       if (parts[0] !== "v1") throw new HttpError(404, "not found");
       const [, resource, id, sub, subId, subSub, subSubId] = parts;

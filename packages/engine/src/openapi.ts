@@ -1211,7 +1211,11 @@ const schemas = {
 };
 
 export function openapiSpec(version: string) {
-  const authErrors = { "400": errorResponse("Invalid input"), "401": errorResponse("Missing or wrong API key") };
+  const authErrors = {
+    "400": errorResponse("Invalid input"),
+    "401": errorResponse("Missing or wrong API key"),
+    "429": errorResponse("Too many requests (when the server has a rate limit); see the retry-after header"),
+  };
   return {
     openapi: "3.1.0",
     info: {
