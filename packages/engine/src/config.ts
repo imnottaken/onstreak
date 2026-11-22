@@ -26,6 +26,10 @@ export interface StreakRule {
    * they start a new one, optionally for a price taken from their wallet.
    */
   repair?: { withinHours: number; cost?: { currency: string; amount: number } };
+  /** A period only counts once the event's values add up to this ("at least 3 lessons a day"). Default: any activity. */
+  minimum?: number;
+  /** Daily streaks only: Saturdays and Sundays are never counted as missed (activity on them still counts). */
+  skipWeekends?: boolean;
 }
 
 export type AchievementCondition =
@@ -352,6 +356,9 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
       }
       if ((f.start ?? 0) > (f.max ?? 0)) throw new ConfigError(`streak "${s.id}" freezes.start cannot exceed freezes.max`);
     }
+    if (s.minimum !== undefined && !(typeof s.minimum === "number" && Number.isFinite(s.minimum) && s.minimum > 0)) throw new ConfigError(`streak "${s.id}" minimum must be a positive number`);
+    if (s.skipWeekends !== undefined && typeof s.skipWeekends !== "boolean") throw new ConfigError(`streak "${s.id}" skipWeekends must be true or false`);
+    if (s.skipWeekends && s.period !== "daily") throw new ConfigError(`streak "${s.id}" skipWeekends only works with daily streaks`);
     const repair = s.repair as { withinHours?: unknown; cost?: { currency?: unknown; amount?: unknown } } | undefined;
     if (repair !== undefined) {
       if (!repair || typeof repair.withinHours !== "number" || !(repair.withinHours > 0) || repair.withinHours > 720) {

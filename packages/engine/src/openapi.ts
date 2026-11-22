@@ -82,6 +82,7 @@ const schemas = {
           extended: { type: "boolean" },
           freezesUsed: { type: "integer" },
           reset: { type: "boolean" },
+          progress: { type: "number", description: "This period's total so far, for streaks with a minimum." },
         },
       }),
       achievements: {
@@ -551,6 +552,7 @@ const schemas = {
           lastPeriod: nullable({ type: "string" }),
           status: { enum: ["none", "done", "pending", "broken"] },
           repairableUntil: { type: "string", format: "date-time", description: "Set while a broken streak can still be repaired." },
+          progress: { type: "number", description: "This period's total so far, for streaks with a minimum." },
         },
       }),
       achievements: {

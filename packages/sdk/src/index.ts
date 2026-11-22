@@ -17,7 +17,7 @@ export interface TrackResult {
   duplicate: boolean;
   points: Record<string, { awarded: number; total: number }>;
   level: { current: number; previous: number; leveledUp: boolean } | null;
-  streaks: Record<string, { current: number; longest: number; freezes: number; extended: boolean; freezesUsed: number; reset: boolean }>;
+  streaks: Record<string, { current: number; longest: number; freezes: number; extended: boolean; freezesUsed: number; reset: boolean; progress?: number }>;
   achievements: Array<{ id: string; name: string; description?: string }>;
   leagues: Record<string, { tier: string; group: number; joined: boolean; previous: LeaguePrevious | null }>;
   /** Quests this event moved forward. Rewards of a quest it completed are already in `points`. */
@@ -81,7 +81,7 @@ export interface UserProfile {
   level: { current: number; points: number; startsAt: number; nextAt: number | null } | null;
   metrics: Record<string, number>;
   /** `repairableUntil` is set while a broken streak can still be repaired. */
-  streaks: Record<string, { current: number; longest: number; freezes: number; lastPeriod: string | null; status: "none" | "done" | "pending" | "broken"; repairableUntil?: string }>;
+  streaks: Record<string, { current: number; longest: number; freezes: number; lastPeriod: string | null; status: "none" | "done" | "pending" | "broken"; repairableUntil?: string; progress?: number }>;
   achievements: Array<{ id: string; name: string; description?: string; unlockedAt: string }>;
 }
 

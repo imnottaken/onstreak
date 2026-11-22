@@ -335,6 +335,14 @@ export const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    version: 15,
+    name: "streak minimums",
+    statements: (t) => [
+      `alter table ${t.streaks} add column if not exists progress_period text`,
+      `alter table ${t.streaks} add column if not exists progress double precision not null default 0`,
+    ],
+  },
 ];
 
 export const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

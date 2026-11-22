@@ -151,6 +151,8 @@ function rowToStreak(r: Record<string, unknown>): StreakState {
     longest: num(r.longest),
     lastPeriod: (r.last_period as string | null) ?? null,
     freezes: num(r.freezes),
+    progressPeriod: (r.progress_period as string | null) ?? null,
+    progress: num(r.progress ?? 0),
   };
 }
 
@@ -436,9 +438,9 @@ export class PostgresStore implements Store {
       },
       async setStreak(id, s) {
         await q.query(
-          `insert into ${t.streaks} (user_id, streak_id, current, longest, last_period, freezes) values ($1, $2, $3, $4, $5, $6)
-           on conflict (user_id, streak_id) do update set current = $3, longest = $4, last_period = $5, freezes = $6`,
-          [userId, id, s.current, s.longest, s.lastPeriod, s.freezes],
+          `insert into ${t.streaks} (user_id, streak_id, current, longest, last_period, freezes, progress_period, progress) values ($1, $2, $3, $4, $5, $6, $7, $8)
+           on conflict (user_id, streak_id) do update set current = $3, longest = $4, last_period = $5, freezes = $6, progress_period = $7, progress = $8`,
+          [userId, id, s.current, s.longest, s.lastPeriod, s.freezes, s.progressPeriod ?? null, s.progress ?? 0],
         );
       },
       async getQuest(questId, periodKey) {

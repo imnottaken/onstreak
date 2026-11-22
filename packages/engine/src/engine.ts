@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule, type BoostSpec, type CalendarRule, type StreakRule, boostSpecProblem, questRunsAt } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
-import { initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
+import { breakPeriod, initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
 import { FriendLimitError, RivalLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type BoostRecord, type CalendarState, type ItemUseRecord, type ReferralRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
 import { addDays, isValidTimeZone, leaderboardWindow, periodKey, periodsBetween, startOfDay, type LeaderboardPeriod } from "./time.js";
 
@@ -38,7 +38,8 @@ export interface TrackResult {
   duplicate: boolean;
   points: Record<string, { awarded: number; total: number }>;
   level: { current: number; previous: number; leveledUp: boolean } | null;
-  streaks: Record<string, { current: number; longest: number; freezes: number; extended: boolean; freezesUsed: number; reset: boolean }>;
+  /** `progress` is this period's total so far, for streaks with a minimum. */
+  streaks: Record<string, { current: number; longest: number; freezes: number; extended: boolean; freezesUsed: number; reset: boolean; progress?: number }>;
   achievements: Array<{ id: string; name: string; description?: string }>;
   /** Leagues this event counted toward. `joined` is true the first time in a round. */
   leagues: Record<string, { tier: string; group: number; joined: boolean; previous: LeaguePrevious | null }>;
@@ -94,7 +95,7 @@ export interface UserProfile {
   level: { current: number; points: number; startsAt: number; nextAt: number | null } | null;
   metrics: Record<string, number>;
   /** `repairableUntil` is set while a broken streak can still be repaired. */
-  streaks: Record<string, { current: number; longest: number; freezes: number; lastPeriod: string | null; status: StreakStatus; repairableUntil?: string }>;
+  streaks: Record<string, { current: number; longest: number; freezes: number; lastPeriod: string | null; status: StreakStatus; repairableUntil?: string; progress?: number }>;
   achievements: Array<{ id: string; name: string; description?: string; unlockedAt: string }>;
 }
 
@@ -392,8 +393,7 @@ const REASON = /^[a-z0-9][a-z0-9_.:-]{0,63}$/i;
  */
 function repairDeadline(rule: StreakRule, state: StreakState, timezone: string): number | null {
   if (!rule.repair || state.lastPeriod === null || state.current === 0) return null;
-  const step = rule.period === "daily" ? 1 : 7;
-  const brokeAt = startOfDay(addDays(state.lastPeriod, (state.freezes + 2) * step), timezone);
+  const brokeAt = startOfDay(breakPeriod(rule, state.lastPeriod, state.freezes), timezone);
   return brokeAt + rule.repair.withinHours * 3_600_000;
 }
 
@@ -546,9 +546,24 @@ export class Engine {
       const streakStates = new Map<string, StreakState>();
       for (const rule of config.streaks) {
         if (rule.event !== event) continue;
-        const prev = (await tx.getStreak(rule.id)) ?? initialStreak(rule);
-        const update = recordActivity(rule, prev, periodKey(ts, rule.period, timezone));
-        if (update.extended) await tx.setStreak(rule.id, update.state);
+        let prev = (await tx.getStreak(rule.id)) ?? initialStreak(rule);
+        const period = periodKey(ts, rule.period, timezone);
+        let progress: number | undefined;
+        let enough = true;
+        if (rule.minimum !== undefined) {
+          const filling = prev.progressPeriod ?? null;
+          if (filling !== null && periodsBetween(filling, period, rule.period) < 0) {
+            // A late event for a period before the one being filled changes nothing.
+            enough = false;
+            progress = prev.progress ?? 0;
+          } else {
+            progress = round6((filling === period ? (prev.progress ?? 0) : 0) + value);
+            prev = { ...prev, progressPeriod: period, progress };
+            enough = progress >= rule.minimum;
+          }
+        }
+        const update = enough ? recordActivity(rule, prev, period) : { state: prev, extended: false, freezesUsed: 0, reset: false };
+        if (update.extended || rule.minimum !== undefined) await tx.setStreak(rule.id, update.state);
         streakStates.set(rule.id, update.state);
         streaks[rule.id] = {
           current: update.state.current,
@@ -557,6 +572,7 @@ export class Engine {
           extended: update.extended,
           freezesUsed: update.freezesUsed,
           reset: update.reset,
+          ...(progress !== undefined ? { progress } : {}),
         };
       }
 
@@ -741,9 +757,14 @@ export class Engine {
     const streaks: UserProfile["streaks"] = {};
     for (const rule of this.config.streaks) {
       const state = snap.streaks[rule.id] ?? initialStreak(rule);
-      const status = streakStatus(rule, state, periodKey(now, rule.period, timezone));
+      const nowPeriod = periodKey(now, rule.period, timezone);
+      const status = streakStatus(rule, state, nowPeriod);
       const until = repairDeadline(rule, state, timezone);
-      streaks[rule.id] = status.status === "broken" && until !== null && now < until ? { ...status, repairableUntil: new Date(until).toISOString() } : status;
+      streaks[rule.id] = {
+        ...status,
+        ...(status.status === "broken" && until !== null && now < until ? { repairableUntil: new Date(until).toISOString() } : {}),
+        ...(rule.minimum !== undefined ? { progress: state.progressPeriod === nowPeriod ? (state.progress ?? 0) : 0 } : {}),
+      };
     }
 
     const names = new Map(this.config.achievements.map((a) => [a.id, a]));
