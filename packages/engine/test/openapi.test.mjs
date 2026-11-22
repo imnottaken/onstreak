@@ -157,6 +157,27 @@ test("every response the server sends matches the OpenAPI spec", async (t) => {
   const history = await call("get", "/v1/users/asha/purchases?limit=1", "/v1/users/{userId}/purchases");
   await call("get", `/v1/users/asha/purchases?limit=1&cursor=${history.json.nextCursor}`, "/v1/users/{userId}/purchases");
   await call("get", "/v1/users/asha", "/v1/users/{userId}"); // with a wallet and inventory
+  const use = await call("post", "/v1/users/asha/inventory/sticker/use", "/v1/users/{userId}/inventory/{itemId}/use", { idempotencyKey: "u1" });
+  assert.equal(use.json.owned, 0);
+  await call("post", "/v1/users/asha/inventory/sticker/use", "/v1/users/{userId}/inventory/{itemId}/use", { idempotencyKey: "u1" }); // duplicate
+  const notOwned = await call("post", "/v1/users/asha/inventory/sticker/use", "/v1/users/{userId}/inventory/{itemId}/use");
+  assert.deepEqual([notOwned.status, notOwned.json.code], [409, "not_owned"]);
+  await call("post", "/v1/users/asha/inventory/nope/use", "/v1/users/{userId}/inventory/{itemId}/use", {}); // 404
+  await call("post", "/v1/users/asha/inventory/sticker/use", "/v1/users/{userId}/inventory/{itemId}/use", { quantity: 0 }); // 400
+  // A streak freeze: asha holds 1 of max 2, so one more fits.
+  const rich = await serve(t, new MemoryStore());
+  const richCall = async (path, body) => {
+    const res = await fetch(`${rich.base}${path}`, { method: "POST", headers: { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+    const json = await res.json();
+    c.check("post", path.endsWith("/use") ? "/v1/users/{userId}/inventory/{itemId}/use" : "/v1/users/{userId}/purchases", res.status, json);
+    return json;
+  };
+  await Promise.all(Array.from({ length: 10 }, () => fetch(`${rich.base}/v1/events`, { method: "POST", headers: { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" }, body: JSON.stringify({ userId: "r", event: "lesson_completed" }) })));
+  await richCall("/v1/users/r/purchases", { item: "streak_freeze", quantity: 2 });
+  const frozen = await richCall("/v1/users/r/inventory/streak_freeze/use", {});
+  assert.deepEqual(frozen.effects, { streakFreeze: { streak: "daily_lesson", freezes: 2 } });
+  const maxed = await richCall("/v1/users/r/inventory/streak_freeze/use", {});
+  assert.equal(maxed.code, "limit_reached");
 
   await call("get", "/health", "/health", undefined, { key: null });
   store.ping = async () => {

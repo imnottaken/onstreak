@@ -133,6 +133,12 @@ export interface ItemRule {
   limit?: number;
   /** Anything your app needs to show or use the item (image URL, sku). Returned as is. */
   metadata?: Record<string, unknown>;
+  /**
+   * What using one does. `streakFreeze` adds a freeze to that streak (up to its
+   * freezes.max). Without an effect, using an item just takes it from the
+   * inventory, for things your app handles itself (vouchers, unlocks).
+   */
+  effect?: { streakFreeze: string };
 }
 
 export interface OnstreakConfig {
@@ -374,6 +380,11 @@ export function resolveConfig(input: OnstreakConfig): ResolvedConfig {
     if (i.limit !== undefined && !(Number.isInteger(i.limit) && i.limit >= 1)) throw new ConfigError(`item "${i.id}" limit must be a whole number of at least 1`);
     if (i.metadata !== undefined && (i.metadata === null || typeof i.metadata !== "object" || Array.isArray(i.metadata))) {
       throw new ConfigError(`item "${i.id}" metadata must be an object`);
+    }
+    if (i.effect !== undefined) {
+      const target = streaks.find((s) => s.id === i.effect?.streakFreeze);
+      if (!target) throw new ConfigError(`item "${i.id}" effect needs { streakFreeze: <streak id> } with a known streak`);
+      if ((target.freezes?.max ?? 0) < 1) throw new ConfigError(`item "${i.id}" gives freezes, but streak "${target.id}" has freezes.max 0`);
     }
   }
 

@@ -21,7 +21,7 @@ const schemas = {
     additionalProperties: false,
     properties: {
       error: { type: "string", description: "What went wrong, in plain words." },
-      code: { type: "string", description: 'A stable reason to branch on, when there is one: "insufficient_funds", "limit_reached".' },
+      code: { type: "string", description: 'A stable reason to branch on, when there is one: "insufficient_funds", "limit_reached", "not_owned", "streak_broken".' },
       requestId: { type: "string", description: "Matches the x-request-id header and the server logs." },
     },
   },
@@ -232,6 +232,38 @@ const schemas = {
       duplicate: { type: "boolean" },
       wallet: map({ type: "number" }),
       owned: { type: "integer", minimum: 0 },
+    },
+  },
+  ItemUseInput: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      quantity: { type: "integer", minimum: 1, maximum: 1000, default: 1 },
+      idempotencyKey: { type: "string", minLength: 1, maxLength: 200, description: "Retries with the same key return the first result." },
+    },
+  },
+  ItemUseResult: {
+    type: "object",
+    required: ["userId", "item", "used", "owned", "duplicate", "effects"],
+    additionalProperties: false,
+    properties: {
+      userId: { type: "string" },
+      item: { type: "string" },
+      used: { type: "integer", minimum: 1 },
+      owned: { type: "integer", minimum: 0, description: "How many are left." },
+      duplicate: { type: "boolean" },
+      effects: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          streakFreeze: {
+            type: "object",
+            required: ["streak", "freezes"],
+            additionalProperties: false,
+            properties: { streak: { type: "string" }, freezes: { type: "integer", description: "Freezes the streak holds now." } },
+          },
+        },
+      },
     },
   },
   PurchaseHistory: {
@@ -632,6 +664,20 @@ export function openapiSpec(version: string) {
           summary: "A user's purchases, newest first",
           parameters: [limitParam(), { name: "cursor", in: "query", schema: { type: "string" }, description: "nextCursor from the previous page." }],
           responses: { "200": ok("A page of purchases", ref("PurchaseHistory")), ...authErrors },
+        },
+      },
+      "/v1/users/{userId}/inventory/{itemId}/use": {
+        parameters: [userIdParam, { name: "itemId", in: "path", required: true, schema: { type: "string" } }],
+        post: {
+          operationId: "useItem",
+          summary: "Use owned items, applying the item's effect",
+          requestBody: { content: json(ref("ItemUseInput")) },
+          responses: {
+            "200": ok("What was used and what it did", ref("ItemUseResult")),
+            ...authErrors,
+            "404": errorResponse("Unknown item"),
+            "409": errorResponse('Not enough owned (code "not_owned"), freezes at their max ("limit_reached"), or the streak is already broken ("streak_broken")'),
+          },
         },
       },
       "/v1/users/{userId}/friends": {

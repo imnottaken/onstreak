@@ -22,6 +22,8 @@ export type {
   Purchase,
   PurchaseResult,
   PurchaseHistory,
+  ItemUseInput,
+  ItemUseResult,
 } from "./engine.js";
 export { FriendLimitError, RivalLimitError } from "./store/types.js";
 export { zoneFor, outcomeFor, nextTier, currentRound, roundFromKey, nextRoundKey } from "./leagues.js";
@@ -74,6 +76,7 @@ export type {
   WindowScoreQuery,
   PurchaseRecord,
   PurchasePageQuery,
+  ItemUseRecord,
 } from "./store/types.js";
 export { createHandler, createOnstreakServer } from "./server.js";
 export type { ServerOptions, OnstreakServer } from "./server.js";

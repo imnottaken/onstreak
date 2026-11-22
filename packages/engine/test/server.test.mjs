@@ -113,6 +113,11 @@ test("SDK covers profiles, batches, history, health and request ids", async () =
     assert.ok(refused instanceof OnstreakError);
     assert.deepEqual([refused.status, refused.code], [409, "insufficient_funds"]);
     assert.deepEqual((await xp.getUser("zara")).inventory, { sticker: 1 });
+    const used = await xp.useItem("zara", "sticker", { idempotencyKey: "u1" });
+    assert.deepEqual([used.used, used.owned, used.effects], [1, 0, {}]);
+    assert.equal((await xp.useItem("zara", "sticker", { idempotencyKey: "u1" })).duplicate, true);
+    const none = await xp.useItem("zara", "sticker").catch((e) => e);
+    assert.deepEqual([none.status, none.code], [409, "not_owned"]);
 
     const err = await xp.updateUser("zara", { nickname: "z" }).catch((e) => e);
     assert.ok(err instanceof OnstreakError);

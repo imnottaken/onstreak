@@ -45,6 +45,7 @@ export const demoConfig = {
     { id: "study_hour", name: "Study for an hour", description: "Across the week", period: "weekly", goal: { event: "minutes_studied", target: 60 }, rewards: [{ currency: "coins", amount: 10 }, { currency: "xp", amount: 50 }] },
   ],
   items: [
+    { id: "streak_freeze", name: "Streak freeze", description: "Use it to cover a missed day", price: { currency: "coins", amount: 4 }, limit: 2, effect: { streakFreeze: "daily_lesson" }, metadata: { icon: "🧊" } },
     { id: "sticker_pack", name: "Sticker pack", description: "Show off in chat", price: { currency: "coins", amount: 2 }, metadata: { icon: "🌟" } },
     { id: "night_theme", name: "Night theme", price: { currency: "coins", amount: 5 }, limit: 1, metadata: { icon: "🌙" } },
     { id: "gold_frame", name: "Gold frame", description: "A frame for your avatar", price: { currency: "coins", amount: 8 }, limit: 1, metadata: { icon: "🖼️" } },
@@ -99,6 +100,7 @@ button.primary { background: #f97316; border-color: #f97316; color: #fff; font-w
 .events { list-style: none; padding: 0; margin: 0; font-size: 0.875rem; }
 button.small { padding: 4px 10px; font-size: 0.8125rem; }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
+.item-actions { display: flex; gap: 6px; }
 .spaced { margin-top: 16px; }
 .events li { padding: 4px 0; border-top: 1px solid #d0d7de33; }
 </style>
@@ -146,8 +148,16 @@ export function createDemo({ seed = 42 } = {}) {
       engine.quests(YOU),
       engine.rewardStore(YOU),
     ]);
+    const freezesFull = user.streaks.daily_lesson.freezes >= demoConfig.streaks[0].freezes.max;
     const buyButton = (item) =>
-      h("form", { method: "post", action: `/buy/${item.id}` }, h("button", { type: "submit", className: "small", disabled: !item.canBuy }, "Buy"));
+      h(
+        "span",
+        { className: "item-actions" },
+        item.owned > 0 &&
+          item.id === "streak_freeze" &&
+          h("form", { method: "post", action: `/use/${item.id}` }, h("button", { type: "submit", className: "small", disabled: freezesFull, title: freezesFull ? "You already hold the most freezes" : undefined }, "Use")),
+        h("form", { method: "post", action: `/buy/${item.id}` }, h("button", { type: "submit", className: "small", disabled: !item.canBuy }, "Buy")),
+      );
     const rivalIds = new Set(rivals.rivals.map((r) => r.rivalId));
     const rivalButton = (f) =>
       rivalIds.has(f.userId)
@@ -273,6 +283,11 @@ export function createDemo({ seed = 42 } = {}) {
       if (req.method === "POST" && buy && demoConfig.items.some((i) => i.id === buy[1])) {
         // The button is disabled when you cannot buy; a refusal from a stale page just reloads it.
         await engine.purchase(YOU, { item: buy[1] }).catch((e) => { if (e.status !== 409) throw e; });
+        return back();
+      }
+      const use = /^\/use\/([a-z_]+)$/.exec(url.pathname);
+      if (req.method === "POST" && use && demoConfig.items.some((i) => i.id === use[1])) {
+        await engine.useItem(YOU, use[1]).catch((e) => { if (e.status !== 409) throw e; });
         return back();
       }
       if (req.method === "POST" && url.pathname === "/reset") {

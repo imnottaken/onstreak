@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { levelFor, resolveConfig, type ResolvedConfig, type ResolvedLeague, type ResolvedRivalry, type OnstreakConfig, type QuestRule, type QuestReward, type ItemRule } from "./config.js";
 import { currentRound, nextRoundKey, nextTier, outcomeFor, roundFromKey, zoneFor, type LeagueOutcome, type LeagueRound, type LeagueZone } from "./leagues.js";
 import { initialStreak, recordActivity, streakStatus, type StreakState, type StreakStatus } from "./streaks.js";
-import { FriendLimitError, RivalLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
+import { FriendLimitError, RivalLimitError, type EventRecord, type LeaderboardEntry, type Membership, type ProfileData, type ProfilePatch, type PublicProfile, type ItemUseRecord, type PurchaseRecord, type Store, type UserTx } from "./store/types.js";
 import { isValidTimeZone, leaderboardWindow, periodKey, type LeaderboardPeriod } from "./time.js";
 
 export class EngineError extends Error {
@@ -193,6 +193,24 @@ export interface PurchaseResult {
   wallet: Record<string, number>;
   /** How many of the item the user owns now. */
   owned: number;
+}
+
+export interface ItemUseInput {
+  /** How many to use at once. Default 1. */
+  quantity?: number;
+  /** Retries with the same key return the first result instead of using more. */
+  idempotencyKey?: string;
+}
+
+export interface ItemUseResult {
+  userId: string;
+  item: string;
+  used: number;
+  /** How many the user has left. */
+  owned: number;
+  duplicate: boolean;
+  /** What using it did, if the item has an effect. */
+  effects: { streakFreeze?: { streak: string; freezes: number } };
 }
 
 export interface PurchaseHistory {
@@ -863,6 +881,56 @@ export class Engine {
       const record: PurchaseRecord = { id: randomUUID(), itemId: item.id, quantity, currency, cost, purchasedAt: this.now(), idempotencyKey };
       const nowOwned = await tx.recordPurchase(record);
       return { userId, purchase: this.toPurchase(record), duplicate: false, wallet: await walletOf(), owned: nowOwned };
+    });
+  }
+
+  /**
+   * Use owned items. Fails with 409 and code "not_owned" when the user has
+   * fewer than `quantity`. A streak-freeze item fails with "limit_reached"
+   * past the streak's freezes.max, and "streak_broken" when the streak has
+   * already lapsed (a freeze cannot bring it back).
+   */
+  async useItem(userId: string, itemId: string, input: ItemUseInput = {}): Promise<ItemUseResult> {
+    checkUserId(userId);
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new EngineError("body must be a JSON object");
+    const item = this.config.items.find((i) => i.id === itemId);
+    if (!item) throw new EngineError(`unknown item "${String(itemId)}"`, 404);
+    const quantity = input.quantity ?? 1;
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY) throw new EngineError(`quantity must be a whole number from 1 to ${MAX_QUANTITY}`);
+    const idempotencyKey = input.idempotencyKey ?? null;
+    if (idempotencyKey !== null && (typeof idempotencyKey !== "string" || idempotencyKey.length === 0 || idempotencyKey.length > 200)) {
+      throw new EngineError("idempotencyKey must be a string of 1-200 characters");
+    }
+
+    return this.store.withUser(userId, async (tx) => {
+      if (idempotencyKey) {
+        const previous = await tx.findItemUse(idempotencyKey);
+        if (previous) return { ...previous, duplicate: true };
+      }
+      const owned = await tx.getInventory(item.id);
+      if (owned < quantity) throw new EngineError(`${userId} has ${owned} of "${item.id}", not ${quantity}`, 409, "not_owned");
+
+      const usedAt = this.now();
+      const effects: ItemUseResult["effects"] = {};
+      if (item.effect?.streakFreeze) {
+        const rule = this.config.streaks.find((s) => s.id === item.effect!.streakFreeze)!;
+        const state = (await tx.getStreak(rule.id)) ?? initialStreak(rule);
+        const timezone = (await tx.getProfile()).timezone ?? this.config.defaultTimezone;
+        if (streakStatus(rule, state, periodKey(usedAt, rule.period, timezone)).status === "broken") {
+          throw new EngineError(`the "${rule.id}" streak is already broken; a freeze cannot bring it back`, 409, "streak_broken");
+        }
+        const max = rule.freezes?.max ?? 0;
+        if (state.freezes + quantity > max) {
+          throw new EngineError(`"${rule.id}" holds at most ${max} freezes and ${userId} has ${state.freezes}`, 409, "limit_reached");
+        }
+        await tx.setStreak(rule.id, { ...state, freezes: state.freezes + quantity });
+        effects.streakFreeze = { streak: rule.id, freezes: state.freezes + quantity };
+      }
+
+      const result: ItemUseResult = { userId, item: item.id, used: quantity, owned: owned - quantity, duplicate: false, effects };
+      const record: ItemUseRecord = { id: randomUUID(), itemId: item.id, quantity, usedAt, idempotencyKey, result };
+      await tx.recordItemUse(record);
+      return result;
     });
   }
 

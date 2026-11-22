@@ -28,6 +28,7 @@ export interface Tables {
   quests: string;
   inventory: string;
   purchases: string;
+  itemUses: string;
 }
 
 export function tableNames(prefix: string): Tables {
@@ -48,6 +49,7 @@ export function tableNames(prefix: string): Tables {
     quests: `${prefix}quest_progress`,
     inventory: `${prefix}inventory`,
     purchases: `${prefix}purchases`,
+    itemUses: `${prefix}item_uses`,
   };
 }
 
@@ -239,6 +241,22 @@ export const MIGRATIONS: readonly Migration[] = [
          unique (user_id, idempotency_key)
        )`,
       `create index if not exists ${t.prefix}purchases_user on ${t.purchases} (user_id, purchased_at desc, id desc)`,
+    ],
+  },
+  {
+    version: 9,
+    name: "item uses",
+    statements: (t) => [
+      `create table if not exists ${t.itemUses} (
+         id uuid primary key,
+         user_id text not null references ${t.users}(id),
+         item_id text not null,
+         quantity integer not null,
+         used_at timestamptz not null,
+         idempotency_key text,
+         result jsonb not null,
+         unique (user_id, idempotency_key)
+       )`,
     ],
   },
 ];

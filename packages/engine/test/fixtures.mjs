@@ -22,7 +22,7 @@ export const config = {
   rivalries: [{ id: "weekly_duel", currency: "xp" }],
   items: [
     { id: "sticker", name: "Sticker", price: { currency: "coins", amount: 1 } },
-    { id: "streak_freeze", name: "Streak freeze", description: "Keeps your streak for a day", price: { currency: "coins", amount: 5 }, limit: 2 },
+    { id: "streak_freeze", name: "Streak freeze", description: "Keeps your streak for a day", price: { currency: "coins", amount: 5 }, limit: 2, effect: { streakFreeze: "daily_lesson" } },
     { id: "gold_frame", name: "Gold frame", price: { currency: "coins", amount: 0 }, limit: 1, metadata: { image: "/frame.png" } },
   ],
 };

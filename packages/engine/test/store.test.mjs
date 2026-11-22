@@ -165,3 +165,74 @@ test("pg: concurrent purchases never overspend", { skip: PG_URL ? false : "set T
   assert.equal(keyed.filter((r) => !r.duplicate).length, 1);
   assert.equal((await engine.getUser("fast")).wallet.coins, 1);
 });
+
+for (const [name, makeStore] of Object.entries(storeFactories)) {
+  test(`${name}: using items takes them from the inventory and applies effects`, async (t) => {
+    const DAY = 86_400_000;
+    let now = start;
+    const engine = new Engine(config, await makeStore(t), () => now);
+    await earnCoins(engine, "asha", 13); // a 1-day streak, 1 freeze to start, max 2
+    await engine.purchase("asha", { item: "streak_freeze", quantity: 2 });
+    await engine.purchase("asha", { item: "sticker", quantity: 3 });
+
+    const freeze = await engine.useItem("asha", "streak_freeze");
+    assert.deepEqual(freeze, { userId: "asha", item: "streak_freeze", used: 1, owned: 1, duplicate: false, effects: { streakFreeze: { streak: "daily_lesson", freezes: 2 } } });
+    assert.equal((await engine.getUser("asha")).streaks.daily_lesson.freezes, 2);
+    await rejectsWith(engine.useItem("asha", "streak_freeze"), 409, "limit_reached");
+    assert.equal((await engine.getUser("asha")).inventory.streak_freeze, 1, "a refused use keeps the item");
+
+    // Items without an effect are just taken away.
+    const stickers = await engine.useItem("asha", "sticker", { quantity: 2, idempotencyKey: "use-1" });
+    assert.deepEqual([stickers.used, stickers.owned, stickers.effects], [2, 1, {}]);
+    const again = await engine.useItem("asha", "sticker", { quantity: 2, idempotencyKey: "use-1" });
+    assert.deepEqual([again.duplicate, again.owned], [true, 1], "a retry returns the first result");
+    await rejectsWith(engine.useItem("asha", "sticker", { quantity: 2 }), 409, "not_owned");
+    await rejectsWith(engine.useItem("asha", "gold_frame"), 409, "not_owned");
+    await rejectsWith(engine.useItem("asha", "nope"), 404, undefined);
+    await rejectsWith(engine.useItem("asha", "sticker", { quantity: 0 }), 400, undefined);
+    await rejectsWith(engine.useItem("asha", "sticker", []), 400, undefined);
+
+    // Skipping two days spends both freezes and keeps the streak going.
+    now += 3 * DAY;
+    let r = await engine.track({ userId: "asha", event: "lesson_completed" });
+    assert.deepEqual([r.streaks.daily_lesson.current, r.streaks.daily_lesson.freezesUsed, r.streaks.daily_lesson.freezes], [2, 2, 0]);
+
+    // Once a streak has lapsed past its freezes, a freeze cannot bring it back.
+    now += 3 * DAY;
+    assert.equal((await engine.getUser("asha")).streaks.daily_lesson.status, "broken");
+    await rejectsWith(engine.useItem("asha", "streak_freeze"), 409, "streak_broken");
+    assert.equal((await engine.getUser("asha")).inventory.streak_freeze, 1);
+    r = await engine.track({ userId: "asha", event: "lesson_completed" });
+    assert.equal(r.streaks.daily_lesson.current, 1);
+    assert.equal((await engine.useItem("asha", "streak_freeze")).effects.streakFreeze.freezes, 1, "fine again on a fresh streak");
+    assert.deepEqual((await engine.getUser("asha")).inventory, { sticker: 1 }, "used-up items leave the inventory");
+  });
+
+  test(`${name}: a freeze can be used before any streak exists`, async (t) => {
+    const engine = new Engine({ ...config, streaks: [{ id: "daily_lesson", event: "lesson_completed", period: "daily", freezes: { max: 3 } }] }, await makeStore(t), () => start);
+    await engine.track({ userId: "new", event: "minutes_studied", value: 5 }); // 10 xp, no coins, no streak
+    await engine.store.withUser("new", (tx) => tx.recordPurchase({ id: "00000000-0000-4000-8000-000000000001", itemId: "streak_freeze", quantity: 1, currency: "coins", cost: 0, purchasedAt: start, idempotencyKey: null }));
+    const r = await engine.useItem("new", "streak_freeze");
+    assert.deepEqual(r.effects, { streakFreeze: { streak: "daily_lesson", freezes: 1 } });
+  });
+}
+
+test("item effects are validated", () => {
+  const item = (effect, streaks = config.streaks) => () => resolveConfig({ ...config, streaks, items: [{ id: "f", name: "F", price: { currency: "coins", amount: 1 }, effect }] });
+  assert.throws(item({ streakFreeze: "nope" }), /known streak/);
+  assert.throws(item({}), /known streak/);
+  assert.throws(item({ streakFreeze: "daily_lesson" }, [{ id: "daily_lesson", event: "lesson_completed", period: "daily" }]), /freezes.max 0/);
+  assert.doesNotThrow(item({ streakFreeze: "daily_lesson" }));
+});
+
+test("pg: concurrent uses never take more than the user owns", { skip: PG_URL ? false : "set TEST_DATABASE_URL" }, async (t) => {
+  const pool = poolFor(await freshSchema(t), t, 20);
+  const store = new PostgresStore(fromPgPool(pool));
+  await store.migrate();
+  const engine = new Engine(config, store, () => start);
+  await earnCoins(engine, "fast", 3);
+  await engine.purchase("fast", { item: "sticker", quantity: 3 });
+  const results = await Promise.allSettled(Array.from({ length: 12 }, () => engine.useItem("fast", "sticker")));
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 3);
+  assert.deepEqual((await engine.getUser("fast")).inventory, {});
+});

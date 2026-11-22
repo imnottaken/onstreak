@@ -25,6 +25,7 @@ All notable changes to onstreak. The format follows [Keep a Changelog](https://k
 - Quests: daily and weekly goals ("finish 3 lessons", "earn 50 XP") with point rewards paid once on completion. Track results report quest progress; `GET /v1/users/:id/quests` lists progress for the current period. Only events in the running period count.
 - Rivalries: configurable head-to-head matchups (`rivalries`, daily or weekly rounds in any time zone). Each rival shows the live score, a win/loss/draw record, the current streak and the last result. Finished rounds are settled once, only count points recorded before the round ended, and rounds where neither side scored are skipped.
 - Reward store: configure `items` with a price, an optional per-user limit and metadata. `POST /v1/users/:id/purchases` buys with points, refusing with 409 and a `code` (`insufficient_funds`, `limit_reached`); idempotency keys stop double charges. Users get a `wallet` (spendable balance) and an `inventory`; earned `points` never go down. Purchase history pages with a cursor. Schema migration 8.
+- Using items: `POST /v1/users/:id/inventory/:itemId/use` takes owned items from the inventory and applies their `effect`. A `streakFreeze` effect adds a freeze to a streak, up to its `freezes.max`, and is refused once the streak has lapsed. Retries with an idempotency key return the first result. Schema migration 9.
 - Error bodies carry a stable `code` where there is one, and the SDK's `OnstreakError` exposes it.
 - Docker image (non-root, with health check) and docker compose setup.
 

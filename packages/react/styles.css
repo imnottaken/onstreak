@@ -134,7 +134,7 @@
 .os-item__icon { flex: none; width: 32px; height: 32px; display: grid; place-items: center; font-size: 1.25rem; }
 .os-item__body { flex: 1; min-width: 0; }
 .os-item__header { display: flex; justify-content: space-between; gap: 8px; }
-.os-item__name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.os-item__name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .os-item__price { flex: none; color: var(--os-accent); font-size: 0.8125rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 .os-item--blocked .os-item__price { color: var(--os-muted); }
 .os-item__description { margin: 2px 0 0; color: var(--os-muted); font-size: 0.8125rem; }

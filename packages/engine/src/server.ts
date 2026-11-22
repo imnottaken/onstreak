@@ -163,6 +163,11 @@ function buildHandler(engine: Engine, options: ServerOptions, state: ServerState
         }
       }
 
+      if (req.method === "POST" && resource === "users" && id && sub === "inventory" && subId && subSub === "use" && parts.length === 6) {
+        const body = await readJson(req);
+        return send(200, await engine.useItem(id, subId, (body ?? {}) as Parameters<Engine["useItem"]>[2]));
+      }
+
       if (resource === "users" && id && sub === "friends") {
         if (req.method === "GET" && parts.length === 4) return send(200, await engine.friends(id));
         if (req.method === "PUT" && subId && parts.length === 5) return send(200, await engine.addFriend(id, subId));

@@ -20,6 +20,7 @@ import type {
   QuestProgress,
   PurchasePageQuery,
   PurchaseRecord,
+  ItemUseRecord,
   UserTx,
 } from "./types.js";
 
@@ -37,6 +38,7 @@ interface UserData {
   inventory: Map<string, number>;
   /** Oldest first. */
   purchases: PurchaseRecord[];
+  itemUses: ItemUseRecord[];
 }
 
 interface LedgerRow {
@@ -79,6 +81,7 @@ export class MemoryStore implements Store {
         spent: new Map(),
         inventory: new Map(),
         purchases: [],
+        itemUses: [],
       };
       this.users.set(userId, d);
     }
@@ -144,6 +147,16 @@ export class MemoryStore implements Store {
         const owned = (d.inventory.get(p.itemId) ?? 0) + p.quantity;
         d.inventory.set(p.itemId, owned);
         return owned;
+      },
+      findItemUse: async (key) => {
+        const u = d.itemUses.find((x) => x.idempotencyKey === key);
+        return u ? structuredClone(u.result) : null;
+      },
+      recordItemUse: async (u) => {
+        d.itemUses.push(structuredClone(u));
+        const left = (d.inventory.get(u.itemId) ?? 0) - u.quantity;
+        d.inventory.set(u.itemId, left);
+        return left;
       },
       getStreak: async (id) => {
         const s = d.streaks.get(id);

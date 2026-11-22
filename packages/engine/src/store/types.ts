@@ -1,5 +1,5 @@
 import type { StreakState } from "../streaks.js";
-import type { TrackResult } from "../engine.js";
+import type { ItemUseResult, TrackResult } from "../engine.js";
 import type { LeagueOutcome } from "../leagues.js";
 
 /** A user's seat in one league round. */
@@ -80,6 +80,16 @@ export interface PurchaseRecord {
   cost: number;
   purchasedAt: number;
   idempotencyKey: string | null;
+}
+
+/** One use of owned items, with the result returned to the caller (for idempotent retries). */
+export interface ItemUseRecord {
+  id: string;
+  itemId: string;
+  quantity: number;
+  usedAt: number;
+  idempotencyKey: string | null;
+  result: ItemUseResult;
 }
 
 export interface PurchasePageQuery {
@@ -165,6 +175,9 @@ export interface UserTx {
   findPurchase(idempotencyKey: string): Promise<PurchaseRecord | null>;
   /** Store a purchase: adds its cost to spent and its quantity to the inventory. Returns the new quantity owned. */
   recordPurchase(purchase: PurchaseRecord): Promise<number>;
+  findItemUse(idempotencyKey: string): Promise<ItemUseResult | null>;
+  /** Store a use and take its quantity from the inventory (the caller checks there are enough). Returns how many are left. */
+  recordItemUse(use: ItemUseRecord): Promise<number>;
 }
 
 export interface UserSnapshot {

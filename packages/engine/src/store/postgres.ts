@@ -1,4 +1,4 @@
-import type { TrackResult } from "../engine.js";
+import type { ItemUseResult, TrackResult } from "../engine.js";
 import type { StreakState } from "../streaks.js";
 import type { LeagueOutcome } from "../leagues.js";
 import { LATEST_VERSION, MIGRATIONS, tableNames, type Tables } from "./migrations.js";
@@ -9,6 +9,7 @@ import type {
   QuestProgress,
   PurchasePageQuery,
   PurchaseRecord,
+  ItemUseRecord,
   RivalRecord,
   WindowScoreQuery,
   EventRecord,
@@ -295,6 +296,21 @@ export class PostgresStore implements Store {
            on conflict (user_id, item_id) do update set quantity = ${t.inventory}.quantity + excluded.quantity
            returning quantity`,
           [userId, p.itemId, p.quantity],
+        );
+        return num(rows[0]?.quantity);
+      },
+      async findItemUse(key) {
+        const { rows } = await q.query(`select result from ${t.itemUses} where user_id = $1 and idempotency_key = $2`, [userId, key]);
+        return rows[0] ? json<ItemUseResult>(rows[0].result) : null;
+      },
+      async recordItemUse(u: ItemUseRecord) {
+        await q.query(
+          `insert into ${t.itemUses} (id, user_id, item_id, quantity, used_at, idempotency_key, result) values ($1, $2, $3, $4, $5, $6, $7)`,
+          [u.id, userId, u.itemId, u.quantity, new Date(u.usedAt).toISOString(), u.idempotencyKey, JSON.stringify(u.result)],
+        );
+        const { rows } = await q.query(
+          `update ${t.inventory} set quantity = quantity - $3 where user_id = $1 and item_id = $2 returning quantity`,
+          [userId, u.itemId, u.quantity],
         );
         return num(rows[0]?.quantity);
       },

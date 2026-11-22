@@ -153,3 +153,24 @@ test("the shop spends coins, respects limits and keeps XP", async (t) => {
   assert.equal(item(doc, "Night theme").querySelector(".os-item__owned").textContent, "Owned 1 of 1");
   assert.equal((await fetch(`${base}/buy/nothing`, { method: "POST" })).status, 404, "only known items");
 });
+
+test("a streak freeze from the shop is used to cover a missed day", async (t) => {
+  const { view, press } = await start(t);
+  const freezes = (doc) => doc.querySelector(".os-streak__freezes")?.textContent ?? "";
+  for (let i = 0; i < 4; i++) await press("/do/lesson"); // 4 coins + 3 from the quest
+  let doc = await view();
+  assert.equal(freezes(doc), "❄️1", "one freeze to start");
+  await press("/buy/streak_freeze");
+  doc = await view();
+  const card = [...doc.querySelectorAll(".os-item")].find((i) => i.querySelector(".os-item__name").textContent === "Streak freeze");
+  assert.equal(card.querySelector(".os-item__owned").textContent, "Owned 1 of 2");
+  await press("/use/streak_freeze");
+  doc = await view();
+  assert.equal(freezes(doc), "❄️2");
+  await press("/next-day");
+  await press("/next-day");
+  await press("/next-day"); // two missed days
+  await press("/do/lesson");
+  doc = await view();
+  assert.equal(streakLabel(doc), "2 day streak, done today", "both freezes covered the gap");
+});

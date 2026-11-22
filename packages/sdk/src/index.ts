@@ -167,6 +167,16 @@ export interface PurchaseResult {
   owned: number;
 }
 
+export interface ItemUseResult {
+  userId: string;
+  item: string;
+  used: number;
+  /** How many the user has left. */
+  owned: number;
+  duplicate: boolean;
+  effects: { streakFreeze?: { streak: string; freezes: number } };
+}
+
 export interface PurchaseHistory {
   purchases: Purchase[];
   nextCursor: string | null;
@@ -293,6 +303,12 @@ export function createClient(options: ClientOptions) {
      * "insufficient_funds" or "limit_reached" when the purchase is refused.
      */
     purchase: (userId: string, input: PurchaseInput) => call<PurchaseResult>("POST", `${user(userId)}/purchases`, input),
+    /**
+     * Use owned items, applying the item's effect (e.g. adding a streak freeze).
+     * Throws OnstreakError 409 with code "not_owned", "limit_reached" or "streak_broken".
+     */
+    useItem: (userId: string, itemId: string, opts: { quantity?: number; idempotencyKey?: string } = {}) =>
+      call<ItemUseResult>("POST", `${user(userId)}/inventory/${encodeURIComponent(itemId)}/use`, opts),
     /** A user's purchases, newest first. Pass `nextCursor` back to page. */
     purchases: (userId: string, opts: { limit?: number; cursor?: string } = {}) => {
       const params = new URLSearchParams();
